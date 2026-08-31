@@ -18,9 +18,12 @@ Route::middleware(['auth'])->group(function () {
         return Inertia::render('operations/report-comparison');
     })->name('operations.report-comparison');
 
+    Route::get('operations/reports', function () {
+        return Inertia::render('operations/reports');
+    })->name('operations.reports');
+
     Route::get('operations/{section}', function (string $section) {
         $sections = [
-            'reports' => ['title' => 'Reports', 'description' => 'Review and manage submitted reports.'],
             'processors' => ['title' => 'Processors', 'description' => 'Monitor processor performance and workloads.'],
             'users' => ['title' => 'Users', 'description' => 'Manage team accounts and access.'],
             'training' => ['title' => 'Training Center', 'description' => 'Create and organize learning materials.'],

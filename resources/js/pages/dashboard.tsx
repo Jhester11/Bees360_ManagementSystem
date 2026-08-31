@@ -40,6 +40,21 @@ export const months = Array.from({ length: 12 }, (_, monthIndex) => ({
 
 export const processorNames = ['Maria Santos', 'Jordan Lee', 'Aisha Rahman', 'Don Santos'];
 
+export function philippinesDate() {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        timeZone: 'Asia/Manila',
+    }).formatToParts(new Date());
+    const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
+
+    return `${value('year')}-${value('month')}-${value('day')}`;
+}
+
+export const philippinesToday = philippinesDate();
+export const philippinesMonthStart = `${philippinesToday.slice(0, 8)}01`;
+
 const weeklyFinished = [
     { day: 'Mon', reports: 42 },
     { day: 'Tue', reports: 56 },
@@ -52,7 +67,7 @@ const weeklyFinished = [
 
 // Mock records only. These will be replaced by report records when the data source is ready.
 export const sampleRecords: ReportRecord[] = months.flatMap((month, monthIndex) =>
-    Array.from({ length: 15 }, (_, dayIndex) =>
+    Array.from({ length: new Date(Date.UTC(2026, monthIndex + 1, 0)).getUTCDate() }, (_, dayIndex) =>
         processorNames.map((processor, processorIndex) => {
             const date = `${month.value}-${String(dayIndex + 1).padStart(2, '0')}`;
             const ph = 18 + processorIndex * 2 + ((dayIndex * 7 + monthIndex * 3 + processorIndex * 5) % 17);
@@ -231,9 +246,10 @@ export function BeesDatePicker({
 }
 
 export default function Dashboard({ showReportRange = false }: { showReportRange?: boolean }) {
-    const [startDate, setStartDate] = useState('2026-08-01');
-    const [endDate, setEndDate] = useState('2026-08-15');
-    const [selectedProcessor, setSelectedProcessor] = useState('all');
+    const [startDate, setStartDate] = useState(philippinesMonthStart);
+    const [endDate, setEndDate] = useState(philippinesToday);
+    const [selectedProcessor, setSelectedProcessor] = useState(showReportRange ? '' : 'all');
+    const [appliedProcessor, setAppliedProcessor] = useState(showReportRange ? '' : 'all');
     const [timeBasis, setTimeBasis] = useState<TimeBasis>('ph');
     const [greeting, setGreeting] = useState(philippineGreeting);
 
@@ -247,9 +263,11 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
         () =>
             sampleRecords.filter(
                 (record) =>
-                    record.date >= startDate && record.date <= endDate && (selectedProcessor === 'all' || record.processor === selectedProcessor),
+                    record.date >= startDate &&
+                    record.date <= endDate &&
+                    (!showReportRange || (appliedProcessor !== '' && (appliedProcessor === 'all' || record.processor === appliedProcessor))),
             ),
-        [endDate, selectedProcessor, startDate],
+        [appliedProcessor, endDate, showReportRange, startDate],
     );
 
     const dashboardData = useMemo(() => {
@@ -499,12 +517,12 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                                     label="End date"
                                     value={endDate}
                                     min={startDate}
-                                    max="2026-12-31"
+                                    max={philippinesToday}
                                     onChange={setEndDate}
                                 />
                             </div>
                             <p className="mt-3 border-t border-[#efdbac] pt-3 text-xs font-medium text-[#856539]">
-                                The report data updates automatically when you select a date.
+                                Choose a processor, then compare the selected reporting period.
                             </p>
                         </div>
 
@@ -518,7 +536,7 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                                     className="h-11 rounded-xl border-[#e2d1b8] bg-[#fffaf1] text-[#4b3820] focus:ring-[#d78b13]"
                                 >
                                     <UsersRound className="mr-2 size-4 text-[#a96300]" />
-                                    <SelectValue placeholder="All processors" />
+                                    <SelectValue placeholder="Select a processor" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="all">All processors</SelectItem>
@@ -549,11 +567,22 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                                     CST Time
                                 </Button>
                             </div>
+                            <Button
+                                type="button"
+                                disabled={!selectedProcessor}
+                                onClick={() => setAppliedProcessor(selectedProcessor)}
+                                className="mt-2 h-10 w-full gap-2 rounded-xl bg-[#b96c00] text-sm font-bold text-white hover:bg-[#925400] disabled:bg-[#d5b87c]"
+                            >
+                                <BarChart3 className="size-4" />
+                                Compare periods
+                            </Button>
                         </div>
                     </div>
                     <p className="mt-4 flex items-center gap-2 text-xs text-[#887760]">
                         <Clock3 className="size-3.5 text-[#b26a00]" />
-                        Showing figures from {startDate} to {endDate} based on {timezoneLabel}.
+                        {appliedProcessor
+                            ? `Showing ${appliedProcessor === 'all' ? 'all processors' : appliedProcessor} from ${startDate} to ${endDate} based on ${timezoneLabel}.`
+                            : 'Select a processor and click Compare periods to view MTD data.'}
                     </p>
                 </section>
 
@@ -662,7 +691,7 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                         <div className="border-b border-[#f0e5d4] p-5 sm:p-6">
                             <h2 className="text-lg font-bold tracking-tight text-[#342615]">Daily report log</h2>
                             <p className="mt-1 text-sm text-[#806f59]">
-                                {selectedProcessor === 'all' ? 'All processors' : selectedProcessor} · {timezoneLabel}
+                                {appliedProcessor === 'all' ? 'All processors' : appliedProcessor || 'No processor selected'} · {timezoneLabel}
                             </p>
                         </div>
                         <div className="overflow-x-auto">

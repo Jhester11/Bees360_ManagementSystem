@@ -1,7 +1,7 @@
 <?php
 
-it('returns a successful response', function () {
+it('redirects guests to the login page from the home route', function () {
     $response = $this->get('/');
 
-    $response->assertStatus(200);
+    $response->assertRedirect('/login');
 });

@@ -10,6 +10,14 @@ Route::middleware(['auth'])->group(function () {
         return Inertia::render('dashboard');
     })->name('dashboard');
 
+    Route::get('operations/mtd', function () {
+        return Inertia::render('dashboard', ['showReportRange' => true]);
+    })->name('operations.mtd');
+
+    Route::get('operations/report-comparison', function () {
+        return Inertia::render('operations/report-comparison');
+    })->name('operations.report-comparison');
+
     Route::get('operations/{section}', function (string $section) {
         $sections = [
             'reports' => ['title' => 'Reports', 'description' => 'Review and manage submitted reports.'],

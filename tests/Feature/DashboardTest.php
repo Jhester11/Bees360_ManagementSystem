@@ -18,6 +18,12 @@ test('authenticated users can open an operations module', function () {
     $this->get('/operations/reports')->assertOk();
 });
 
+test('authenticated users can compare two report periods', function () {
+    $this->actingAs($user = User::factory()->create());
+
+    $this->get('/operations/report-comparison')->assertOk();
+});
+
 test('operations routes return 404 for an unknown module', function () {
     $this->actingAs($user = User::factory()->create());
 

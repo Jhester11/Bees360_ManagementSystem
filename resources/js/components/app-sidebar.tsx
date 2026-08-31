@@ -1,10 +1,18 @@
-import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
-import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
+import {
+    Sidebar,
+    SidebarContent,
+    SidebarFooter,
+    SidebarGroup,
+    SidebarHeader,
+    SidebarMenu,
+    SidebarMenuButton,
+    SidebarMenuItem,
+} from '@/components/ui/sidebar';
 import { type NavItem } from '@/types';
 import { Link } from '@inertiajs/react';
-import { BookOpen, Folder, LayoutGrid } from 'lucide-react';
+import { BarChart3, BookOpenCheck, FileText, LayoutGrid, Settings, ShieldCheck, UsersRound } from 'lucide-react';
 import AppLogo from './app-logo';
 
 const mainNavItems: NavItem[] = [
@@ -13,24 +21,43 @@ const mainNavItems: NavItem[] = [
         url: '/dashboard',
         icon: LayoutGrid,
     },
-];
-
-const footerNavItems: NavItem[] = [
     {
-        title: 'Repository',
-        url: 'https://github.com/laravel/react-starter-kit',
-        icon: Folder,
+        title: 'Reports',
+        url: '/operations/reports',
+        icon: FileText,
     },
     {
-        title: 'Documentation',
-        url: 'https://laravel.com/docs/starter-kits',
-        icon: BookOpen,
+        title: 'Processors',
+        url: '/operations/processors',
+        icon: BarChart3,
+    },
+    {
+        title: 'Users',
+        url: '/operations/users',
+        icon: UsersRound,
+    },
+];
+
+const qualityNavItems: NavItem[] = [
+    {
+        title: 'Training Center',
+        url: '/operations/training',
+        icon: BookOpenCheck,
+    },
+    {
+        title: 'QA & Scores',
+        url: '/operations/quality-assurance',
+        icon: ShieldCheck,
     },
 ];
 
 export function AppSidebar() {
     return (
-        <Sidebar collapsible="icon" variant="inset">
+        <Sidebar
+            collapsible="icon"
+            variant="inset"
+            className="[--sidebar-accent-foreground:#fff8e7] [--sidebar-accent:#4a351d] [--sidebar-background:#2f2112] [--sidebar-border:#563c20] [--sidebar-foreground:#fff8e7] [--sidebar-primary-foreground:#3b2915] [--sidebar-primary:#ffc83d]"
+        >
             <SidebarHeader>
                 <SidebarMenu>
                     <SidebarMenuItem>
@@ -44,11 +71,23 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                <NavMain items={mainNavItems} />
+                <NavMain items={mainNavItems} label="Operations" />
+                <NavMain items={qualityNavItems} label="Learning & Quality" />
             </SidebarContent>
 
             <SidebarFooter>
-                <NavFooter items={footerNavItems} className="mt-auto" />
+                <SidebarGroup className="px-2 py-0">
+                    <SidebarMenu>
+                        <SidebarMenuItem>
+                            <SidebarMenuButton asChild>
+                                <Link href="/operations/settings" prefetch>
+                                    <Settings />
+                                    <span>Settings</span>
+                                </Link>
+                            </SidebarMenuButton>
+                        </SidebarMenuItem>
+                    </SidebarMenu>
+                </SidebarGroup>
                 <NavUser />
             </SidebarFooter>
         </Sidebar>

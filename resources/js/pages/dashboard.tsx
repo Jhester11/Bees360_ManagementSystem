@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePoll } from '@inertiajs/react';
 import {
     ArrowRight,
     BarChart3,
@@ -19,26 +19,37 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
-export type TimeBasis = 'ph' | 'cst';
-
 export type ReportRecord = {
-    month: string;
     date: string;
     dateLabel: string;
     processor: string;
-    ph: number;
-    cst: number;
-    accuracy: number;
+    reports: number;
+    generalExterior: number;
+    fourPoint: number;
+};
+
+type DashboardProps = {
+    showReportRange?: boolean;
+    reportRecords: ReportRecord[];
+    processorNames: string[];
+    reportRange: { first: string | null; latest: string | null };
+    overview: {
+        totalReports: number;
+        weeklyReports: number;
+        activeProcessors: number;
+        generalExterior: number;
+        fourPoint: number;
+        activeSource: number;
+        closedSource: number;
+        weekStart: string;
+        weekEnd: string;
+        weeklyChart: { day: string; date: string; reports: number }[];
+        topProcessor: { name: string; reports: number } | null;
+        topProcessors: { name: string; batch: number; reports: number; generalExterior: number; fourPoint: number }[];
+    };
 };
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Operations dashboard', href: '/dashboard' }];
-
-export const months = Array.from({ length: 12 }, (_, monthIndex) => ({
-    value: `2026-${String(monthIndex + 1).padStart(2, '0')}`,
-    label: new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(2026, monthIndex, 1))),
-}));
-
-export const processorNames = ['Maria Santos', 'Jordan Lee', 'Aisha Rahman', 'Don Santos'];
 
 export function philippinesDate() {
     const parts = new Intl.DateTimeFormat('en-CA', {
@@ -53,39 +64,6 @@ export function philippinesDate() {
 }
 
 export const philippinesToday = philippinesDate();
-export const philippinesMonthStart = `${philippinesToday.slice(0, 8)}01`;
-
-const weeklyFinished = [
-    { day: 'Mon', reports: 42 },
-    { day: 'Tue', reports: 56 },
-    { day: 'Wed', reports: 49 },
-    { day: 'Thu', reports: 68 },
-    { day: 'Fri', reports: 63 },
-    { day: 'Sat', reports: 31 },
-    { day: 'Sun', reports: 38 },
-];
-
-// Mock records only. These will be replaced by report records when the data source is ready.
-export const sampleRecords: ReportRecord[] = months.flatMap((month, monthIndex) =>
-    Array.from({ length: new Date(Date.UTC(2026, monthIndex + 1, 0)).getUTCDate() }, (_, dayIndex) =>
-        processorNames.map((processor, processorIndex) => {
-            const date = `${month.value}-${String(dayIndex + 1).padStart(2, '0')}`;
-            const ph = 18 + processorIndex * 2 + ((dayIndex * 7 + monthIndex * 3 + processorIndex * 5) % 17);
-
-            return {
-                month: month.value,
-                date,
-                dateLabel: new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
-                    new Date(`${date}T00:00:00Z`),
-                ),
-                processor,
-                ph,
-                cst: ph - ((dayIndex + processorIndex + monthIndex) % 3 === 0 ? 2 : 1),
-                accuracy: 94 + ((dayIndex * 3 + monthIndex * 2 + processorIndex * 4) % 58) / 10,
-            };
-        }),
-    ).flat(),
-);
 
 function reportStatus(total: number) {
     if (total < 25) return { label: 'Under delivered', className: 'bg-[#fde1e2] text-[#a5474b]' };
@@ -245,12 +223,14 @@ export function BeesDatePicker({
     );
 }
 
-export default function Dashboard({ showReportRange = false }: { showReportRange?: boolean }) {
-    const [startDate, setStartDate] = useState(philippinesMonthStart);
-    const [endDate, setEndDate] = useState(philippinesToday);
+export default function Dashboard({ showReportRange = false, reportRecords, processorNames, reportRange, overview }: DashboardProps) {
+    usePoll(30_000, { only: ['reportRecords', 'processorNames', 'reportRange', 'overview'] });
+
+    const referenceDate = reportRange.latest ?? philippinesToday;
+    const [startDate, setStartDate] = useState(`${referenceDate.slice(0, 8)}01`);
+    const [endDate, setEndDate] = useState(referenceDate);
     const [selectedProcessor, setSelectedProcessor] = useState(showReportRange ? '' : 'all');
     const [appliedProcessor, setAppliedProcessor] = useState(showReportRange ? '' : 'all');
-    const [timeBasis, setTimeBasis] = useState<TimeBasis>('ph');
     const [greeting, setGreeting] = useState(philippineGreeting);
 
     useEffect(() => {
@@ -261,28 +241,27 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
 
     const visibleRecords = useMemo(
         () =>
-            sampleRecords.filter(
+            reportRecords.filter(
                 (record) =>
                     record.date >= startDate &&
                     record.date <= endDate &&
                     (!showReportRange || (appliedProcessor !== '' && (appliedProcessor === 'all' || record.processor === appliedProcessor))),
             ),
-        [appliedProcessor, endDate, showReportRange, startDate],
+        [appliedProcessor, endDate, reportRecords, showReportRange, startDate],
     );
 
     const dashboardData = useMemo(() => {
         const daily = new Map<string, { date: string; dateLabel: string; reports: number }>();
-        const processors = new Map<string, { completed: number; accuracyTotal: number; recordCount: number }>();
+        const processors = new Map<string, { completed: number; generalExterior: number; fourPoint: number }>();
 
         visibleRecords.forEach((record) => {
-            const count = record[timeBasis];
             const currentDaily = daily.get(record.date) ?? { date: record.date, dateLabel: record.dateLabel, reports: 0 };
-            currentDaily.reports += count;
+            currentDaily.reports += record.reports;
             daily.set(record.date, currentDaily);
-            const processor = processors.get(record.processor) ?? { completed: 0, accuracyTotal: 0, recordCount: 0 };
-            processor.completed += count;
-            processor.accuracyTotal += record.accuracy;
-            processor.recordCount += 1;
+            const processor = processors.get(record.processor) ?? { completed: 0, generalExterior: 0, fourPoint: 0 };
+            processor.completed += record.reports;
+            processor.generalExterior += record.generalExterior;
+            processor.fourPoint += record.fourPoint;
             processors.set(record.processor, processor);
         });
 
@@ -290,24 +269,24 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
         const rankedProcessors = Array.from(processors, ([name, processor]) => ({
             name,
             completed: processor.completed,
-            accuracy: processor.recordCount ? processor.accuracyTotal / processor.recordCount : 0,
+            generalExterior: processor.generalExterior,
+            fourPoint: processor.fourPoint,
         })).sort((a, b) => b.completed - a.completed);
-        const total = visibleRecords.reduce((sum, record) => sum + record[timeBasis], 0);
-        const averageAccuracy = visibleRecords.length ? visibleRecords.reduce((sum, record) => sum + record.accuracy, 0) / visibleRecords.length : 0;
+        const total = visibleRecords.reduce((sum, record) => sum + record.reports, 0);
 
         return {
             dailyReports,
             rankedProcessors,
             total,
             average: dailyReports.length ? Math.round(total / dailyReports.length) : 0,
-            averageAccuracy,
+            generalExterior: visibleRecords.reduce((sum, record) => sum + record.generalExterior, 0),
+            fourPoint: visibleRecords.reduce((sum, record) => sum + record.fourPoint, 0),
             delivered: dailyReports.filter((report) => report.label === 'Delivered').length,
             underDelivered: dailyReports.filter((report) => report.label === 'Under delivered').length,
             overDelivered: dailyReports.filter((report) => report.label === 'Over delivered').length,
         };
-    }, [timeBasis, visibleRecords]);
+    }, [visibleRecords]);
 
-    const timezoneLabel = timeBasis === 'ph' ? 'PH Time (UTC+8)' : 'CST Time (UTC-6)';
     const topProcessor = dashboardData.rankedProcessors[0];
     const reportRangeBreadcrumbs: BreadcrumbItem[] = [
         { title: 'Operations dashboard', href: '/dashboard' },
@@ -327,8 +306,8 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                             <p className="mt-2 text-sm text-[#776a57]">A high-level view of the Bees360 workspace.</p>
                         </div>
                         <span className="inline-flex w-fit items-center gap-2 rounded-full border border-[#eed8a9] bg-[#fff5dc] px-3 py-1.5 text-xs font-semibold text-[#936000]">
-                            <span className="size-2 rounded-full bg-[#e29a17]" />
-                            Sample dashboard data
+                            <span className="size-2 rounded-full bg-[#4a9a55]" />
+                            {reportRange.latest ? `Live data through ${formatDate(reportRange.latest)}` : 'No report data imported'}
                         </span>
                     </section>
 
@@ -336,22 +315,22 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                         {[
                             {
                                 label: 'Reports polished this week',
-                                value: '347',
-                                note: '12.8% above last week',
+                                value: overview.weeklyReports.toLocaleString(),
+                                note: `${formatDate(overview.weekStart)} – ${formatDate(overview.weekEnd)}`,
                                 icon: FileCheck2,
                                 tone: 'bg-[#fff0c9] text-[#a96300]',
                             },
                             {
                                 label: 'Total reports',
-                                value: '2,846',
-                                note: 'Across all report statuses',
+                                value: overview.totalReports.toLocaleString(),
+                                note: 'Deduplicated imported reports',
                                 icon: Files,
                                 tone: 'bg-[#ffeadf] text-[#b34d10]',
                             },
                             {
-                                label: 'Total users',
-                                value: '186',
-                                note: '14 new users this month',
+                                label: 'Active processors',
+                                value: overview.activeProcessors.toLocaleString(),
+                                note: 'Processors found in imported data',
                                 icon: UsersRound,
                                 tone: 'bg-[#e6f5e5] text-[#28703c]',
                             },
@@ -378,16 +357,19 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                             <div className="flex items-start justify-between gap-4">
                                 <div>
                                     <h2 className="text-lg font-bold tracking-tight text-[#342615]">Reports finished this week</h2>
-                                    <p className="mt-1 text-sm text-[#806f59]">Daily completed reports across the operations team</p>
+                                    <p className="mt-1 text-sm text-[#806f59]">
+                                        Real-time totals for {formatDate(overview.weekStart)} – {formatDate(overview.weekEnd)}
+                                    </p>
                                 </div>
                                 <div className="rounded-lg bg-[#fff1cc] px-3 py-2 text-right">
                                     <p className="text-xs font-medium text-[#8b620f]">Weekly total</p>
-                                    <p className="text-lg font-bold text-[#694400]">347</p>
+                                    <p className="text-lg font-bold text-[#694400]">{overview.weeklyReports.toLocaleString()}</p>
+                                    <p className="text-[10px] font-semibold text-[#9b762f]">Refreshes every 30 sec</p>
                                 </div>
                             </div>
                             <div className="mt-6 h-64">
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <AreaChart data={weeklyFinished} margin={{ top: 10, right: 4, left: -20, bottom: 0 }}>
+                                    <AreaChart data={overview.weeklyChart} margin={{ top: 10, right: 4, left: -20, bottom: 0 }}>
                                         <defs>
                                             <linearGradient id="bees360WeeklyGradient" x1="0" x2="0" y1="0" y2="1">
                                                 <stop offset="0%" stopColor="#e5a51e" stopOpacity={0.35} />
@@ -414,22 +396,20 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                         </article>
 
                         <article className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-6 shadow-[0_8px_30px_rgb(88,57,18,0.05)]">
-                            <p className="text-sm font-bold tracking-[0.16em] text-[#9d650c] uppercase">Quality snapshot</p>
-                            <h2 className="mt-2 text-lg font-bold tracking-tight text-[#342615]">Total accuracy</h2>
-                            <div className="mt-7 flex items-center gap-5">
-                                <div className="grid size-28 place-items-center rounded-full bg-[conic-gradient(#d9900e_0deg_350deg,#f2e3c7_350deg_360deg)] p-2">
-                                    <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#fffdf8] text-center">
-                                        <span className="text-2xl font-bold tracking-tight text-[#342615]">97.2%</span>
-                                        <span className="text-[10px] font-bold tracking-wide text-[#887760] uppercase">Accuracy</span>
-                                    </div>
+                            <p className="text-sm font-bold tracking-[0.16em] text-[#9d650c] uppercase">Report mix</p>
+                            <h2 className="mt-2 text-lg font-bold tracking-tight text-[#342615]">Imported categories</h2>
+                            <div className="mt-6 grid gap-3">
+                                <div className="flex items-center justify-between rounded-xl bg-[#fff4d8] px-4 py-3">
+                                    <span className="text-sm font-semibold text-[#6d5735]">General Exterior</span>
+                                    <span className="text-xl font-bold text-[#a96300]">{overview.generalExterior.toLocaleString()}</span>
                                 </div>
-                                <div className="min-w-0">
-                                    <p className="font-bold text-[#40301c]">On target</p>
-                                    <p className="mt-1 text-sm leading-5 text-[#806f59]">Based on the current sample quality reviews.</p>
+                                <div className="flex items-center justify-between rounded-xl bg-[#f1ebff] px-4 py-3">
+                                    <span className="text-sm font-semibold text-[#6d5735]">4-Point</span>
+                                    <span className="text-xl font-bold text-[#7440a2]">{overview.fourPoint.toLocaleString()}</span>
                                 </div>
                             </div>
-                            <div className="mt-7 rounded-xl bg-[#eff7ea] px-4 py-3 text-sm font-semibold text-[#3d703a]">
-                                +1.4% compared with last week
+                            <div className="mt-4 rounded-xl bg-[#eff7ea] px-4 py-3 text-sm font-semibold text-[#3d703a]">
+                                {overview.closedSource.toLocaleString()} Closed · {overview.activeSource.toLocaleString()} Active
                             </div>
                         </article>
                     </section>
@@ -456,16 +436,47 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                         <article className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-6 shadow-[0_8px_30px_rgb(88,57,18,0.05)]">
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <h2 className="text-lg font-bold tracking-tight text-[#342615]">This week’s lead</h2>
-                                    <p className="mt-1 text-sm text-[#806f59]">Top report processor</p>
+                                    <h2 className="text-lg font-bold tracking-tight text-[#342615]">Top performers</h2>
+                                    <p className="mt-1 text-sm text-[#806f59]">Current-week processor leaderboard</p>
                                 </div>
                                 <Trophy className="size-6 text-[#d59111]" />
                             </div>
-                            <p className="mt-7 text-2xl font-bold tracking-tight text-[#342615]">Maria Santos</p>
-                            <p className="mt-1 text-sm text-[#806f59]">128 reports finished</p>
-                            <div className="mt-6 h-2 overflow-hidden rounded-full bg-[#f6ead8]">
-                                <div className="h-full w-[86%] rounded-full bg-[#d9900e]" />
-                            </div>
+                            {overview.topProcessors.length ? (
+                                <ol className="mt-5 grid gap-3">
+                                    {overview.topProcessors.map((processor, index) => (
+                                        <li key={processor.name} className="rounded-xl border border-[#f0e5d4] bg-[#fffaf1] p-3">
+                                            <div className="flex items-center gap-3">
+                                                <span
+                                                    className={`grid size-8 shrink-0 place-items-center rounded-full text-xs font-extrabold ${index === 0 ? 'bg-[#f3c95d] text-[#624000]' : 'bg-[#f3e8d6] text-[#806f59]'}`}
+                                                >
+                                                    {index + 1}
+                                                </span>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="truncate text-sm font-bold text-[#4a3821]">{processor.name}</p>
+                                                    <p className="text-xs text-[#91816a]">
+                                                        Batch {processor.batch} · {processor.generalExterior} GE · {processor.fourPoint} 4PT
+                                                    </p>
+                                                </div>
+                                                <span className="text-sm font-extrabold whitespace-nowrap text-[#a96300]">
+                                                    {processor.reports.toLocaleString()}
+                                                </span>
+                                            </div>
+                                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#f6ead8]">
+                                                <div
+                                                    className="h-full rounded-full bg-[#d9900e]"
+                                                    style={{
+                                                        width: `${Math.max(8, (processor.reports / (overview.topProcessors[0]?.reports || 1)) * 100)}%`,
+                                                    }}
+                                                />
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ol>
+                            ) : (
+                                <div className="mt-5 rounded-xl border border-dashed border-[#dfc58f] bg-[#fffaf1] px-4 py-8 text-center text-sm text-[#806f59]">
+                                    No reports have been imported for the current week.
+                                </div>
+                            )}
                         </article>
                     </section>
                 </div>
@@ -482,11 +493,11 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                     <div>
                         <p className="text-sm font-bold tracking-[0.18em] text-[#b26a00] uppercase">Operations overview</p>
                         <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#342615]">MTD report performance</h1>
-                        <p className="mt-2 text-sm text-[#776a57]">Choose a start and end date to monitor team activity in PH Time or CST Time.</p>
+                        <p className="mt-2 text-sm text-[#776a57]">Choose a date range and processor to review imported report production.</p>
                     </div>
                     <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[#eed8a9] bg-[#fff5dc] px-3 py-1.5 text-xs font-semibold text-[#936000]">
-                        <span className="size-2 rounded-full bg-[#e29a17]" />
-                        Sample dashboard data
+                        <span className="size-2 rounded-full bg-[#4a9a55]" />
+                        {reportRange.latest ? `Live data through ${formatDate(reportRange.latest)}` : 'No report data imported'}
                     </div>
                 </section>
 
@@ -502,7 +513,7 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                                     id="report-start-date"
                                     label="Start date"
                                     value={startDate}
-                                    min="2026-01-01"
+                                    min={reportRange.first ?? undefined}
                                     max={endDate}
                                     onChange={(date) => {
                                         setStartDate(date);
@@ -517,7 +528,7 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                                     label="End date"
                                     value={endDate}
                                     min={startDate}
-                                    max={philippinesToday}
+                                    max={reportRange.latest ?? philippinesToday}
                                     onChange={setEndDate}
                                 />
                             </div>
@@ -550,28 +561,12 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                         </div>
 
                         <div className="grid gap-2">
-                            <span className="text-sm font-bold text-[#5d4830]">Reporting time</span>
-                            <div className="flex rounded-xl border border-[#e2d1b8] bg-[#fffaf1] p-1">
-                                <Button
-                                    type="button"
-                                    onClick={() => setTimeBasis('ph')}
-                                    className={`h-9 rounded-lg px-4 text-sm font-bold ${timeBasis === 'ph' ? 'bg-[#b96c00] text-white hover:bg-[#925400]' : 'bg-transparent text-[#806f59] hover:bg-[#fff0d1]'}`}
-                                >
-                                    PH Time
-                                </Button>
-                                <Button
-                                    type="button"
-                                    onClick={() => setTimeBasis('cst')}
-                                    className={`h-9 rounded-lg px-4 text-sm font-bold ${timeBasis === 'cst' ? 'bg-[#b96c00] text-white hover:bg-[#925400]' : 'bg-transparent text-[#806f59] hover:bg-[#fff0d1]'}`}
-                                >
-                                    CST Time
-                                </Button>
-                            </div>
+                            <span className="text-sm font-bold text-[#5d4830]">Apply selection</span>
                             <Button
                                 type="button"
                                 disabled={!selectedProcessor}
                                 onClick={() => setAppliedProcessor(selectedProcessor)}
-                                className="mt-2 h-10 w-full gap-2 rounded-xl bg-[#b96c00] text-sm font-bold text-white hover:bg-[#925400] disabled:bg-[#d5b87c]"
+                                className="h-11 w-full gap-2 rounded-xl bg-[#b96c00] text-sm font-bold text-white hover:bg-[#925400] disabled:bg-[#d5b87c]"
                             >
                                 <BarChart3 className="size-4" />
                                 Compare periods
@@ -581,20 +576,26 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                     <p className="mt-4 flex items-center gap-2 text-xs text-[#887760]">
                         <Clock3 className="size-3.5 text-[#b26a00]" />
                         {appliedProcessor
-                            ? `Showing ${appliedProcessor === 'all' ? 'all processors' : appliedProcessor} from ${startDate} to ${endDate} based on ${timezoneLabel}.`
+                            ? `Showing ${appliedProcessor === 'all' ? 'all processors' : appliedProcessor} from ${startDate} to ${endDate}.`
                             : 'Select a processor and click Compare periods to view MTD data.'}
                     </p>
                 </section>
 
-                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
                     {[
                         { label: 'Reports polished', value: dashboardData.total, icon: FileCheck2, tone: 'bg-[#fff0c9] text-[#a96300]' },
                         { label: 'Average per day', value: dashboardData.average, icon: BarChart3, tone: 'bg-[#ffeadf] text-[#b34d10]' },
                         {
-                            label: 'Processor accuracy',
-                            value: `${dashboardData.averageAccuracy.toFixed(1)}%`,
+                            label: 'General Exterior',
+                            value: dashboardData.generalExterior,
                             icon: FileCheck2,
                             tone: 'bg-[#e6f5e5] text-[#28703c]',
+                        },
+                        {
+                            label: '4-Point',
+                            value: dashboardData.fourPoint,
+                            icon: FileCheck2,
+                            tone: 'bg-[#f1ebff] text-[#7440a2]',
                         },
                         { label: 'Top processor', value: topProcessor?.name ?? '—', icon: Trophy, tone: 'bg-[#e6f5e5] text-[#28703c]' },
                         {
@@ -615,7 +616,7 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                                 </div>
                                 <p className="mt-4 text-sm font-medium text-[#806f59]">{metric.label}</p>
                                 <p className="mt-1 truncate text-2xl font-bold tracking-tight text-[#342615]">{metric.value}</p>
-                                <p className="mt-2 text-xs text-[#9a8a72]">{timezoneLabel}</p>
+                                <p className="mt-2 text-xs text-[#9a8a72]">Imported report data</p>
                             </article>
                         );
                     })}
@@ -654,7 +655,7 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                                             borderRadius: '12px',
                                             boxShadow: '0 8px 24px rgba(88, 57, 18, 0.12)',
                                         }}
-                                        formatter={(value) => [`${value} reports`, timezoneLabel]}
+                                        formatter={(value) => [`${value} reports`, 'Completed']}
                                         labelStyle={{ color: '#5d4830', fontWeight: 700 }}
                                     />
                                     <Area type="monotone" dataKey="reports" stroke="#c87c00" strokeWidth={3} fill="url(#bees360RangeGradient)" />
@@ -665,7 +666,7 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
 
                     <article className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5 shadow-[0_8px_30px_rgb(88,57,18,0.05)] sm:p-6">
                         <h2 className="text-lg font-bold tracking-tight text-[#342615]">Delivery status</h2>
-                        <p className="mt-1 text-sm text-[#806f59]">Daily totals compared with the sample target</p>
+                        <p className="mt-1 text-sm text-[#806f59]">Daily totals grouped by output level</p>
                         <div className="mt-6 grid gap-3">
                             {[
                                 { label: 'Under delivered', value: dashboardData.underDelivered, className: 'bg-[#fde1e2] text-[#a5474b]' },
@@ -681,7 +682,7 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                             ))}
                         </div>
                         <div className="mt-6 rounded-xl bg-[#fff8e8] p-4 text-sm leading-6 text-[#75613d]">
-                            <span className="font-bold">Sample targets:</span> Under 25, Delivered 25–31, Over 31 reports per day.
+                            <span className="font-bold">Output levels:</span> Under 25, Delivered 25–31, Over 31 reports per day.
                         </div>
                     </article>
                 </section>
@@ -691,7 +692,7 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                         <div className="border-b border-[#f0e5d4] p-5 sm:p-6">
                             <h2 className="text-lg font-bold tracking-tight text-[#342615]">Daily report log</h2>
                             <p className="mt-1 text-sm text-[#806f59]">
-                                {appliedProcessor === 'all' ? 'All processors' : appliedProcessor || 'No processor selected'} · {timezoneLabel}
+                                {appliedProcessor === 'all' ? 'All processors' : appliedProcessor || 'No processor selected'}
                             </p>
                         </div>
                         <div className="overflow-x-auto">
@@ -719,7 +720,7 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                                     ) : (
                                         <tr>
                                             <td colSpan={3} className="px-5 py-8 text-center text-sm text-[#806f59]">
-                                                No sample report records are available for this date and processor selection.
+                                                No imported report records are available for this date and processor selection.
                                             </td>
                                         </tr>
                                     )}
@@ -730,7 +731,7 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
 
                     <article className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5 shadow-[0_8px_30px_rgb(88,57,18,0.05)] sm:p-6">
                         <h2 className="text-lg font-bold tracking-tight text-[#342615]">Processor leaderboard</h2>
-                        <p className="mt-1 text-sm text-[#806f59]">Finished reports and sample accuracy for the selected date range</p>
+                        <p className="mt-1 text-sm text-[#806f59]">Finished reports by category for the selected date range</p>
                         <ol className="mt-6 grid gap-3">
                             {dashboardData.rankedProcessors.slice(0, 3).map((processor, index) => (
                                 <li key={processor.name} className="flex items-center gap-3 rounded-xl border border-[#f0e5d4] p-3">
@@ -741,8 +742,8 @@ export default function Dashboard({ showReportRange = false }: { showReportRange
                                         <p className="truncate text-sm font-bold text-[#4a3821]">{processor.name}</p>
                                         <p className="text-xs text-[#91816a]">{processor.completed} reports finished</p>
                                     </div>
-                                    <span className="rounded-full bg-[#e6f5e5] px-2.5 py-1 text-xs font-bold text-[#28703c]">
-                                        {processor.accuracy.toFixed(1)}%
+                                    <span className="text-xs font-semibold whitespace-nowrap text-[#806f59]">
+                                        {processor.generalExterior} GE · {processor.fourPoint} 4PT
                                     </span>
                                     {index === 0 && <Trophy className="size-5 text-[#d59111]" aria-label="First place" />}
                                 </li>

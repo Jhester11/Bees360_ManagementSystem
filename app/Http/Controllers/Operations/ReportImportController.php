@@ -14,6 +14,8 @@ use Inertia\Response;
 
 class ReportImportController extends Controller
 {
+    private const UPSERT_CHUNK_SIZE = 1000;
+
     private const PROCESSORS = [
         1 => ['Christer John C. Gozon', 'Lourdes M. Completado', 'Elacio M. Santos Jr.', 'Jhun Cervantes', 'Reginald King Palo'],
         2 => ['Allan Layug', 'Arianne Joy Lopez', 'Emma Alegre', 'Marie Anthonette Moog', 'Mc Oliver Noble', 'Rheven Violet Aladin', 'Wengmir A. Africa'],
@@ -88,11 +90,13 @@ class ReportImportController extends Controller
             ->values();
 
         DB::transaction(function () use ($records): void {
-            ReportEntry::upsert(
-                $records->all(),
-                ['source', 'project_id', 'report_date', 'processor_name', 'inspection_type'],
-                ['batch', 'insured_by', 'report_category', 'assembled_at', 'updated_at'],
-            );
+            $records->chunk(self::UPSERT_CHUNK_SIZE)->each(function ($chunk): void {
+                ReportEntry::upsert(
+                    $chunk->all(),
+                    ['source', 'project_id', 'report_date', 'processor_name', 'inspection_type'],
+                    ['batch', 'insured_by', 'report_category', 'assembled_at', 'updated_at'],
+                );
+            });
         });
 
         return to_route('operations.reports')->with('importSummary', [

@@ -1,19 +1,12 @@
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
-import {
-    BeesDatePicker,
-    formatDate,
-    philippinesMonthStart,
-    philippinesToday,
-    processorNames,
-    sampleRecords,
-    type TimeBasis,
-} from '@/pages/dashboard';
+import { BeesDatePicker, formatDate, philippinesToday, type ReportRecord } from '@/pages/dashboard';
 import { type BreadcrumbItem } from '@/types';
 import { Head } from '@inertiajs/react';
-import { ArrowDownRight, ArrowUpRight, BarChart3, CalendarDays, Clock3, Equal, GitCompareArrows, UsersRound } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, BarChart3, CalendarDays, Download, Equal, GitCompareArrows, UsersRound } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import * as XLSX from 'xlsx-js-style';
 
 type DateRange = {
     start: string;
@@ -30,50 +23,67 @@ function rangeLabel(range: DateRange) {
 }
 
 function deliveryStatus(total: number) {
-    if (total < 25) return { label: 'Under delivered', className: 'bg-[#fde1e2] text-[#a5474b]' };
-    if (total > 31) return { label: 'Over delivered', className: 'bg-[#e2efd9] text-[#477239]' };
+    if (total < 25) return { label: 'Under delivered', className: 'bg-[#fde1e2] text-[#a5474b]', excelFill: 'FDE1E2', excelText: 'A5474B' };
+    if (total > 31) return { label: 'Over delivered', className: 'bg-[#e2efd9] text-[#477239]', excelFill: 'E2EFD9', excelText: '477239' };
 
-    return { label: 'Delivered', className: 'bg-[#fff0c5] text-[#936000]' };
+    return { label: 'Delivered', className: 'bg-[#fff0c5] text-[#936000]', excelFill: 'FFF0C5', excelText: '936000' };
 }
 
-function calculateRange(range: DateRange, processor: string, timeBasis: TimeBasis) {
-    const records = sampleRecords.filter(
+function calculateRange(records: ReportRecord[], range: DateRange, processor: string) {
+    const filteredRecords = records.filter(
         (record) => record.date >= range.start && record.date <= range.end && (processor === 'all' || record.processor === processor),
     );
-    const daily = new Map<string, { date: string; label: string; total: number }>();
-    const byProcessor = new Map<string, { completed: number; accuracyTotal: number; recordCount: number }>();
+    const daily = new Map<string, { date: string; label: string; generalExterior: number; fourPoint: number; total: number }>();
+    const byProcessor = new Map<string, { completed: number; generalExterior: number; fourPoint: number }>();
 
-    records.forEach((record) => {
-        const amount = record[timeBasis];
-        const currentDay = daily.get(record.date) ?? { date: record.date, label: record.dateLabel, total: 0 };
-        currentDay.total += amount;
+    filteredRecords.forEach((record) => {
+        const currentDay = daily.get(record.date) ?? {
+            date: record.date,
+            label: record.dateLabel,
+            generalExterior: 0,
+            fourPoint: 0,
+            total: 0,
+        };
+        currentDay.generalExterior += record.generalExterior;
+        currentDay.fourPoint += record.fourPoint;
+        currentDay.total += record.reports;
         daily.set(record.date, currentDay);
-        const processorTotals = byProcessor.get(record.processor) ?? { completed: 0, accuracyTotal: 0, recordCount: 0 };
-        processorTotals.completed += amount;
-        processorTotals.accuracyTotal += record.accuracy;
-        processorTotals.recordCount += 1;
+        const processorTotals = byProcessor.get(record.processor) ?? { completed: 0, generalExterior: 0, fourPoint: 0 };
+        processorTotals.completed += record.reports;
+        processorTotals.generalExterior += record.generalExterior;
+        processorTotals.fourPoint += record.fourPoint;
         byProcessor.set(record.processor, processorTotals);
     });
 
     return {
-        total: records.reduce((sum, record) => sum + record[timeBasis], 0),
-        averageAccuracy: records.length ? records.reduce((sum, record) => sum + record.accuracy, 0) / records.length : 0,
+        total: filteredRecords.reduce((sum, record) => sum + record.reports, 0),
+        generalExterior: filteredRecords.reduce((sum, record) => sum + record.generalExterior, 0),
+        fourPoint: filteredRecords.reduce((sum, record) => sum + record.fourPoint, 0),
         days: Array.from(daily.values()),
         byProcessor,
     };
 }
 
-export default function ReportComparison() {
-    const [firstRange, setFirstRange] = useState<DateRange>({ start: philippinesMonthStart, end: philippinesToday });
-    const [secondRange, setSecondRange] = useState<DateRange>({ start: philippinesMonthStart, end: philippinesToday });
+export default function ReportComparison({
+    reportRecords,
+    processorNames,
+    reportRange,
+}: {
+    reportRecords: ReportRecord[];
+    processorNames: string[];
+    reportRange: { first: string | null; latest: string | null };
+}) {
+    const latestDate = reportRange.latest ?? philippinesToday;
+    const monthStart = `${latestDate.slice(0, 8)}01`;
+    const [firstRange, setFirstRange] = useState<DateRange>({ start: monthStart, end: latestDate });
+    const [secondRange, setSecondRange] = useState<DateRange>({ start: monthStart, end: latestDate });
     const [draftFirstRange, setDraftFirstRange] = useState(firstRange);
     const [draftSecondRange, setDraftSecondRange] = useState(secondRange);
     const [selectedProcessor, setSelectedProcessor] = useState('');
     const [appliedProcessor, setAppliedProcessor] = useState('');
-    const [timeBasis, setTimeBasis] = useState<TimeBasis>('ph');
 
-    const firstData = useMemo(() => calculateRange(firstRange, appliedProcessor, timeBasis), [appliedProcessor, firstRange, timeBasis]);
-    const secondData = useMemo(() => calculateRange(secondRange, appliedProcessor, timeBasis), [appliedProcessor, secondRange, timeBasis]);
+    const firstData = useMemo(() => calculateRange(reportRecords, firstRange, appliedProcessor), [appliedProcessor, firstRange, reportRecords]);
+    const secondData = useMemo(() => calculateRange(reportRecords, secondRange, appliedProcessor), [appliedProcessor, reportRecords, secondRange]);
     const pending =
         firstRange.start !== draftFirstRange.start ||
         firstRange.end !== draftFirstRange.end ||
@@ -84,22 +94,192 @@ export default function ReportComparison() {
     const processorRows = processorNames
         .filter((name) => appliedProcessor === 'all' || name === appliedProcessor)
         .map((name) => {
-            const first = firstData.byProcessor.get(name) ?? { completed: 0, accuracyTotal: 0, recordCount: 0 };
-            const second = secondData.byProcessor.get(name) ?? { completed: 0, accuracyTotal: 0, recordCount: 0 };
-            const firstAccuracy = first.recordCount ? first.accuracyTotal / first.recordCount : 0;
-            const secondAccuracy = second.recordCount ? second.accuracyTotal / second.recordCount : 0;
+            const first = firstData.byProcessor.get(name) ?? { completed: 0, generalExterior: 0, fourPoint: 0 };
+            const second = secondData.byProcessor.get(name) ?? { completed: 0, generalExterior: 0, fourPoint: 0 };
 
             return {
                 name,
                 first: first.completed,
                 second: second.completed,
                 difference: first.completed - second.completed,
-                firstAccuracy,
-                secondAccuracy,
-                accuracyDifference: firstAccuracy - secondAccuracy,
+                firstGeneralExterior: first.generalExterior,
+                firstFourPoint: first.fourPoint,
+                secondGeneralExterior: second.generalExterior,
+                secondFourPoint: second.fourPoint,
             };
         });
-    const timezoneLabel = timeBasis === 'ph' ? 'PH Time (UTC+8)' : 'CST Time (UTC-6)';
+
+    function exportComparison() {
+        if (!appliedProcessor) return;
+
+        const headerRow = 4;
+        const firstDataRow = headerRow + 1;
+        const totalRow = firstDataRow + processorRows.length;
+        const worksheet = XLSX.utils.aoa_to_sheet([
+            ['BEES360 | REPORT PERIOD COMPARISON'],
+            [`${appliedProcessor === 'all' ? 'All processors' : appliedProcessor} · ${rangeLabel(firstRange)} vs ${rangeLabel(secondRange)}`],
+            [],
+            ['PROCESSOR', 'PERIOD A', 'A GEN EXT', 'A 4-POINT', 'A TOTAL', 'PERIOD B', 'B GEN EXT', 'B 4-POINT', 'B TOTAL', 'DIFFERENCE'],
+            ...processorRows.map((row) => [
+                row.name,
+                rangeLabel(firstRange),
+                row.firstGeneralExterior,
+                row.firstFourPoint,
+                row.first,
+                rangeLabel(secondRange),
+                row.secondGeneralExterior,
+                row.secondFourPoint,
+                row.second,
+                row.difference,
+            ]),
+            [
+                'COMPARISON TOTAL',
+                '',
+                firstData.generalExterior,
+                firstData.fourPoint,
+                firstData.total,
+                '',
+                secondData.generalExterior,
+                secondData.fourPoint,
+                secondData.total,
+                difference,
+            ],
+        ]) as XLSX.WorkSheet;
+        const titleStyle = {
+            alignment: { horizontal: 'center', vertical: 'center' },
+            font: { name: 'Century Gothic', sz: 10, bold: true, color: { rgb: 'FFF8E7' } },
+            fill: { fgColor: { rgb: '4A351D' } },
+        };
+        const subtitleStyle = {
+            alignment: { horizontal: 'center', vertical: 'center' },
+            font: { name: 'Century Gothic', sz: 10, bold: true, color: { rgb: '805C24' } },
+            fill: { fgColor: { rgb: 'FFF1CC' } },
+        };
+        const headerStyle = {
+            alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+            font: { name: 'Century Gothic', sz: 10, bold: true, color: { rgb: 'FFF8E7' } },
+            fill: { fgColor: { rgb: '3B2915' } },
+            border: { bottom: { style: 'thin', color: { rgb: '80603A' } } },
+        };
+        const bodyStyle = {
+            alignment: { vertical: 'center' },
+            font: { name: 'Century Gothic', sz: 10, color: { rgb: '4A3821' } },
+            fill: { fgColor: { rgb: 'FFFFFF' } },
+            border: { bottom: { style: 'thin', color: { rgb: 'F0E5D4' } } },
+        };
+        const numberStyle = { ...bodyStyle, alignment: { horizontal: 'center', vertical: 'center' }, numFmt: '#,##0' };
+        const totalStyle = {
+            alignment: { horizontal: 'center', vertical: 'center' },
+            font: { name: 'Century Gothic', sz: 10, bold: true, color: { rgb: '5A3900' } },
+            fill: { fgColor: { rgb: 'FFF0C5' } },
+            border: { top: { style: 'medium', color: { rgb: '4A351D' } } },
+            numFmt: '#,##0',
+        };
+        const finalTotalStyle = { ...totalStyle, fill: { fgColor: { rgb: 'F2CF72' } } };
+        const whiteCellStyle = {
+            font: { name: 'Century Gothic', sz: 10, color: { rgb: '4A3821' } },
+            fill: { fgColor: { rgb: 'FFFFFF' } },
+        };
+
+        for (let row = 1; row <= totalRow; row += 1) {
+            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) {
+                const address = `${column}${row}`;
+                worksheet[address] ??= { t: 's', v: '' };
+                worksheet[address].s = whiteCellStyle;
+            }
+        }
+
+        worksheet['!merges'] = [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } },
+            { s: { r: 1, c: 0 }, e: { r: 1, c: 9 } },
+            { s: { r: totalRow - 1, c: 0 }, e: { r: totalRow - 1, c: 1 } },
+        ];
+        worksheet['!cols'] = [
+            { wch: 29 },
+            { wch: 25 },
+            { wch: 13 },
+            { wch: 13 },
+            { wch: 12 },
+            { wch: 25 },
+            { wch: 13 },
+            { wch: 13 },
+            { wch: 12 },
+            { wch: 13 },
+        ];
+        worksheet['!rows'] = [{ hpt: 27 }, { hpt: 20 }, { hpt: 8 }, { hpt: 28 }];
+        worksheet.A1.s = titleStyle;
+        worksheet.A2.s = subtitleStyle;
+
+        for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) worksheet[`${column}${headerRow}`].s = headerStyle;
+        processorRows.forEach((_, index) => {
+            const rowNumber = firstDataRow + index;
+            worksheet[`A${rowNumber}`].s = bodyStyle;
+            for (const column of ['B', 'F'])
+                worksheet[`${column}${rowNumber}`].s = { ...bodyStyle, alignment: { horizontal: 'center', vertical: 'center' } };
+            for (const column of ['C', 'D', 'E', 'G', 'H', 'I', 'J']) worksheet[`${column}${rowNumber}`].s = numberStyle;
+        });
+        for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']) worksheet[`${column}${totalRow}`].s = totalStyle;
+        worksheet[`J${totalRow}`].s = finalTotalStyle;
+        worksheet['!freeze'] = { xSplit: 0, ySplit: headerRow, topLeftCell: `A${firstDataRow}`, activePane: 'bottomLeft', state: 'frozen' };
+
+        function dailyWorksheet(
+            period: string,
+            range: DateRange,
+            days: { date: string; label: string; generalExterior: number; fourPoint: number; total: number }[],
+            totals: { generalExterior: number; fourPoint: number; total: number },
+        ) {
+            const dailyTotalRow = firstDataRow + days.length;
+            const sheet = XLSX.utils.aoa_to_sheet([
+                [`BEES360 | ${period.toUpperCase()} DAILY REPORTS`],
+                [`${appliedProcessor === 'all' ? 'All processors' : appliedProcessor} · ${rangeLabel(range)}`],
+                [],
+                ['REPORT DATE', 'GEN EXT', '4-POINT', 'TOTAL', 'STATUS'],
+                ...days.map((day) => [formatDate(day.date), day.generalExterior, day.fourPoint, day.total, deliveryStatus(day.total).label]),
+                ['PERIOD TOTAL', totals.generalExterior, totals.fourPoint, totals.total, ''],
+            ]) as XLSX.WorkSheet;
+
+            for (let row = 1; row <= dailyTotalRow; row += 1) {
+                for (const column of ['A', 'B', 'C', 'D', 'E']) {
+                    const address = `${column}${row}`;
+                    sheet[address] ??= { t: 's', v: '' };
+                    sheet[address].s = whiteCellStyle;
+                }
+            }
+
+            sheet['!merges'] = [
+                { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
+                { s: { r: 1, c: 0 }, e: { r: 1, c: 4 } },
+            ];
+            sheet['!cols'] = [{ wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 14 }, { wch: 20 }];
+            sheet['!rows'] = [{ hpt: 27 }, { hpt: 20 }, { hpt: 8 }, { hpt: 28 }];
+            sheet.A1.s = titleStyle;
+            sheet.A2.s = subtitleStyle;
+            for (const column of ['A', 'B', 'C', 'D', 'E']) sheet[`${column}${headerRow}`].s = headerStyle;
+            days.forEach((day, index) => {
+                const rowNumber = firstDataRow + index;
+                const status = deliveryStatus(day.total);
+                sheet[`A${rowNumber}`].s = { ...bodyStyle, alignment: { horizontal: 'center', vertical: 'center' } };
+                for (const column of ['B', 'C', 'D']) sheet[`${column}${rowNumber}`].s = numberStyle;
+                sheet[`E${rowNumber}`].s = {
+                    ...bodyStyle,
+                    alignment: { horizontal: 'center', vertical: 'center' },
+                    font: { name: 'Century Gothic', sz: 10, bold: true, color: { rgb: status.excelText } },
+                    fill: { fgColor: { rgb: status.excelFill } },
+                };
+            });
+            for (const column of ['A', 'B', 'C', 'D', 'E']) sheet[`${column}${dailyTotalRow}`].s = totalStyle;
+            sheet[`D${dailyTotalRow}`].s = finalTotalStyle;
+            sheet['!freeze'] = { xSplit: 0, ySplit: headerRow, topLeftCell: `A${firstDataRow}`, activePane: 'bottomLeft', state: 'frozen' };
+
+            return sheet;
+        }
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Report Comparison');
+        XLSX.utils.book_append_sheet(workbook, dailyWorksheet('Period A', firstRange, firstData.days, firstData), 'Period A Daily');
+        XLSX.utils.book_append_sheet(workbook, dailyWorksheet('Period B', secondRange, secondData.days, secondData), 'Period B Daily');
+        XLSX.writeFile(workbook, `Bees360_Report_Comparison_${firstRange.start}_vs_${secondRange.start}.xlsx`, { compression: true });
+    }
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -110,14 +290,23 @@ export default function ReportComparison() {
                     <div>
                         <p className="text-sm font-bold tracking-[0.18em] text-[#b26a00] uppercase">Operations reporting</p>
                         <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#342615]">Compare report periods</h1>
-                        <p className="mt-2 max-w-2xl text-sm text-[#776a57]">
-                            Compare any two date ranges, such as January against August, using sample completed-report data.
-                        </p>
+                        <p className="mt-2 max-w-2xl text-sm text-[#776a57]">Compare any two date ranges using your imported Bees360 report data.</p>
                     </div>
-                    <span className="inline-flex w-fit items-center gap-2 rounded-full border border-[#eed8a9] bg-[#fff5dc] px-3 py-1.5 text-xs font-semibold text-[#936000]">
-                        <span className="size-2 rounded-full bg-[#e29a17]" />
-                        Sample comparison data
-                    </span>
+                    <div className="flex flex-wrap items-center gap-3">
+                        <span className="inline-flex w-fit items-center gap-2 rounded-full border border-[#eed8a9] bg-white px-3 py-1.5 text-xs font-semibold text-[#936000]">
+                            <span className="size-2 rounded-full bg-[#4a9a55]" />
+                            {reportRange.latest ? `Live data through ${formatDate(reportRange.latest)}` : 'No report data imported'}
+                        </span>
+                        <Button
+                            type="button"
+                            disabled={!appliedProcessor}
+                            onClick={exportComparison}
+                            className="h-10 gap-2 rounded-xl bg-[#4a351d] px-4 font-bold text-white hover:bg-[#2f2112] disabled:bg-[#c7bba9]"
+                        >
+                            <Download className="size-4" />
+                            Export Excel
+                        </Button>
+                    </div>
                 </section>
 
                 <section className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5 shadow-[0_8px_30px_rgb(88,57,18,0.05)] sm:p-6">
@@ -143,6 +332,7 @@ export default function ReportComparison() {
                                         id={`${title}-start`}
                                         label="Start date"
                                         value={range.start}
+                                        min={reportRange.first ?? undefined}
                                         max={range.end}
                                         onChange={(start) =>
                                             setRange((current) => ({ ...current, start, end: current.end < start ? start : current.end }))
@@ -153,7 +343,7 @@ export default function ReportComparison() {
                                         label="End date"
                                         value={range.end}
                                         min={range.start}
-                                        max={philippinesToday}
+                                        max={reportRange.latest ?? philippinesToday}
                                         onChange={(end) => setRange((current) => ({ ...current, end }))}
                                     />
                                 </div>
@@ -183,27 +373,10 @@ export default function ReportComparison() {
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <div className="grid gap-2">
-                                <span className="text-sm font-bold text-[#5d4830]">Reporting time</span>
-                                <div className="flex rounded-xl border border-[#e2d1b8] bg-white p-1">
-                                    {(['ph', 'cst'] as const).map((basis) => (
-                                        <Button
-                                            key={basis}
-                                            type="button"
-                                            onClick={() => setTimeBasis(basis)}
-                                            className={`h-9 flex-1 rounded-lg px-2 text-xs font-bold ${timeBasis === basis ? 'bg-[#b96c00] text-white hover:bg-[#925400]' : 'bg-transparent text-[#806f59] hover:bg-[#fff0d1]'}`}
-                                        >
-                                            {basis === 'ph' ? 'PH Time' : 'CST Time'}
-                                        </Button>
-                                    ))}
-                                </div>
-                            </div>
                         </div>
                     </div>
                     <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-[#efdbac] pt-4">
-                        <p className="flex items-center gap-2 text-xs text-[#887760]">
-                            <Clock3 className="size-3.5 text-[#b26a00]" /> Data is displayed using {timezoneLabel}.
-                        </p>
+                        <p className="text-xs text-[#887760]">Counts use the report dates stored during Excel import.</p>
                         <Button
                             type="button"
                             disabled={!selectedProcessor || !pending}
@@ -243,14 +416,14 @@ export default function ReportComparison() {
                                     tone: difference >= 0 ? 'bg-[#e6f5e5] text-[#28703c]' : 'bg-[#fde1e2] text-[#a5474b]',
                                 },
                                 {
-                                    label: 'Period A accuracy',
-                                    value: `${firstData.averageAccuracy.toFixed(1)}%`,
+                                    label: 'Period A 4-Point',
+                                    value: firstData.fourPoint,
                                     description: rangeLabel(firstRange),
                                     tone: 'bg-[#e6f5e5] text-[#28703c]',
                                 },
                                 {
-                                    label: 'Period B accuracy',
-                                    value: `${secondData.averageAccuracy.toFixed(1)}%`,
+                                    label: 'Period B 4-Point',
+                                    value: secondData.fourPoint,
                                     description: rangeLabel(secondRange),
                                     tone: 'bg-[#edf0ff] text-[#4958a4]',
                                 },
@@ -274,7 +447,7 @@ export default function ReportComparison() {
                                 <div>
                                     <h2 className="text-lg font-bold tracking-tight text-[#342615]">Processor difference table</h2>
                                     <p className="mt-1 text-sm text-[#806f59]">
-                                        See completed reports, accuracy, and the exact change between the two periods.
+                                        See completed reports, category mix, and the exact change between the two periods.
                                     </p>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
@@ -292,9 +465,8 @@ export default function ReportComparison() {
                                             <th className="px-5 py-3 font-bold">Period A · {rangeLabel(firstRange)}</th>
                                             <th className="px-5 py-3 font-bold">Period B · {rangeLabel(secondRange)}</th>
                                             <th className="px-5 py-3 font-bold">Report difference</th>
-                                            <th className="px-5 py-3 font-bold">A accuracy</th>
-                                            <th className="px-5 py-3 font-bold">B accuracy</th>
-                                            <th className="px-5 py-3 font-bold">Accuracy change</th>
+                                            <th className="px-5 py-3 font-bold">Period A mix</th>
+                                            <th className="px-5 py-3 font-bold">Period B mix</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-[#f1e7d8]">
@@ -318,15 +490,11 @@ export default function ReportComparison() {
                                                         {row.difference}
                                                     </span>
                                                 </td>
-                                                <td className="px-5 py-4 font-semibold text-[#28703c]">{row.firstAccuracy.toFixed(1)}%</td>
-                                                <td className="px-5 py-4 font-semibold text-[#4958a4]">{row.secondAccuracy.toFixed(1)}%</td>
-                                                <td className="px-5 py-4">
-                                                    <span
-                                                        className={`rounded-full px-2.5 py-1 text-xs font-bold ${row.accuracyDifference > 0 ? 'bg-[#e2efd9] text-[#477239]' : row.accuracyDifference < 0 ? 'bg-[#fde1e2] text-[#a5474b]' : 'bg-[#f1ede4] text-[#776a57]'}`}
-                                                    >
-                                                        {row.accuracyDifference > 0 ? '+' : ''}
-                                                        {row.accuracyDifference.toFixed(1)} pts
-                                                    </span>
+                                                <td className="px-5 py-4 font-semibold text-[#28703c]">
+                                                    {row.firstGeneralExterior} GE · {row.firstFourPoint} 4PT
+                                                </td>
+                                                <td className="px-5 py-4 font-semibold text-[#4958a4]">
+                                                    {row.secondGeneralExterior} GE · {row.secondFourPoint} 4PT
                                                 </td>
                                             </tr>
                                         ))}
@@ -353,6 +521,8 @@ export default function ReportComparison() {
                                             <thead className="bg-[#fff8e8] text-xs tracking-wide text-[#806f59] uppercase">
                                                 <tr>
                                                     <th className="px-5 py-3">Date</th>
+                                                    <th className="px-5 py-3">Gen Ext</th>
+                                                    <th className="px-5 py-3">4-Point</th>
                                                     <th className="px-5 py-3">Completed</th>
                                                     <th className="px-5 py-3">Status</th>
                                                 </tr>
@@ -364,6 +534,8 @@ export default function ReportComparison() {
                                                     return (
                                                         <tr key={day.date}>
                                                             <td className="px-5 py-3 font-semibold text-[#4a3821]">{day.label}</td>
+                                                            <td className="px-5 py-3 font-semibold text-[#4a3821]">{day.generalExterior}</td>
+                                                            <td className="px-5 py-3 font-semibold text-[#4a3821]">{day.fourPoint}</td>
                                                             <td className="px-5 py-3 font-bold text-[#4a3821]">{day.total}</td>
                                                             <td className="px-5 py-3">
                                                                 <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${status.className}`}>
@@ -387,7 +559,7 @@ export default function ReportComparison() {
                         </div>
                         <h2 className="mt-4 text-lg font-bold text-[#342615]">Ready to compare periods</h2>
                         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#806f59]">
-                            Select a processor above, choose both reporting periods, then click Compare periods to load the report and accuracy data.
+                            Select a processor above, choose both reporting periods, then click Compare periods to load the imported report data.
                         </p>
                     </section>
                 )}

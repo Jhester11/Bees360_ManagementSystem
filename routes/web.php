@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Operations\DashboardController;
 use App\Http\Controllers\Operations\ReportImportController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -7,17 +8,11 @@ use Inertia\Inertia;
 Route::redirect('/', '/login')->name('home');
 
 Route::middleware(['auth'])->group(function () {
-    Route::get('dashboard', function () {
-        return Inertia::render('dashboard');
-    })->name('dashboard');
+    Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
-    Route::get('operations/mtd', function () {
-        return Inertia::render('dashboard', ['showReportRange' => true]);
-    })->name('operations.mtd');
+    Route::get('operations/mtd', [DashboardController::class, 'mtd'])->name('operations.mtd');
 
-    Route::get('operations/report-comparison', function () {
-        return Inertia::render('operations/report-comparison');
-    })->name('operations.report-comparison');
+    Route::get('operations/report-comparison', [DashboardController::class, 'comparison'])->name('operations.report-comparison');
 
     Route::get('operations/reports', [ReportImportController::class, 'index'])->name('operations.reports');
     Route::post('operations/reports/import', [ReportImportController::class, 'store'])->name('operations.reports.import');

@@ -5,7 +5,7 @@ import { BeesDatePicker, formatDate, philippinesToday } from '@/pages/dashboard'
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, usePage } from '@inertiajs/react';
 import { CalendarDays, CheckCircle2, Database, Download, FileSpreadsheet, Layers3, Moon, PackageCheck, Sun, Upload } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx-js-style';
 
 type ReportType = 'midday' | 'endOfDay';
@@ -106,7 +106,15 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
     const [closedFile, setClosedFile] = useState<File | null>(null);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [isUploading, setIsUploading] = useState(false);
+    const [showImportConfirmation, setShowImportConfirmation] = useState(false);
     const [showSuccessModal, setShowSuccessModal] = useState(() => Boolean(flash?.importSummary));
+
+    useEffect(() => {
+        if (flash?.importSummary) {
+            setShowSuccessModal(true);
+        }
+    }, [flash?.importSummary]);
+
     const hasImportedData = reportEntries.some((entry) => dateKey(entry.report_date) === reportDate);
     const allRows = useMemo(() => {
         const reportRows = processorRoster.map((processor, index) => {
@@ -158,7 +166,7 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
         const firstDataRow = headerRow + 1;
         const totalRow = firstDataRow + allRows.length;
         const worksheet = XLSX.utils.aoa_to_sheet([
-            ['BEES360 | COMBINED DAILY REPORT'],
+            ['BEES360 | DAILY OPERATIONS REPORT'],
             [`${reportLabel} · ${formatDate(reportDate)} · Batch 1, Batch 2 and Batch 3`],
             [],
             ['NAMES', 'N-NAME', 'BATCH', 'DAY', 'GEN EXT', '4-POINT', 'TOTAL'],
@@ -205,6 +213,18 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
             fill: { fgColor: { rgb: 'FFF0C5' } },
         };
         const finalTotalStyle = { ...totalNumberStyle, fill: { fgColor: { rgb: 'F2CF72' } } };
+        const whiteCellStyle = {
+            font: { name: 'Century Gothic', sz: 10, color: { rgb: '4A3821' } },
+            fill: { fgColor: { rgb: 'FFFFFF' } },
+        };
+
+        for (let row = 1; row <= totalRow; row += 1) {
+            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G']) {
+                const address = `${column}${row}`;
+                worksheet[address] ??= { t: 's', v: '' };
+                worksheet[address].s = whiteCellStyle;
+            }
+        }
 
         worksheet['!merges'] = [
             { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
@@ -222,7 +242,8 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
             const rowNumber = firstDataRow + index;
             const rowStyle = index % 2 === 0 ? bodyStyle : alternateStyle;
             worksheet[`A${rowNumber}`].s = rowStyle;
-            for (const column of ['B', 'C', 'D'])
+            worksheet[`B${rowNumber}`].s = { ...rowStyle, alignment: { horizontal: 'left', vertical: 'center' } };
+            for (const column of ['C', 'D'])
                 worksheet[`${column}${rowNumber}`].s = { ...rowStyle, alignment: { horizontal: 'center', vertical: 'center' } };
             for (const column of ['E', 'F'])
                 worksheet[`${column}${rowNumber}`].s = { ...numberStyle, ...(index % 2 === 1 ? { fill: { fgColor: { rgb: 'FFF8E8' } } } : {}) };
@@ -243,11 +264,18 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
         XLSX.writeFile(workbook, `Bees360_Combined_Report_${reportDate}.xlsx`, { compression: true });
     }
 
-    async function importReports() {
+    function confirmImport() {
         if (!activeFile && !closedFile) {
             setUploadError('Choose an Active file, a Closed file, or both before generating the report.');
             return;
         }
+
+        setUploadError(null);
+        setShowImportConfirmation(true);
+    }
+
+    async function importReports() {
+        setShowImportConfirmation(false);
         setUploadError(null);
         setIsUploading(true);
         try {
@@ -271,6 +299,11 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
                                 Object.values(errors).find((message) => typeof message === 'string') ??
                                 'The import could not be saved. Check the workbook and try again.',
                         ),
+                    onSuccess: () => {
+                        setActiveFile(null);
+                        setClosedFile(null);
+                        setShowSuccessModal(true);
+                    },
                     onFinish: () => setIsUploading(false),
                 },
             );
@@ -284,21 +317,57 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Reports" />
             <div className="flex flex-1 flex-col gap-6 bg-[#fffaf1] p-5 md:p-8">
+                <Dialog open={showImportConfirmation} onOpenChange={setShowImportConfirmation}>
+                    <DialogContent className="overflow-hidden border-[#e6c783] bg-[#fffdf8] p-0 sm:max-w-md">
+                        <div className="flex flex-col items-center px-7 pt-8 text-center">
+                            <div className="grid size-20 place-items-center rounded-full border-4 border-[#f4d486] bg-[#fff2c8] text-[#a96000] shadow-[0_0_0_8px_rgb(244,212,134,0.2)]">
+                                <Database className="size-9" />
+                            </div>
+                            <DialogTitle className="mt-6 text-2xl font-extrabold text-[#342615]">Generate and save this report?</DialogTitle>
+                            <DialogDescription className="mt-3 text-sm leading-6 text-[#756448]">
+                                Bees360 will read the selected workbook{activeFile && closedFile ? 's' : ''} and save all valid report rows to the
+                                database.
+                            </DialogDescription>
+                        </div>
+                        <div className="mx-7 grid gap-2 rounded-xl border border-[#f0dfbd] bg-[#fff8e8] p-4 text-sm text-[#654b2d]">
+                            {activeFile && (
+                                <div className="flex items-center justify-between gap-4">
+                                    <span className="font-bold">ACTIVE</span>
+                                    <span className="truncate text-[#806f59]">{activeFile.name}</span>
+                                </div>
+                            )}
+                            {closedFile && (
+                                <div className="flex items-center justify-between gap-4">
+                                    <span className="font-bold">CLOSED</span>
+                                    <span className="truncate text-[#806f59]">{closedFile.name}</span>
+                                </div>
+                            )}
+                        </div>
+                        <DialogFooter className="gap-3 px-7 pt-2 pb-7 sm:gap-3">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="border-[#d8bd8c] text-[#75552d] hover:bg-[#fff4dc]"
+                                onClick={() => setShowImportConfirmation(false)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button type="button" className="bg-[#b96c00] font-bold text-white hover:bg-[#925400]" onClick={importReports}>
+                                Yes, generate & save
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
                 <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
                     <DialogContent className="overflow-hidden border-[#e6c783] bg-[#fffdf8] p-0 sm:max-w-md">
-                        <div className="relative overflow-hidden bg-[#4a351d] px-7 pt-8 pb-7 text-center text-[#fff8e7]">
-                            <span className="absolute top-4 left-7 size-3 animate-ping rounded-full bg-[#f4c950]" />
-                            <span className="absolute top-9 right-12 size-2 animate-pulse rounded-full bg-[#f4c950]" />
-                            <span className="absolute right-7 bottom-5 size-3 animate-ping rounded-full bg-[#e29a17]" />
-                            <div className="relative mx-auto grid size-24 place-items-center rounded-full border-4 border-[#f6d77b] bg-[#fff3ca] shadow-[0_0_0_8px_rgb(255,248,231,0.1)]">
-                                <span className="text-5xl select-none motion-safe:animate-bounce" role="img" aria-label="Celebrating bee">
-                                    🐝
-                                </span>
+                        <div className="flex flex-col items-center px-7 pt-8 text-center">
+                            <div className="grid size-20 place-items-center rounded-full border-4 border-[#9bd4a4] bg-[#eaf8e9] text-[#2e7d42] shadow-[0_0_0_8px_rgb(155,212,164,0.2)]">
+                                <CheckCircle2 className="size-10" strokeWidth={2.5} />
                             </div>
-                            <p className="mt-5 text-xs font-bold tracking-[0.2em] text-[#f6d77b] uppercase">Bees360 report ready</p>
-                            <DialogTitle className="mt-2 text-2xl font-extrabold text-white">Successfully saved!</DialogTitle>
+                            <p className="mt-6 text-xs font-bold tracking-[0.2em] text-[#b26a00] uppercase">Bees360 report ready</p>
+                            <DialogTitle className="mt-2 text-2xl font-extrabold text-[#342615]">Successfully saved!</DialogTitle>
                         </div>
-                        <DialogHeader className="gap-3 px-7 pt-6 text-left">
+                        <DialogHeader className="gap-3 px-7 pt-3 text-center sm:text-center">
                             <DialogDescription className="text-sm leading-6 text-[#756448]">
                                 Your report has been generated and saved to the Bees360 database. You can now review the totals by date and batch.
                             </DialogDescription>
@@ -313,27 +382,16 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
                                 </div>
                             </div>
                         </DialogHeader>
-                        <DialogFooter className="gap-3 px-7 pt-2 pb-7 sm:gap-3">
+                        <DialogFooter className="px-7 pt-2 pb-7 sm:justify-center">
                             <Button
                                 type="button"
-                                variant="outline"
-                                className="border-[#d8bd8c] text-[#75552d] hover:bg-[#fff4dc]"
-                                onClick={() => {
-                                    setShowSuccessModal(false);
-                                    setPageTab('import');
-                                }}
-                            >
-                                Import another
-                            </Button>
-                            <Button
-                                type="button"
-                                className="bg-[#b96c00] font-bold text-white hover:bg-[#925400]"
+                                className="min-w-32 bg-[#b96c00] font-bold text-white hover:bg-[#925400]"
                                 onClick={() => {
                                     setShowSuccessModal(false);
                                     setPageTab('reports');
                                 }}
                             >
-                                View report data
+                                OK
                             </Button>
                         </DialogFooter>
                     </DialogContent>
@@ -403,8 +461,8 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
                             <div className="mt-6 grid gap-4 md:grid-cols-2">
                                 {(
                                     [
-                                        ['active', 'Active workbook', activeFile, setActiveFile, 'ACTIVE AUG 31.xlsx'],
-                                        ['closed', 'Closed workbook', closedFile, setClosedFile, 'CLOSED AUG 31.xlsx'],
+                                        ['active', 'Active workbook', activeFile, setActiveFile, 'Choose ACTIVE'],
+                                        ['closed', 'Closed workbook', closedFile, setClosedFile, 'Choose CLOSED'],
                                     ] as const
                                 ).map(([source, label, file, setFile, example]) => (
                                     <label
@@ -412,6 +470,7 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
                                         className="group cursor-pointer rounded-2xl border border-dashed border-[#d8bd8c] bg-[#fffaf1] p-5 transition hover:border-[#b96c00] hover:bg-[#fff4dd]"
                                     >
                                         <input
+                                            key={`${source}-${file?.name ?? 'empty'}`}
                                             type="file"
                                             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                                             className="sr-only"
@@ -422,7 +481,7 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
                                         />
                                         <FileSpreadsheet className="size-7 text-[#b96c00]" />
                                         <p className="mt-4 font-bold text-[#4a3821]">{label}</p>
-                                        <p className="mt-1 text-xs text-[#806f59]">{file ? file.name : `Choose ${example}`}</p>
+                                        <p className="mt-1 text-xs text-[#806f59]">{file ? file.name : example}</p>
                                         <span className="mt-4 inline-flex rounded-lg border border-[#dfc595] bg-white px-3 py-1.5 text-xs font-bold text-[#8b5b11] group-hover:bg-[#fff7e9]">
                                             {file ? 'Replace file' : 'Choose .xlsx file'}
                                         </span>
@@ -441,7 +500,7 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
                                 <Button
                                     type="button"
                                     disabled={isUploading}
-                                    onClick={importReports}
+                                    onClick={confirmImport}
                                     className="h-11 gap-2 bg-[#b96c00] px-5 font-bold text-white hover:bg-[#925400] disabled:bg-[#d5b477]"
                                 >
                                     <Database className="size-4" />
@@ -562,7 +621,7 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
                                     onClick={exportCombinedReport}
                                     className="h-10 w-full gap-2 bg-[#4a351d] px-4 font-bold text-white hover:bg-[#2f2112] sm:w-auto"
                                 >
-                                    <Download className="size-4" /> Export combined Excel
+                                    <Download className="size-4" /> Export to Excel
                                 </Button>
                             </div>
                             <div className="overflow-x-auto">

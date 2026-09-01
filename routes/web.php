@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Operations\ReportImportController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -18,9 +19,8 @@ Route::middleware(['auth'])->group(function () {
         return Inertia::render('operations/report-comparison');
     })->name('operations.report-comparison');
 
-    Route::get('operations/reports', function () {
-        return Inertia::render('operations/reports');
-    })->name('operations.reports');
+    Route::get('operations/reports', [ReportImportController::class, 'index'])->name('operations.reports');
+    Route::post('operations/reports/import', [ReportImportController::class, 'store'])->name('operations.reports.import');
 
     Route::get('operations/{section}', function (string $section) {
         $sections = [

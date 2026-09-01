@@ -1,5 +1,5 @@
+import { ProcessorSelect } from '@/components/processor-select';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
 import { BeesDatePicker, formatDate, philippinesToday, type ReportRecord } from '@/pages/dashboard';
 import { type BreadcrumbItem } from '@/types';
@@ -355,23 +355,12 @@ export default function ReportComparison({
                                 <label className="text-sm font-bold text-[#5d4830]" htmlFor="comparison-processor">
                                     Processor name
                                 </label>
-                                <Select value={selectedProcessor} onValueChange={setSelectedProcessor}>
-                                    <SelectTrigger
-                                        id="comparison-processor"
-                                        className="h-11 rounded-xl border-[#e2d1b8] bg-white text-[#4b3820] focus:ring-[#d78b13]"
-                                    >
-                                        <UsersRound className="mr-2 size-4 text-[#a96300]" />
-                                        <SelectValue placeholder="Select a processor" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All processors</SelectItem>
-                                        {processorNames.map((name) => (
-                                            <SelectItem key={name} value={name}>
-                                                {name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                <ProcessorSelect
+                                    id="comparison-processor"
+                                    value={selectedProcessor}
+                                    processorNames={processorNames}
+                                    onValueChange={setSelectedProcessor}
+                                />
                             </div>
                         </div>
                     </div>

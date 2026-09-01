@@ -1,5 +1,5 @@
+import { ProcessorSelect } from '@/components/processor-select';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, usePoll } from '@inertiajs/react';
@@ -541,23 +541,12 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
                             <label className="text-sm font-bold text-[#5d4830]" htmlFor="processor-name">
                                 Processor name
                             </label>
-                            <Select value={selectedProcessor} onValueChange={setSelectedProcessor}>
-                                <SelectTrigger
-                                    id="processor-name"
-                                    className="h-11 rounded-xl border-[#e2d1b8] bg-[#fffaf1] text-[#4b3820] focus:ring-[#d78b13]"
-                                >
-                                    <UsersRound className="mr-2 size-4 text-[#a96300]" />
-                                    <SelectValue placeholder="Select a processor" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All processors</SelectItem>
-                                    {processorNames.map((name) => (
-                                        <SelectItem key={name} value={name}>
-                                            {name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <ProcessorSelect
+                                id="processor-name"
+                                value={selectedProcessor}
+                                processorNames={processorNames}
+                                onValueChange={setSelectedProcessor}
+                            />
                         </div>
 
                         <div className="grid gap-2">

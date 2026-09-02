@@ -12,7 +12,18 @@ import {
 } from '@/components/ui/sidebar';
 import { type NavItem } from '@/types';
 import { Link } from '@inertiajs/react';
-import { BarChart3, BookOpenCheck, CalendarDays, FileText, GitCompareArrows, LayoutGrid, Settings, ShieldCheck, UsersRound } from 'lucide-react';
+import {
+    Activity,
+    BarChart3,
+    BookOpenCheck,
+    CalendarDays,
+    FileText,
+    GitCompareArrows,
+    LayoutGrid,
+    Settings,
+    ShieldCheck,
+    UsersRound,
+} from 'lucide-react';
 import AppLogo from './app-logo';
 
 const mainNavItems: NavItem[] = [
@@ -25,6 +36,11 @@ const mainNavItems: NavItem[] = [
         title: 'Reports',
         url: '/operations/reports',
         icon: FileText,
+    },
+    {
+        title: 'Queue Monitor',
+        url: '/operations/queue-monitor',
+        icon: Activity,
     },
     {
         title: 'MTD Reports',

@@ -3,8 +3,20 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import AppLayout from '@/layouts/app-layout';
 import { BeesDatePicker, formatDate, philippinesToday } from '@/pages/dashboard';
 import { type BreadcrumbItem } from '@/types';
-import { Head, router, usePage } from '@inertiajs/react';
-import { CalendarDays, CheckCircle2, Database, Download, FileSpreadsheet, Layers3, Moon, PackageCheck, Sun, Upload } from 'lucide-react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
+import {
+    CalendarDays,
+    ChartNoAxesCombined,
+    CheckCircle2,
+    Database,
+    Download,
+    FileSpreadsheet,
+    Layers3,
+    Moon,
+    PackageCheck,
+    Sun,
+    Upload,
+} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx-js-style';
 
@@ -441,6 +453,15 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
                         className={`h-10 gap-2 rounded-lg px-4 text-sm font-bold ${pageTab === 'import' ? 'bg-[#4a351d] text-white hover:bg-[#2f2112]' : 'bg-transparent text-[#806f59] hover:bg-[#fff0d1]'}`}
                     >
                         <Upload className="size-4" /> Import Excel
+                    </Button>
+                    <Button
+                        asChild
+                        type="button"
+                        className="h-10 gap-2 rounded-lg bg-transparent px-4 text-sm font-bold text-[#806f59] hover:bg-[#fff0d1]"
+                    >
+                        <Link href="/operations/reports/platform-pulls" prefetch>
+                            <ChartNoAxesCombined className="size-4" /> Platform Pulls
+                        </Link>
                     </Button>
                 </div>
                 {pageTab === 'import' ? (

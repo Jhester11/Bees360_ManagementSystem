@@ -58,6 +58,13 @@ test('authenticated users can open an operations module', function () {
     $this->get('/operations/reports')->assertOk();
 });
 
+test('authenticated users can monitor the operations queue', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/operations/queue-monitor')->assertInertia(fn (Assert $page) => $page
+        ->component('operations/queue-monitor'));
+});
+
 test('authenticated users can compare two report periods', function () {
     $this->actingAs($user = User::factory()->create());
 

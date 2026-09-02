@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Operations\DashboardController;
+use App\Http\Controllers\Operations\PlatformPullController;
+use App\Http\Controllers\Operations\QueueSnapshotController;
 use App\Http\Controllers\Operations\ReportImportController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -16,6 +18,10 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('operations/reports', [ReportImportController::class, 'index'])->name('operations.reports');
     Route::post('operations/reports/import', [ReportImportController::class, 'store'])->name('operations.reports.import');
+    Route::get('operations/reports/platform-pulls', [PlatformPullController::class, 'index'])->name('operations.platform-pulls');
+
+    Route::get('operations/queue-monitor', [QueueSnapshotController::class, 'index'])->name('operations.queue-monitor');
+    Route::post('operations/queue-monitor', [QueueSnapshotController::class, 'store'])->name('operations.queue-monitor.store');
 
     Route::get('operations/{section}', function (string $section) {
         $sections = [

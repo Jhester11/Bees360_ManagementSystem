@@ -96,7 +96,8 @@ function philippineGreeting() {
 export default function Dashboard({ showReportRange = false, reportRecords, processorNames, reportRange, overview }: DashboardProps) {
     usePoll(30_000, { only: ['reportRecords', 'processorNames', 'reportRange', 'overview'] });
 
-    const referenceDate = reportRange.latest ?? philippinesToday;
+    const [currentPhilippineDate, setCurrentPhilippineDate] = useState(philippinesDate);
+    const referenceDate = showReportRange ? currentPhilippineDate : (reportRange.latest ?? currentPhilippineDate);
     const [startDate, setStartDate] = useState(`${referenceDate.slice(0, 8)}01`);
     const [endDate, setEndDate] = useState(referenceDate);
     const [selectedProcessor, setSelectedProcessor] = useState(showReportRange ? '' : 'all');
@@ -104,10 +105,24 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
     const [greeting, setGreeting] = useState(philippineGreeting);
 
     useEffect(() => {
-        const timer = window.setInterval(() => setGreeting(philippineGreeting()), 60_000);
+        const timer = window.setInterval(() => {
+            setGreeting(philippineGreeting());
+            setCurrentPhilippineDate((currentDate) => {
+                const liveDate = philippinesDate();
+
+                if (liveDate === currentDate) return currentDate;
+
+                if (showReportRange) {
+                    setStartDate(`${liveDate.slice(0, 8)}01`);
+                    setEndDate(liveDate);
+                }
+
+                return liveDate;
+            });
+        }, 60_000);
 
         return () => window.clearInterval(timer);
-    }, []);
+    }, [showReportRange]);
 
     const visibleRecords = useMemo(
         () =>
@@ -412,7 +427,7 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
                                     label="End date"
                                     value={endDate}
                                     min={startDate}
-                                    max={reportRange.latest ?? philippinesToday}
+                                    max={currentPhilippineDate}
                                     onChange={setEndDate}
                                 />
                             </div>

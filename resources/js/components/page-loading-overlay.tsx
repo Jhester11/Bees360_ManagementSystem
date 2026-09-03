@@ -41,7 +41,7 @@ export function PageLoadingOverlay() {
         };
 
         const stopBeforeListener = router.on('before', (event) => {
-            if (event.detail.visit.prefetch) return;
+            if (event.detail.visit.prefetch || !event.detail.visit.showProgress) return;
 
             showLoader();
         });
@@ -62,7 +62,7 @@ export function PageLoadingOverlay() {
         document.addEventListener('click', handleDocumentClick, true);
 
         const stopFinishListener = router.on('finish', (event) => {
-            if (event.detail.visit.prefetch) return;
+            if (event.detail.visit.prefetch || !event.detail.visit.showProgress) return;
 
             hideLoader();
         });

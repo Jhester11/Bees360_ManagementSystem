@@ -47,6 +47,7 @@ class HandleInertiaRequests extends Middleware
             ],
             'flash' => [
                 'importSummary' => $request->session()->get('importSummary'),
+                'userMessage' => $request->session()->get('userMessage'),
             ],
         ]);
     }

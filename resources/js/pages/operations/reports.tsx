@@ -17,7 +17,7 @@ import {
     Sun,
     Upload,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { DragEvent, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx-js-style';
 
 type ReportType = 'midday' | 'endOfDay';
@@ -97,6 +97,8 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
     const [closedFile, setClosedFile] = useState<File | null>(null);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [isUploading, setIsUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [draggingSource, setDraggingSource] = useState<Source | null>(null);
     const [showImportConfirmation, setShowImportConfirmation] = useState(false);
     const [showSuccessModal, setShowSuccessModal] = useState(() => Boolean(flash?.importSummary));
 
@@ -278,11 +280,13 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
         setShowImportConfirmation(false);
         setUploadError(null);
         setIsUploading(true);
+        setUploadProgress(5);
         try {
-            const entries = [
-                ...(activeFile ? await rowsFromWorkbook(activeFile, 'active') : []),
-                ...(closedFile ? await rowsFromWorkbook(closedFile, 'closed') : []),
-            ];
+            const activeEntries = activeFile ? await rowsFromWorkbook(activeFile, 'active') : [];
+            setUploadProgress(activeFile ? 30 : 10);
+            const closedEntries = closedFile ? await rowsFromWorkbook(closedFile, 'closed') : [];
+            setUploadProgress(55);
+            const entries = [...activeEntries, ...closedEntries];
             if (entries.length === 0) {
                 setUploadError('The selected workbook has no report rows.');
                 setIsUploading(false);
@@ -293,13 +297,17 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
                 { entries: JSON.stringify(entries) },
                 {
                     preserveScroll: true,
-                    onError: (errors) =>
+                    onProgress: (progress) => setUploadProgress(Math.max(60, progress.percentage ?? 60)),
+                    onError: (errors) => {
+                        setUploadProgress(0);
                         setUploadError(
                             errors.entries ??
                                 Object.values(errors).find((message) => typeof message === 'string') ??
                                 'The import could not be saved. Check the workbook and try again.',
-                        ),
+                        );
+                    },
                     onSuccess: () => {
+                        setUploadProgress(100);
                         setActiveFile(null);
                         setClosedFile(null);
                         setShowSuccessModal(true);
@@ -308,9 +316,24 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
                 },
             );
         } catch (error) {
+            setUploadProgress(0);
             setUploadError(error instanceof Error ? error.message : 'The workbook could not be read.');
             setIsUploading(false);
         }
+    }
+
+    function dropWorkbook(event: DragEvent<HTMLLabelElement>, source: Source, setFile: (file: File | null) => void) {
+        event.preventDefault();
+        setDraggingSource(null);
+        const file = event.dataTransfer.files[0];
+
+        if (!file || !file.name.toLowerCase().endsWith('.xlsx')) {
+            setUploadError('Choose an Excel workbook in .xlsx format.');
+            return;
+        }
+
+        setFile(file);
+        setUploadError(null);
     }
 
     return (
@@ -476,7 +499,11 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
                                 ).map(([source, label, file, setFile, example]) => (
                                     <label
                                         key={source}
-                                        className="group cursor-pointer rounded-2xl border border-dashed border-[#d8bd8c] bg-[#fffaf1] p-5 transition hover:border-[#b96c00] hover:bg-[#fff4dd]"
+                                        onDragEnter={() => setDraggingSource(source)}
+                                        onDragLeave={() => setDraggingSource(null)}
+                                        onDragOver={(event) => event.preventDefault()}
+                                        onDrop={(event) => dropWorkbook(event, source, setFile)}
+                                        className={`group cursor-pointer rounded-2xl border-2 border-dashed p-5 transition ${draggingSource === source ? 'border-[#b96c00] bg-[#fff0c9] shadow-[0_8px_25px_rgba(185,108,0,0.14)]' : 'border-[#d8bd8c] bg-[#fffaf1] hover:border-[#b96c00] hover:bg-[#fff4dd]'}`}
                                     >
                                         <input
                                             key={`${source}-${file?.name ?? 'empty'}`}
@@ -491,12 +518,27 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
                                         <FileSpreadsheet className="size-7 text-[#b96c00]" />
                                         <p className="mt-4 font-bold text-[#4a3821]">{label}</p>
                                         <p className="mt-1 text-xs text-[#806f59]">{file ? file.name : example}</p>
+                                        <p className="mt-2 text-xs font-semibold text-[#a56a0b]">Drag & drop here or click to browse</p>
                                         <span className="mt-4 inline-flex rounded-lg border border-[#dfc595] bg-white px-3 py-1.5 text-xs font-bold text-[#8b5b11] group-hover:bg-[#fff7e9]">
                                             {file ? 'Replace file' : 'Choose .xlsx file'}
                                         </span>
                                     </label>
                                 ))}
                             </div>
+                            {isUploading && (
+                                <div className="mt-5 rounded-xl border border-[#ead5a6] bg-[#fff8e7] p-4" aria-live="polite">
+                                    <div className="flex items-center justify-between gap-3 text-sm font-bold text-[#5d4830]">
+                                        <span>Reading and saving workbooks</span>
+                                        <span>{uploadProgress}%</span>
+                                    </div>
+                                    <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#ead9b8]">
+                                        <div
+                                            className="h-full rounded-full bg-[#d88a0c] transition-all duration-300"
+                                            style={{ width: `${uploadProgress}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
                             {uploadError && (
                                 <p className="mt-4 rounded-xl border border-[#f0c5bc] bg-[#fff0ec] px-4 py-3 text-sm font-medium text-[#ae361f]">
                                     {uploadError}

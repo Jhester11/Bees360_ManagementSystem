@@ -47,7 +47,7 @@ export function ProcessorSelect({ id, value, processorNames, onValueChange }: Pr
                     {selectedLabel ? <span className="font-semibold">{selectedLabel}</span> : undefined}
                 </SelectValue>
             </SelectTrigger>
-            <SelectContent className="max-h-[360px] rounded-xl border-[#e3c78f] bg-[#fffdf8] p-1 shadow-[0_18px_40px_rgba(85,53,10,0.18)]">
+            <SelectContent className="max-h-[360px] w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] rounded-xl border-[#e3c78f] bg-[#fffdf8] p-1 shadow-[0_18px_40px_rgba(85,53,10,0.18)]">
                 <div className="sticky top-0 z-10 border-b border-[#eddfc8] bg-[#fffdf8] p-2" onKeyDown={(event) => event.stopPropagation()}>
                     <label className="relative block" htmlFor={`${id}-search`}>
                         <span className="sr-only">Search processors</span>
@@ -85,7 +85,7 @@ export function ProcessorSelect({ id, value, processorNames, onValueChange }: Pr
                             value="all"
                             className="min-h-11 rounded-lg py-2 pr-3 pl-9 font-semibold text-[#5d4830] focus:bg-[#fff0c9] focus:text-[#714300] data-[state=checked]:bg-[#fff0c9] data-[state=checked]:text-[#714300]"
                         >
-                            <span className="flex items-center gap-2.5">
+                            <span className="flex min-w-0 items-center gap-2.5">
                                 <span className="grid size-7 place-items-center rounded-full bg-[#f5d995] text-[#8b5b11]">
                                     <UsersRound className="size-3.5" />
                                 </span>
@@ -103,7 +103,7 @@ export function ProcessorSelect({ id, value, processorNames, onValueChange }: Pr
                                 <span className="grid size-7 place-items-center rounded-full bg-[#f6e5bd] text-[10px] font-extrabold tracking-wide text-[#8b5b11]">
                                     {processorInitials(name)}
                                 </span>
-                                {name}
+                                <span className="truncate">{name}</span>
                             </span>
                         </SelectItem>
                     ))}

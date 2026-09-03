@@ -10,8 +10,8 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { type NavItem } from '@/types';
-import { Link } from '@inertiajs/react';
+import { type NavItem, type SharedData } from '@/types';
+import { Link, usePage } from '@inertiajs/react';
 import {
     Activity,
     BarChart3,
@@ -78,6 +78,9 @@ const qualityNavItems: NavItem[] = [
 ];
 
 export function AppSidebar() {
+    const { auth } = usePage<SharedData>().props;
+    const visibleMainNavItems = mainNavItems.filter((item) => item.url !== '/operations/users' || auth.user.role === 'operations');
+
     return (
         <Sidebar
             collapsible="icon"
@@ -97,7 +100,7 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                <NavMain items={mainNavItems} label="Operations" />
+                <NavMain items={visibleMainNavItems} label="Operations" />
                 <NavMain items={qualityNavItems} label="Learning & Quality" />
             </SidebarContent>
 

@@ -31,11 +31,13 @@ export interface SharedData {
 export interface User {
     id: number;
     name: string;
+    n_name: string | null;
     email: string;
-    avatar?: string;
+    avatar: string | null;
     email_verified_at: string | null;
     created_at: string;
     updated_at: string;
-    role: 'operations' | 'trainer' | 'qa' | 'user';
+    role: 'operations' | 'processor' | 'trainer' | 'qa' | 'reviewer';
+    is_active: boolean;
     [key: string]: unknown; // This allows for additional properties...
 }

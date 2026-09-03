@@ -2,9 +2,9 @@ import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { BeesDatePicker, formatDate, philippinesToday } from '@/pages/dashboard';
 import { type BreadcrumbItem } from '@/types';
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import { CalendarClock, CheckCircle2, Database, Download, PackageCheck } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx-js-style';
 
 type Source = 'active' | 'closed';
@@ -118,8 +118,12 @@ function totalsFor(rows: ProcessorRow[]) {
 }
 
 export default function PlatformPulls({ reportEntries = [], initialReportDate }: { reportEntries?: ReportEntry[]; initialReportDate: string }) {
+    const page = usePage();
+    const requestedCheckpoint = new URLSearchParams(page.url.split('?')[1] ?? '').get('checkpoint');
     const [reportDate, setReportDate] = useState(initialReportDate);
-    const [checkpoint, setCheckpoint] = useState<CheckpointId>(() => currentCheckpoint());
+    const [checkpoint, setCheckpoint] = useState<CheckpointId>(() =>
+        checkpoints.some((item) => item.id === requestedCheckpoint) ? (requestedCheckpoint as CheckpointId) : currentCheckpoint(),
+    );
     const [batch, setBatch] = useState<BatchFilter>('all');
     const selectedCheckpoint = checkpoints.find((item) => item.id === checkpoint) ?? checkpoints[0];
     const selectedEntries = useMemo(
@@ -134,6 +138,11 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
     const totals = totalsFor(rows);
     const hasStoredData = reportEntries.length > 0;
     const selectedHasData = selectedEntries.length > 0;
+
+    useEffect(() => {
+        const value = new URLSearchParams(page.url.split('?')[1] ?? '').get('checkpoint');
+        if (checkpoints.some((item) => item.id === value)) setCheckpoint(value as CheckpointId);
+    }, [page.url]);
 
     function changeReportDate(value: string) {
         setReportDate(value);

@@ -71,6 +71,7 @@ class DashboardController extends Controller
                     'date' => $first->report_date->format('Y-m-d'),
                     'dateLabel' => $first->report_date->format('M j'),
                     'processor' => $first->processor_name,
+                    'batch' => $first->batch,
                     'reports' => $group->count(),
                     'generalExterior' => $group->where('report_category', 'general_exterior')->count(),
                     'fourPoint' => $group->where('report_category', 'four_point')->count(),
@@ -91,25 +92,30 @@ class DashboardController extends Controller
             ];
         });
 
-        $topProcessors = $weeklyEntries
-            ->groupBy('processor_name')
-            ->map(function (Collection $group, string $name): array {
-                /** @var ReportEntry $first */
-                $first = $group->first();
+        $weekStartDate = $weekStart->format('Y-m-d');
+        $weekEndDate = $weekEnd->format('Y-m-d');
+        $topProcessors = $records
+            ->filter(fn (array $record): bool => $record['date'] >= $weekStartDate
+                && $record['date'] <= $weekEndDate
+                && $record['reports'] > 31)
+            ->groupBy('processor')
+            ->map(function (Collection $dailyRecords, string $name): array {
+                $firstRecord = $dailyRecords->first();
 
                 return [
                     'name' => $name,
-                    'batch' => $first->batch,
-                    'reports' => $group->count(),
-                    'generalExterior' => $group->where('report_category', 'general_exterior')->count(),
-                    'fourPoint' => $group->where('report_category', 'four_point')->count(),
+                    'batch' => $firstRecord['batch'],
+                    'latestDate' => $dailyRecords->max('date'),
+                    'overDeliveredDays' => $dailyRecords->count(),
+                    'reports' => $dailyRecords->sum('reports'),
+                    'generalExterior' => $dailyRecords->sum('generalExterior'),
+                    'fourPoint' => $dailyRecords->sum('fourPoint'),
                 ];
             })
             ->sortBy([
                 ['reports', 'desc'],
                 ['name', 'asc'],
             ])
-            ->take(5)
             ->values();
 
         return [

@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
-import { Head, router } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import {
     Activity,
     CalendarDays,
@@ -248,11 +248,15 @@ async function inspectWorkbook(file: File, checkpoint: CheckpointId): Promise<Wo
 }
 
 export default function QueueMonitor({ savedSnapshots = [] }: { savedSnapshots?: WorkbookResult[] }) {
+    const page = usePage();
+    const requestedCheckpoint = new URLSearchParams(page.url.split('?')[1] ?? '').get('checkpoint');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [philippinesNow, setPhilippinesNow] = useState(() => new Date());
     const latestId = latestCheckpointId();
     const currentReportDate = philippinesDate(philippinesNow);
-    const [selectedId, setSelectedId] = useState<CheckpointId>(() => latestCheckpointId());
+    const [selectedId, setSelectedId] = useState<CheckpointId>(() =>
+        checkpoints.some((checkpoint) => checkpoint.id === requestedCheckpoint) ? (requestedCheckpoint as CheckpointId) : latestCheckpointId(),
+    );
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [checkedQueues, setCheckedQueues] = useState<Record<string, Partial<Record<CheckpointId, WorkbookResult>>>>(() =>
         savedSnapshots.reduce<Record<string, Partial<Record<CheckpointId, WorkbookResult>>>>((days, snapshot) => {
@@ -264,6 +268,11 @@ export default function QueueMonitor({ savedSnapshots = [] }: { savedSnapshots?:
     const [showSuccess, setShowSuccess] = useState(false);
     const [isChecking, setIsChecking] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const value = new URLSearchParams(page.url.split('?')[1] ?? '').get('checkpoint');
+        if (checkpoints.some((checkpoint) => checkpoint.id === value)) setSelectedId(value as CheckpointId);
+    }, [page.url]);
 
     const selectedCheckpoint = checkpoints.find((checkpoint) => checkpoint.id === selectedId) ?? checkpoints[0];
     const currentDayQueues = checkedQueues[currentReportDate] ?? {};

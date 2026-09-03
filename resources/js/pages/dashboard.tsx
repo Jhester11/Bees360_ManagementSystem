@@ -1,21 +1,10 @@
+import { BeesDatePicker } from '@/components/bees-date-picker';
 import { ProcessorSelect } from '@/components/processor-select';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, usePoll } from '@inertiajs/react';
-import {
-    ArrowRight,
-    BarChart3,
-    CalendarDays,
-    ChevronDown,
-    ChevronLeft,
-    ChevronRight,
-    Clock3,
-    FileCheck2,
-    Files,
-    Trophy,
-    UsersRound,
-} from 'lucide-react';
+import { ArrowRight, BarChart3, CalendarDays, Clock3, FileCheck2, Files, Trophy, UsersRound } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
@@ -23,6 +12,7 @@ export type ReportRecord = {
     date: string;
     dateLabel: string;
     processor: string;
+    batch: number;
     reports: number;
     generalExterior: number;
     fourPoint: number;
@@ -45,7 +35,15 @@ type DashboardProps = {
         weekEnd: string;
         weeklyChart: { day: string; date: string; reports: number }[];
         topProcessor: { name: string; reports: number } | null;
-        topProcessors: { name: string; batch: number; reports: number; generalExterior: number; fourPoint: number }[];
+        topProcessors: {
+            name: string;
+            batch: number;
+            latestDate: string;
+            overDeliveredDays: number;
+            reports: number;
+            generalExterior: number;
+            fourPoint: number;
+        }[];
     };
 };
 
@@ -66,10 +64,10 @@ export function philippinesDate() {
 export const philippinesToday = philippinesDate();
 
 function reportStatus(total: number) {
-    if (total < 25) return { label: 'Under delivered', className: 'bg-[#fde1e2] text-[#a5474b]' };
-    if (total > 31) return { label: 'Over delivered', className: 'bg-[#e2efd9] text-[#477239]' };
+    if (total < 25) return { label: 'Under delivered', className: 'bg-[#fde1e2] text-[#a5474b]', barClassName: 'bg-[#d36c72]' };
+    if (total > 31) return { label: 'Over delivered', className: 'bg-[#e2efd9] text-[#477239]', barClassName: 'bg-[#63a653]' };
 
-    return { label: 'Delivered', className: 'bg-[#fff0c5] text-[#936000]' };
+    return { label: 'Delivered', className: 'bg-[#fff0c5] text-[#936000]', barClassName: 'bg-[#d9900e]' };
 }
 
 export function formatDate(date: string) {
@@ -77,6 +75,8 @@ export function formatDate(date: string) {
         new Date(`${date}T00:00:00Z`),
     );
 }
+
+export { BeesDatePicker } from '@/components/bees-date-picker';
 
 function philippineGreeting() {
     const hour = Number(
@@ -91,136 +91,6 @@ function philippineGreeting() {
     if (hour < 18) return 'Good afternoon';
 
     return 'Good evening';
-}
-
-export function BeesDatePicker({
-    id,
-    label,
-    value,
-    min,
-    max,
-    onChange,
-}: {
-    id: string;
-    label: string;
-    value: string;
-    min?: string;
-    max?: string;
-    onChange: (value: string) => void;
-}) {
-    const selectedDate = new Date(`${value}T00:00:00Z`);
-    const [isOpen, setIsOpen] = useState(false);
-    const [viewMonth, setViewMonth] = useState(() => new Date(Date.UTC(selectedDate.getUTCFullYear(), selectedDate.getUTCMonth(), 1)));
-    const year = viewMonth.getUTCFullYear();
-    const month = viewMonth.getUTCMonth();
-    const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-    const firstDay = new Date(Date.UTC(year, month, 1)).getUTCDay();
-    const days = Array.from({ length: firstDay + daysInMonth }, (_, index) => (index < firstDay ? null : index - firstDay + 1));
-    const monthLabel = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(viewMonth);
-
-    const openCalendar = () => {
-        setViewMonth(new Date(Date.UTC(selectedDate.getUTCFullYear(), selectedDate.getUTCMonth(), 1)));
-        setIsOpen(true);
-    };
-
-    const selectDay = (day: number) => {
-        const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        onChange(date);
-        setIsOpen(false);
-    };
-
-    return (
-        <div className="relative grid gap-1.5">
-            <label className="px-1 text-xs font-bold text-[#6d5735]" htmlFor={id}>
-                {label}
-            </label>
-            <button
-                id={id}
-                type="button"
-                aria-haspopup="dialog"
-                aria-expanded={isOpen}
-                onClick={openCalendar}
-                className="flex h-11 w-full items-center gap-2 rounded-xl border border-[#dfc58f] bg-white px-3 text-left text-sm font-semibold text-[#4b3820] shadow-sm transition hover:border-[#c98211] focus-visible:ring-2 focus-visible:ring-[#d78b13] focus-visible:outline-hidden"
-            >
-                <CalendarDays className="size-4 shrink-0 text-[#b26a00]" />
-                <span className="min-w-0 flex-1 truncate">{formatDate(value)}</span>
-                <ChevronDown className="size-4 text-[#a36a14]" />
-            </button>
-
-            {isOpen && (
-                <div
-                    role="dialog"
-                    aria-label={`${label} calendar`}
-                    className="absolute top-[calc(100%+0.5rem)] z-50 w-72 rounded-2xl border border-[#e5c978] bg-[#fffdf8] p-4 shadow-[0_18px_40px_rgba(85,53,10,0.2)]"
-                >
-                    <div className="flex items-center justify-between gap-2">
-                        <button
-                            type="button"
-                            onClick={() => setViewMonth(new Date(Date.UTC(year, month - 1, 1)))}
-                            className="grid size-8 place-items-center rounded-lg text-[#8b5a0c] hover:bg-[#fff0cb]"
-                            aria-label="Previous month"
-                        >
-                            <ChevronLeft className="size-4" />
-                        </button>
-                        <div className="text-center">
-                            <p className="text-sm font-bold text-[#3d2b14]">{monthLabel}</p>
-                            <p className="text-[10px] font-bold tracking-[0.13em] text-[#b26a00] uppercase">Bees360 calendar</p>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => setViewMonth(new Date(Date.UTC(year, month + 1, 1)))}
-                            className="grid size-8 place-items-center rounded-lg text-[#8b5a0c] hover:bg-[#fff0cb]"
-                            aria-label="Next month"
-                        >
-                            <ChevronRight className="size-4" />
-                        </button>
-                    </div>
-                    <div className="mt-4 grid grid-cols-7 text-center text-[10px] font-bold tracking-wide text-[#9d6e28] uppercase">
-                        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day) => (
-                            <span key={day} className="py-1">
-                                {day}
-                            </span>
-                        ))}
-                    </div>
-                    <div className="grid grid-cols-7 gap-y-1 text-center">
-                        {days.map((day, index) => {
-                            if (!day) return <span key={`blank-${index}`} className="size-8" />;
-                            const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                            const isDisabled = Boolean((min && date < min) || (max && date > max));
-                            const isSelected = date === value;
-                            return (
-                                <button
-                                    key={date}
-                                    type="button"
-                                    disabled={isDisabled}
-                                    onClick={() => selectDay(day)}
-                                    className={`mx-auto grid size-8 place-items-center rounded-lg text-xs font-semibold transition ${isSelected ? 'bg-[#bd7200] text-white shadow-sm' : 'text-[#4b3820] hover:bg-[#fff0cb]'} disabled:cursor-not-allowed disabled:text-[#d6c7ae] disabled:hover:bg-transparent`}
-                                >
-                                    {day}
-                                </button>
-                            );
-                        })}
-                    </div>
-                    <div className="mt-3 flex items-center justify-between border-t border-[#f1e2c3] pt-3">
-                        <button type="button" onClick={() => setIsOpen(false)} className="text-xs font-bold text-[#9b691e] hover:text-[#714300]">
-                            Cancel
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                const firstDay = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-                                onChange(firstDay);
-                                setIsOpen(false);
-                            }}
-                            className="text-xs font-bold text-[#a96300] hover:text-[#714300]"
-                        >
-                            Select first day
-                        </button>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
 }
 
 export default function Dashboard({ showReportRange = false, reportRecords, processorNames, reportRange, overview }: DashboardProps) {
@@ -436,45 +306,59 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
                         <article className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-6 shadow-[0_8px_30px_rgb(88,57,18,0.05)]">
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <h2 className="text-lg font-bold tracking-tight text-[#342615]">Top performers</h2>
-                                    <p className="mt-1 text-sm text-[#806f59]">Current-week processor leaderboard</p>
+                                    <h2 className="text-lg font-bold tracking-tight text-[#342615]">Overall top performers</h2>
+                                    <p className="mt-1 text-sm text-[#806f59]">One overall result per over-delivering processor</p>
                                 </div>
                                 <Trophy className="size-6 text-[#d59111]" />
                             </div>
                             {overview.topProcessors.length ? (
                                 <ol className="mt-5 grid gap-3">
-                                    {overview.topProcessors.map((processor, index) => (
-                                        <li key={processor.name} className="rounded-xl border border-[#f0e5d4] bg-[#fffaf1] p-3">
-                                            <div className="flex items-center gap-3">
-                                                <span
-                                                    className={`grid size-8 shrink-0 place-items-center rounded-full text-xs font-extrabold ${index === 0 ? 'bg-[#f3c95d] text-[#624000]' : 'bg-[#f3e8d6] text-[#806f59]'}`}
-                                                >
-                                                    {index + 1}
-                                                </span>
-                                                <div className="min-w-0 flex-1">
-                                                    <p className="truncate text-sm font-bold text-[#4a3821]">{processor.name}</p>
-                                                    <p className="text-xs text-[#91816a]">
-                                                        Batch {processor.batch} · {processor.generalExterior} GE · {processor.fourPoint} 4PT
-                                                    </p>
+                                    {overview.topProcessors.map((processor, index) => {
+                                        const status = reportStatus(processor.reports);
+
+                                        return (
+                                            <li key={processor.name} className="rounded-xl border border-[#cfe1c7] bg-[#f5fbf1] p-3">
+                                                <div className="flex items-center gap-3">
+                                                    <span
+                                                        className={`grid size-8 shrink-0 place-items-center rounded-full text-xs font-extrabold ${index === 0 ? 'bg-[#f3c95d] text-[#624000]' : 'bg-[#f3e8d6] text-[#806f59]'}`}
+                                                    >
+                                                        {index + 1}
+                                                    </span>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="truncate text-sm font-bold text-[#4a3821]">{processor.name}</p>
+                                                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-[#91816a]">
+                                                            <span>
+                                                                Batch {processor.batch} · {processor.overDeliveredDays}{' '}
+                                                                {processor.overDeliveredDays === 1 ? 'over-delivered day' : 'over-delivered days'} ·
+                                                                Latest {formatDate(processor.latestDate)} · {processor.generalExterior} GE ·{' '}
+                                                                {processor.fourPoint} 4PT
+                                                            </span>
+                                                            <span
+                                                                className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${status.className}`}
+                                                            >
+                                                                {status.label}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <span className="text-sm font-extrabold whitespace-nowrap text-[#a96300]">
+                                                        {processor.reports.toLocaleString()} reports
+                                                    </span>
                                                 </div>
-                                                <span className="text-sm font-extrabold whitespace-nowrap text-[#a96300]">
-                                                    {processor.reports.toLocaleString()}
-                                                </span>
-                                            </div>
-                                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#f6ead8]">
-                                                <div
-                                                    className="h-full rounded-full bg-[#d9900e]"
-                                                    style={{
-                                                        width: `${Math.max(8, (processor.reports / (overview.topProcessors[0]?.reports || 1)) * 100)}%`,
-                                                    }}
-                                                />
-                                            </div>
-                                        </li>
-                                    ))}
+                                                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#f6ead8]">
+                                                    <div
+                                                        className={`h-full rounded-full ${status.barClassName}`}
+                                                        style={{
+                                                            width: `${Math.max(8, (processor.reports / (overview.topProcessors[0]?.reports || 1)) * 100)}%`,
+                                                        }}
+                                                    />
+                                                </div>
+                                            </li>
+                                        );
+                                    })}
                                 </ol>
                             ) : (
                                 <div className="mt-5 rounded-xl border border-dashed border-[#dfc58f] bg-[#fffaf1] px-4 py-8 text-center text-sm text-[#806f59]">
-                                    No reports have been imported for the current week.
+                                    No processor has exceeded 31 reports on a single day this week.
                                 </div>
                             )}
                         </article>

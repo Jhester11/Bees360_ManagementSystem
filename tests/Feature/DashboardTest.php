@@ -43,13 +43,48 @@ test('dashboard displays deduplicated imported report data', function () {
         ->where('overview.closedSource', 2)
         ->where('overview.weekStart', '2026-08-31')
         ->where('overview.weekEnd', '2026-09-06')
-        ->has('overview.topProcessors', 2)
-        ->where('overview.topProcessors.0.name', 'Allan Layug')
-        ->where('overview.topProcessors.0.reports', 1)
+        ->has('overview.topProcessors', 0)
+        ->where('overview.topProcessor', null)
         ->where('reportRange.first', '2026-08-31')
         ->where('reportRange.latest', '2026-08-31')
         ->has('reportRecords', 2)
         ->where('processorNames', ['Allan Layug', 'Chrismer Flores']));
+});
+
+test('leaderboard combines a processors over-delivered days into one overall result', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-03 10:00:00', 'Asia/Manila'));
+    $this->actingAs(User::factory()->create());
+
+    $createReports = function (string $processor, int $batch, string $date, int $count, string $prefix): void {
+        foreach (range(1, $count) as $index) {
+            ReportEntry::query()->create([
+                'report_date' => $date,
+                'source' => 'closed',
+                'batch' => $batch,
+                'processor_name' => $processor,
+                'project_id' => $prefix.'-'.$index,
+                'insured_by' => 'Sample insured',
+                'inspection_type' => 'Exterior Underwriting',
+                'report_category' => 'general_exterior',
+                'assembled_at' => $date.' 10:00:00',
+            ]);
+        }
+    };
+
+    $createReports('Allan Layug', 2, '2026-09-01', 20, 'allan-one');
+    $createReports('Allan Layug', 2, '2026-09-02', 20, 'allan-two');
+    $createReports('Lourdes M. Completado', 1, '2026-09-02', 31, 'lourdes');
+    $createReports('Chrismer Flores', 3, '2026-09-02', 32, 'chrismer');
+    $createReports('Chrismer Flores', 3, '2026-09-03', 33, 'chrismer-next');
+
+    $this->get('/dashboard')->assertInertia(fn (Assert $page) => $page
+        ->component('dashboard')
+        ->has('overview.topProcessors', 1)
+        ->where('overview.topProcessors.0.name', 'Chrismer Flores')
+        ->where('overview.topProcessors.0.latestDate', '2026-09-03')
+        ->where('overview.topProcessors.0.overDeliveredDays', 2)
+        ->where('overview.topProcessors.0.reports', 65)
+        ->where('overview.topProcessor.name', 'Chrismer Flores'));
 });
 
 test('authenticated users can open an operations module', function () {

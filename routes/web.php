@@ -1,7 +1,10 @@
 <?php
 
+use App\Http\Controllers\Auth\AccountStatusController;
 use App\Http\Controllers\Operations\DashboardController;
 use App\Http\Controllers\Operations\PlatformPullController;
+use App\Http\Controllers\Operations\ProcessorPerformanceController;
+use App\Http\Controllers\Operations\QaAssessmentImportController;
 use App\Http\Controllers\Operations\QueueSnapshotController;
 use App\Http\Controllers\Operations\ReportImportController;
 use App\Http\Controllers\Operations\UserController;
@@ -9,6 +12,10 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 Route::redirect('/', '/login')->name('home');
+
+Route::get('account/status', AccountStatusController::class)
+    ->middleware('auth')
+    ->name('account.status');
 
 Route::middleware(['auth', 'active'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
@@ -21,12 +28,18 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::post('operations/reports/import', [ReportImportController::class, 'store'])->name('operations.reports.import');
     Route::get('operations/reports/platform-pulls', [PlatformPullController::class, 'index'])->name('operations.platform-pulls');
 
+    Route::get('operations/processors', [ProcessorPerformanceController::class, 'index'])->name('operations.processors');
+    Route::post('operations/processors/cst-import', [ProcessorPerformanceController::class, 'storeCst'])->name('operations.processors.cst-import');
+    Route::post('operations/processors/qa-import', QaAssessmentImportController::class)->name('operations.processors.qa-import');
+
     Route::get('operations/queue-monitor', [QueueSnapshotController::class, 'index'])->name('operations.queue-monitor');
     Route::post('operations/queue-monitor', [QueueSnapshotController::class, 'store'])->name('operations.queue-monitor.store');
 
     Route::middleware('operations')->group(function () {
         Route::get('operations/users', [UserController::class, 'index'])->name('operations.users.index');
         Route::post('operations/users', [UserController::class, 'store'])->name('operations.users.store');
+        Route::patch('operations/users/{user}', [UserController::class, 'update'])->name('operations.users.update');
+        Route::delete('operations/users/{user}', [UserController::class, 'destroy'])->name('operations.users.destroy');
         Route::patch('operations/users/{user}/status', [UserController::class, 'updateStatus'])->name('operations.users.status');
     });
 
@@ -42,7 +55,7 @@ Route::middleware(['auth', 'active'])->group(function () {
         abort_unless(array_key_exists($section, $sections), 404);
 
         return Inertia::render('operations/coming-soon', $sections[$section]);
-    })->where('section', 'reports|processors|training|quality-assurance|settings');
+    })->where('section', 'reports|training|quality-assurance|settings');
 });
 
 require __DIR__.'/settings.php';

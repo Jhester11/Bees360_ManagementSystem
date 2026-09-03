@@ -320,7 +320,7 @@ export default function ReportComparison({
                         </div>
                     </div>
 
-                    <div className="mt-6 grid gap-5 xl:grid-cols-[1fr_1fr_220px]">
+                    <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_360px]">
                         {[
                             { title: 'Period A', range: draftFirstRange, setRange: setDraftFirstRange },
                             { title: 'Period B', range: draftSecondRange, setRange: setDraftSecondRange },

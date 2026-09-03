@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Operations;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreUserRequest;
+use App\Http\Requests\UpdateUserRequest;
 use App\Http\Requests\UpdateUserStatusRequest;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -68,5 +70,48 @@ class UserController extends Controller
             'userMessage',
             $isActive ? 'The account is now active and can sign in.' : 'The account was deactivated and can no longer sign in.',
         );
+    }
+
+    public function update(UpdateUserRequest $request, User $user): RedirectResponse
+    {
+        $data = $request->safe()->only(['name', 'n_name', 'email', 'role']);
+
+        if ($request->filled('password')) {
+            $data['password'] = $request->validated('password');
+        }
+
+        if ($request->hasFile('avatar')) {
+            $oldAvatarPath = $user->avatar_path;
+            $data['avatar_path'] = $request->file('avatar')->store('avatars', 'public');
+            $user->update($data);
+
+            if ($oldAvatarPath) {
+                Storage::disk('public')->delete($oldAvatarPath);
+            }
+        } else {
+            $user->update($data);
+        }
+
+        return back()->with('userMessage', 'The Bees360 account was updated successfully.');
+    }
+
+    public function destroy(User $user): RedirectResponse
+    {
+        abort_if(request()->user()->is($user), 422, 'You cannot delete your own account.');
+
+        $avatarPath = $user->avatar_path;
+
+        DB::transaction(function () use ($user): void {
+            $user->queueSnapshots()->delete();
+            $user->platformPullSnapshots()->delete();
+            DB::table('sessions')->where('user_id', $user->getKey())->delete();
+            $user->delete();
+        });
+
+        if ($avatarPath) {
+            Storage::disk('public')->delete($avatarPath);
+        }
+
+        return back()->with('userMessage', 'The Bees360 account and all connected data were deleted successfully.');
     }
 }

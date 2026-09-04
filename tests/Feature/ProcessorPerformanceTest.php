@@ -277,7 +277,7 @@ test('guests cannot open or import processor performance data', function () {
     $this->post('/operations/processors/qa-import')->assertRedirect('/login');
 });
 
-test('live QA accuracy uses the average Total Score from the latest uploaded QA month', function () {
+test('current processor month does not carry forward QA accuracy from an older month', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-04 10:00:00', 'Asia/Manila'));
     $user = User::factory()->create();
 
@@ -296,9 +296,38 @@ test('live QA accuracy uses the average Total Score from the latest uploaded QA 
     }
 
     $this->actingAs($user)->get('/operations/processors')->assertInertia(fn (Assert $page) => $page
-        ->where('periods.qa', 'August 2026')
-        ->where('phPerformance.0.qcScore', 95)
-        ->where('phPerformance.0.qcReviews', 2));
+        ->where('filters.manual', false)
+        ->where('periods.ph', 'September 2026')
+        ->where('periods.qa', null)
+        ->where('phPerformance.0.qcScore', null)
+        ->where('phPerformance.0.qcReviews', 0));
+});
+
+test('manual processor date range filters production and QA calculations together', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-04 10:00:00', 'Asia/Manila'));
+    $user = User::factory()->create();
+
+    foreach ([['2026-08-03', 'AUG', 80], ['2026-09-03', 'SEP', 100]] as [$date, $project, $score]) {
+        ReportEntry::query()->create([
+            'report_date' => $date, 'source' => 'closed', 'batch' => 2, 'processor_name' => 'Allan Layug',
+            'project_id' => $project, 'insured_by' => 'Sample insured', 'inspection_type' => 'Exterior Underwriting',
+            'report_category' => 'general_exterior', 'assembled_at' => $date.' 10:00:00',
+        ]);
+        QaAssessment::query()->create([
+            'record_key' => hash('sha256', $project.'|'.$date), 'assessment_date' => $date,
+            'processor_name' => 'Allan Layug', 'project_id' => $project, 'score' => $score,
+            'source_file' => 'QA.csv', 'uploaded_by' => $user->id,
+        ]);
+    }
+
+    $this->actingAs($user)->get('/operations/processors?start_date=2026-08-01&end_date=2026-08-31')
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.manual', true)
+            ->where('filters.startDate', '2026-08-01')
+            ->where('filters.endDate', '2026-08-31')
+            ->where('phPerformance.0.totalCases', 1)
+            ->where('phPerformance.0.qcScore', 80)
+            ->where('phPerformance.0.qcReviews', 1));
 });
 
 test('QA score imports calculate an average and update repeated report uploads without duplicates', function () {

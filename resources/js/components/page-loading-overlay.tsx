@@ -5,74 +5,35 @@ const skeletonRows = Array.from({ length: 9 }, (_, index) => index);
 const skeletonColumns = Array.from({ length: 5 }, (_, index) => index);
 
 export function PageLoadingOverlay() {
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
-        let shownAt = Date.now();
-        let hideTimer: number | undefined = window.setTimeout(() => {
-            setIsLoading(false);
-            shownAt = 0;
-        }, 650);
         let failsafeTimer: number | undefined;
 
         const hideLoader = () => {
-            window.clearTimeout(hideTimer);
             window.clearTimeout(failsafeTimer);
-
-            const visibleFor = shownAt === 0 ? 0 : Date.now() - shownAt;
-            const remaining = Math.max(0, 650 - visibleFor);
-
-            hideTimer = window.setTimeout(() => {
-                setIsLoading(false);
-                shownAt = 0;
-            }, remaining);
+            setIsLoading(false);
         };
 
         const showLoader = () => {
-            window.clearTimeout(hideTimer);
             window.clearTimeout(failsafeTimer);
-            shownAt = Date.now();
             setIsLoading(true);
-
             failsafeTimer = window.setTimeout(() => {
                 setIsLoading(false);
-                shownAt = 0;
-            }, 5000);
+            }, 15_000);
         };
 
         const stopBeforeListener = router.on('before', (event) => {
-            if (event.detail.visit.prefetch || !event.detail.visit.showProgress) return;
+            if (event.detail.visit.prefetch) return;
 
             const destination = new URL(String(event.detail.visit.url), window.location.href);
-            if (
-                destination.pathname === window.location.pathname &&
-                destination.search === window.location.search
-            ) return;
+            if (destination.pathname === window.location.pathname && destination.search === window.location.search) return;
 
             showLoader();
         });
 
-        const handleDocumentClick = (event: MouseEvent) => {
-            if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-
-            const target = event.target;
-            const anchor = target instanceof Element ? target.closest('a[href]') : null;
-            if (!(anchor instanceof HTMLAnchorElement) || anchor.target === '_blank' || anchor.hasAttribute('download')) return;
-
-            const destination = new URL(anchor.href, window.location.href);
-            if (destination.origin !== window.location.origin || destination.href === window.location.href) return;
-            if (
-                destination.pathname === window.location.pathname &&
-                destination.search === window.location.search
-            ) return;
-
-            showLoader();
-        };
-
-        document.addEventListener('click', handleDocumentClick, true);
-
         const stopFinishListener = router.on('finish', (event) => {
-            if (event.detail.visit.prefetch || !event.detail.visit.showProgress) return;
+            if (event.detail.visit.prefetch) return;
 
             hideLoader();
         });
@@ -83,8 +44,6 @@ export function PageLoadingOverlay() {
             stopBeforeListener();
             stopFinishListener();
             stopNavigateListener();
-            document.removeEventListener('click', handleDocumentClick, true);
-            window.clearTimeout(hideTimer);
             window.clearTimeout(failsafeTimer);
         };
     }, []);
@@ -92,7 +51,12 @@ export function PageLoadingOverlay() {
     if (!isLoading) return null;
 
     return (
-        <div className="fixed inset-0 z-[100] overflow-hidden bg-[#fffdf8] text-[#4a351d]" role="status" aria-live="polite" aria-label="Loading page">
+        <div
+            className="animate-in fade-in fixed inset-0 z-[100] overflow-hidden bg-[#fffdf8] text-[#4a351d] duration-150"
+            role="status"
+            aria-live="polite"
+            aria-label="Loading page"
+        >
             <div className="flex h-full animate-pulse">
                 <aside className="hidden w-64 shrink-0 border-r border-[#eadfcf] bg-[#342515] p-5 md:block">
                     <div className="flex items-center gap-3 border-b border-white/10 pb-6">

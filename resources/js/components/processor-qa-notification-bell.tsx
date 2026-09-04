@@ -44,10 +44,10 @@ export function ProcessorQaNotificationBell() {
                     variant="ghost"
                     size="icon"
                     aria-label={`${processorNotifications.length} unread QA notifications`}
-                    className="relative size-10 rounded-xl border border-[#cfe2d4] bg-[#f7fcf8] text-[#35664a] shadow-sm hover:bg-[#e7f5e9] hover:text-[#1c5635]"
+                    className="relative size-10 rounded-xl border border-[#e1bd71] bg-[#fff8e8] text-[#6a3f15] shadow-sm hover:bg-[#ffedbd] hover:text-[#4a2d10]"
                 >
                     {processorNotifications.length ? (
-                        <BellRing className="size-5 animate-[pulse_1.5s_ease-in-out_infinite] text-[#16815b]" />
+                        <BellRing className="size-5 animate-[pulse_1.5s_ease-in-out_infinite] text-[#c87500]" />
                     ) : (
                         <Bell className="size-5" />
                     )}
@@ -61,26 +61,32 @@ export function ProcessorQaNotificationBell() {
             <DropdownMenuContent
                 align="end"
                 sideOffset={10}
-                className="w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border-[#cfe2d4] bg-[#fbfffb] p-0 text-[#342615] shadow-[0_20px_60px_rgba(39,91,61,0.2)] sm:w-[410px]"
+                className="w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border-[#e4c98f] bg-[#fffaf1] p-0 text-[#342615] shadow-[0_20px_60px_rgba(74,45,16,0.22)] sm:w-[410px]"
             >
-                <div className="bg-[#155d3d] px-5 py-4 text-white">
-                    <div className="flex items-start justify-between gap-4">
-                        <div>
-                            <DropdownMenuLabel className="p-0 text-base font-black">My QA notifications</DropdownMenuLabel>
-                            <p className="mt-1 text-xs text-[#cde9d8]">New quality results for your account</p>
+                <div className="relative overflow-hidden bg-[#4a2d10] px-5 py-4 text-white">
+                    <span className="absolute -top-8 -right-5 size-24 rounded-full bg-[#ffc83d]/18" />
+                    <div className="relative flex items-start justify-between gap-4">
+                        <div className="flex min-w-0 items-center gap-3">
+                            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#ffc83d] text-[#4a2d10] shadow-[0_5px_15px_rgba(0,0,0,0.16)]">
+                                <BellRing className="size-5" />
+                            </span>
+                            <div>
+                                <DropdownMenuLabel className="p-0 text-base font-black">My QA notifications</DropdownMenuLabel>
+                                <p className="mt-1 text-xs text-[#f0dcb7]">New quality results for your account</p>
+                            </div>
                         </div>
                         {processorNotifications.length > 0 && (
                             <button
                                 type="button"
                                 onClick={markAllRead}
-                                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#4f8e70] px-2.5 py-1.5 text-[11px] font-bold text-[#e2f6e9] transition hover:bg-[#26704f]"
+                                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#b88a4b] bg-white/5 px-2.5 py-1.5 text-[11px] font-bold text-[#fff1d0] transition hover:bg-white/12"
                             >
                                 <CheckCheck className="size-3.5" /> Mark all read
                             </button>
                         )}
                     </div>
                 </div>
-                <DropdownMenuSeparator className="m-0 bg-[#dceade]" />
+                <DropdownMenuSeparator className="m-0 bg-[#eadbc6]" />
                 {processorNotifications.length ? (
                     <div className="max-h-[430px] overflow-y-auto p-3">
                         {processorNotifications.map((notification) => (
@@ -88,20 +94,20 @@ export function ProcessorQaNotificationBell() {
                                 key={notification.id}
                                 type="button"
                                 onClick={() => openProcessorNotification(notification)}
-                                className="mb-2 flex w-full gap-3 rounded-xl border border-[#dce8df] bg-white p-3 text-left transition last:mb-0 hover:border-[#9fc9aa] hover:bg-[#f1f9f2]"
+                                className="mb-2 flex w-full gap-3 rounded-xl border border-[#eadbc6] bg-[#fffdf8] p-3 text-left shadow-[0_3px_12px_rgba(74,45,16,0.04)] transition last:mb-0 hover:border-[#dfb96d] hover:bg-[#fff5dc]"
                             >
-                                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#dff1e4] text-[#16815b]">
+                                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#fff0c9] text-[#a96300]">
                                     <ShieldCheck className="size-5" />
                                 </span>
                                 <span className="min-w-0 flex-1">
                                     <span className="flex items-center justify-between gap-3">
-                                        <span className="font-black text-[#284735]">{notification.title}</span>
+                                        <span className="font-black text-[#4a2d10]">{notification.title}</span>
                                         <span className="rounded-full bg-[#e1f3df] px-2 py-0.5 text-[11px] font-black text-[#347846]">
                                             {notification.score}%
                                         </span>
                                     </span>
-                                    <span className="mt-1 block text-xs leading-5 text-[#6c7e72]">{notification.message}</span>
-                                    <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-[#16815b]">
+                                    <span className="mt-1 block text-xs leading-5 text-[#806f59]">{notification.message}</span>
+                                    <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-[#a96300]">
                                         <Eye className="size-3.5" /> Review feedback
                                     </span>
                                 </span>
@@ -109,13 +115,13 @@ export function ProcessorQaNotificationBell() {
                         ))}
                     </div>
                 ) : (
-                    <div className="grid min-h-44 place-items-center px-6 py-8 text-center">
-                        <div>
-                            <span className="mx-auto grid size-12 place-items-center rounded-full bg-[#e8f5eb] text-[#4a8b61]">
+                    <div className="grid min-h-48 place-items-center bg-[radial-gradient(circle_at_top,rgba(255,200,61,0.12),transparent_58%)] px-6 py-8 text-center">
+                        <div className="max-w-64">
+                            <span className="mx-auto grid size-14 place-items-center rounded-full border border-[#bcd9c8] bg-[#eef8eb] text-[#347846] shadow-[0_0_0_7px_rgba(255,200,61,0.1)]">
                                 <CheckCheck className="size-6" />
                             </span>
-                            <p className="mt-3 font-black text-[#284735]">You’re all caught up</p>
-                            <p className="mt-1 text-xs leading-5 text-[#718176]">New QA results will appear here automatically.</p>
+                            <p className="mt-4 text-base font-black text-[#4a2d10]">You’re all caught up</p>
+                            <p className="mt-1 text-xs leading-5 text-[#806f59]">New QA results will appear here automatically.</p>
                         </div>
                     </div>
                 )}

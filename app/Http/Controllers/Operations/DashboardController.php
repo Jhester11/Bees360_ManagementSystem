@@ -167,6 +167,7 @@ class DashboardController extends Controller
             ]),
             'leaderboards' => $leaderboards,
             'achievement' => $this->processorAchievement($request, $processor, $selectedMonth, $leaderboards),
+            'workspaceOverview' => $this->reportData()['overview'],
             'phNow' => $phNow->toIso8601String(),
         ]);
     }

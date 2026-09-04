@@ -79,17 +79,17 @@ const qualityNavItems: NavItem[] = [
 
 const processorNavItems: NavItem[] = [
     {
-        title: 'My Dashboard',
+        title: 'Dashboard',
         url: '/dashboard',
         icon: LayoutGrid,
     },
     {
-        title: 'My QA Feedback',
-        url: '/dashboard#qa-history',
+        title: 'QA Feedback',
+        url: '/dashboard?view=qa#qa-history',
         icon: ShieldCheck,
     },
     {
-        title: 'My Daily Reports',
+        title: 'Daily Reports',
         url: '/dashboard?view=daily',
         icon: FileText,
     },

@@ -54,7 +54,7 @@ type Props = {
     approvedProcessors: { name: string; nickname: string | null }[];
     qaHistory: QaHistoryRow[];
     periods: { ph: string; cst: string; qa: string | null };
-    filters: { startDate: string; endDate: string; latestQaStart: string | null; latestQaEnd: string | null };
+    filters: { manual: boolean; startDate: string; endDate: string; latestQaStart: string | null; latestQaEnd: string | null };
 };
 type Timezone = 'ph' | 'cst';
 type CstFileKind = 'active' | 'closed' | 'qa';
@@ -418,13 +418,15 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
         [approvedProcessors],
     );
     const selected = performances.find((item) => item.processor === processor) ?? null;
+    const qaFilterStart = filters.startDate;
+    const qaFilterEnd = filters.endDate;
     const visibleQaHistory = useMemo(
         () =>
             qaHistory.filter((row) => {
                 const sameProcessor = !processor || row.processor === processor || row.nickname?.toLowerCase() === processor.toLowerCase();
-                return sameProcessor && (qaRange === 'all' || row.date.startsWith(selectedQaMonth));
+                return sameProcessor && (qaRange === 'all' || (row.date >= qaFilterStart && row.date <= qaFilterEnd));
             }),
-        [processor, qaHistory, qaRange, selectedQaMonth],
+        [processor, qaHistory, qaRange, qaFilterStart, qaFilterEnd],
     );
     const feedbackSummary = useMemo(() => {
         const counts = new Map<string, number>();
@@ -435,7 +437,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
         return [...counts.entries()].sort((a, b) => b[1] - a[1]);
     }, [visibleQaHistory]);
     const qaAccuracy = useMemo(() => {
-        const period = qaRange === 'all' ? 'All QA months' : formatQaMonth(selectedQaMonth);
+        const period = qaRange === 'all' ? 'All QA months' : `${formatQaDay(qaFilterStart)} – ${formatQaDay(qaFilterEnd)}`;
 
         if (visibleQaHistory.length === 0) return { score: null, reviews: 0, period };
 
@@ -444,7 +446,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
             reviews: visibleQaHistory.length,
             period,
         };
-    }, [qaRange, selectedQaMonth, visibleQaHistory]);
+    }, [qaRange, qaFilterStart, qaFilterEnd, visibleQaHistory]);
     const feedbackRows = useMemo(
         () => (feedbackScope === 'all' ? visibleQaHistory : feedbackScope ? visibleQaHistory.filter((row) => row.date === feedbackScope) : []),
         [feedbackScope, visibleQaHistory],
@@ -468,6 +470,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
         [incentiveView, performances],
     );
     const tierThreeEarners = useMemo(() => performances.filter((performance) => performance.incentive === 300).length, [performances]);
+
     const incentiveTotals = useMemo(
         () => ({
             generalExterior: incentiveRows.reduce((total, row) => total + row.generalExterior, 0),
@@ -1352,7 +1355,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                 <h2 className="mt-1 text-2xl font-black text-[#342615]">QA results and recurring feedback</h2>
                                 <p className="mt-1 text-sm text-[#71624e]">
                                     {processor || 'Select a processor'} ·{' '}
-                                    {qaRange === 'all' ? 'All QA months' : selectedQaMonth ? formatQaMonth(selectedQaMonth) : 'No QA month'} ·{' '}
+                                    {qaRange === 'all' ? 'All QA months' : `${formatQaDay(qaFilterStart)} – ${formatQaDay(qaFilterEnd)}`} ·{' '}
                                     {visibleQaHistory.length} assessment(s)
                                 </p>
                                 <p className="mt-2 flex items-center gap-1.5 text-xs font-bold text-[#147a51]">
@@ -1368,7 +1371,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                         className={`flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-bold ${qaRange === 'month' ? 'bg-[#147a51] text-white' : 'text-[#37624e]'}`}
                                     >
                                         <CalendarRange className="size-4" />
-                                        Selected month
+                                        Selected dates
                                     </button>
                                     <button
                                         type="button"

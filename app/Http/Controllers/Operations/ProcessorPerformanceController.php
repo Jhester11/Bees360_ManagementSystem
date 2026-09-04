@@ -78,8 +78,8 @@ class ProcessorPerformanceController extends Controller
             [$startDate, $endDate] = [$endDate, $startDate];
         }
 
-        $qaStartDate = $hasManualRange ? $startDate : $qaMonth->startOfMonth();
-        $qaEndDate = $hasManualRange ? $endDate : $qaMonth->endOfMonth();
+        $qaStartDate = $startDate;
+        $qaEndDate = $endDate;
         $qaAssessments = QaAssessment::query()
             ->with('processor:id,name,n_name,avatar_path')
             ->whereBetween('assessment_date', [$qaStartDate->toDateString(), $qaEndDate->toDateString()])
@@ -194,9 +194,10 @@ class ProcessorPerformanceController extends Controller
             'periods' => [
                 'ph' => $this->periodLabel($startDate, $endDate),
                 'cst' => $this->periodLabel($startDate, $endDate),
-                'qa' => $latestQaDate ? $this->periodLabel($qaStartDate, $qaEndDate) : null,
+                'qa' => $qaAssessments->isNotEmpty() ? $this->periodLabel($qaStartDate, $qaEndDate) : null,
             ],
             'filters' => [
+                'manual' => $hasManualRange,
                 'startDate' => $startDate->toDateString(),
                 'endDate' => $endDate->toDateString(),
                 'latestQaStart' => $latestQaDate ? $qaMonth->startOfMonth()->toDateString() : null,

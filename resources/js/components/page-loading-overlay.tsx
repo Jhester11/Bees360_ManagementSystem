@@ -43,6 +43,12 @@ export function PageLoadingOverlay() {
         const stopBeforeListener = router.on('before', (event) => {
             if (event.detail.visit.prefetch || !event.detail.visit.showProgress) return;
 
+            const destination = new URL(String(event.detail.visit.url), window.location.href);
+            if (
+                destination.pathname === window.location.pathname &&
+                destination.search === window.location.search
+            ) return;
+
             showLoader();
         });
 
@@ -55,6 +61,10 @@ export function PageLoadingOverlay() {
 
             const destination = new URL(anchor.href, window.location.href);
             if (destination.origin !== window.location.origin || destination.href === window.location.href) return;
+            if (
+                destination.pathname === window.location.pathname &&
+                destination.search === window.location.search
+            ) return;
 
             showLoader();
         };

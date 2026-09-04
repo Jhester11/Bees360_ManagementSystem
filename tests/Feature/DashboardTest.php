@@ -5,6 +5,7 @@ use App\Models\CstProcessorMetric;
 use App\Models\QaAssessment;
 use App\Models\ReportEntry;
 use App\Models\User;
+use App\Notifications\NewQaAssessment;
 use Carbon\CarbonImmutable;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -92,6 +93,8 @@ test('processor dashboard displays only the signed in processors monthly PH CST 
             ->component('processor-dashboard')
             ->where('selectedMonth', '2026-08')
             ->where('periodLabel', 'August 2026')
+            ->where('availableMonths.0.value', '2026-09')
+            ->where('availableMonths.1.value', '2026-08')
             ->where('metrics.ph.totalCases', 3)
             ->where('metrics.ph.generalExterior', 2)
             ->where('metrics.ph.fourPoint', 1)
@@ -104,8 +107,72 @@ test('processor dashboard displays only the signed in processors monthly PH CST 
             ->where('metrics.cst.credits', 9.5)
             ->where('dailyOutput.ph.14.total', 3)
             ->where('dailyOutput.cst.14.total', 9)
+            ->where('leaderboards.ph.0.processor', 'Lourdes M. Completado')
+            ->where('leaderboards.ph.0.totalCases', 3)
+            ->where('leaderboards.ph.0.isCurrentUser', true)
+            ->where('leaderboards.cst.0.processor', 'Allan Layug')
+            ->where('leaderboards.cst.0.totalCases', 119)
+            ->where('leaderboards.accuracy.0.processor', 'Allan Layug')
+            ->where('leaderboards.accuracy.0.qaScore', 100)
+            ->where('leaderboards.accuracy.1.processor', 'Lourdes M. Completado')
+            ->where('leaderboards.accuracy.1.qaScore', 90)
+            ->where('achievement.title', 'You earned the top spot!')
+            ->where('achievement.period', 'August 2026')
+            ->where('achievement.items.0.key', 'ph-production')
+            ->where('achievement.items.0.detail', '3 reports finished')
             ->has('qaHistory', 2)
             ->missing('reportRecords'));
+});
+
+test('processor dashboard exposes new QA notifications for the signed in account', function () {
+    $processor = User::factory()->create([
+        'name' => 'Allan Layug',
+        'role' => UserRole::Processor,
+    ]);
+    $assessment = QaAssessment::query()->create([
+        'record_key' => hash('sha256', 'NOTICE-1|2026-09-04'),
+        'assessment_date' => '2026-09-04',
+        'processor_id' => $processor->id,
+        'processor_name' => $processor->name,
+        'project_id' => 'NOTICE-1',
+        'score' => 97,
+        'source_file' => 'QA September.xlsx',
+        'uploaded_by' => $processor->id,
+    ]);
+    $processor->notify(new NewQaAssessment($assessment));
+
+    $this->actingAs($processor)
+        ->get('/dashboard?month=2026-09')
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('processorNotifications', 1)
+            ->where('processorNotifications.0.title', 'New QA result available')
+            ->where('processorNotifications.0.projectId', 'NOTICE-1')
+            ->where('processorNotifications.0.score', 97));
+});
+
+test('processor can mark their QA notification as read', function () {
+    $processor = User::factory()->create([
+        'name' => 'Allan Layug',
+        'role' => UserRole::Processor,
+    ]);
+    $assessment = QaAssessment::query()->create([
+        'record_key' => hash('sha256', 'NOTICE-2|2026-09-04'),
+        'assessment_date' => '2026-09-04',
+        'processor_id' => $processor->id,
+        'processor_name' => $processor->name,
+        'project_id' => 'NOTICE-2',
+        'score' => 96,
+        'source_file' => 'QA September.xlsx',
+        'uploaded_by' => $processor->id,
+    ]);
+    $processor->notify(new NewQaAssessment($assessment));
+    $notification = $processor->unreadNotifications()->firstOrFail();
+
+    $this->actingAs($processor)
+        ->post(route('processor-notifications.read', $notification->id))
+        ->assertRedirect();
+
+    expect($notification->fresh()->read_at)->not->toBeNull();
 });
 
 test('dashboard displays deduplicated imported report data', function () {

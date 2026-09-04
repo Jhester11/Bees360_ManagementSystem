@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\UserRole;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -45,6 +46,23 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
+            'processorNotifications' => $request->user()?->role === UserRole::Processor
+                ? fn (): array => $request->user()->unreadNotifications()
+                    ->latest()
+                    ->limit(20)
+                    ->get()
+                    ->map(fn ($notification): array => [
+                        'id' => $notification->id,
+                        'title' => $notification->data['title'],
+                        'message' => $notification->data['message'],
+                        'href' => $notification->data['href'],
+                        'score' => $notification->data['score'],
+                        'projectId' => $notification->data['project_id'],
+                        'assessmentDate' => $notification->data['assessment_date'],
+                        'createdAt' => $notification->created_at->toIso8601String(),
+                    ])
+                    ->all()
+                : [],
             'flash' => [
                 'importSummary' => $request->session()->get('importSummary'),
                 'userMessage' => $request->session()->get('userMessage'),

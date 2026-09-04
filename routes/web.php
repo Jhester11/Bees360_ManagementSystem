@@ -8,6 +8,7 @@ use App\Http\Controllers\Operations\QaAssessmentImportController;
 use App\Http\Controllers\Operations\QueueSnapshotController;
 use App\Http\Controllers\Operations\ReportImportController;
 use App\Http\Controllers\Operations\UserController;
+use App\Http\Controllers\ProcessorNotificationController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -19,6 +20,10 @@ Route::get('account/status', AccountStatusController::class)
 
 Route::middleware(['auth', 'active'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::post('processor-notifications/read-all', [ProcessorNotificationController::class, 'readAll'])
+        ->name('processor-notifications.read-all');
+    Route::post('processor-notifications/{notification}/read', [ProcessorNotificationController::class, 'read'])
+        ->name('processor-notifications.read');
 
     Route::get('operations/mtd', [DashboardController::class, 'mtd'])->name('operations.mtd');
 

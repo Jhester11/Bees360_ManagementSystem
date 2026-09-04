@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers\Operations;
 
+use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreQaAssessmentsRequest;
 use App\Models\QaAssessment;
 use App\Models\User;
+use App\Notifications\NewQaAssessment;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +18,7 @@ class QaAssessmentImportController extends Controller
     public function __invoke(StoreQaAssessmentsRequest $request): RedirectResponse
     {
         $validated = $request->validated();
-        $users = User::query()->get(['id', 'name', 'n_name']);
+        $users = User::query()->where('role', UserRole::Processor->value)->get(['id', 'name', 'n_name']);
         $now = now();
         $matched = 0;
 
@@ -34,7 +36,11 @@ class QaAssessmentImportController extends Controller
                 'project_id' => filled($assessment['project_id'] ?? null) ? trim($assessment['project_id']) : null,
                 'qc_name' => filled($assessment['qc_name'] ?? null) ? trim($assessment['qc_name']) : null,
                 'report_url' => filled($assessment['report_url'] ?? null) ? trim($assessment['report_url']) : null,
-                'feedback' => json_encode(array_values(array_filter($assessment['feedback'] ?? []))),
+                'feedback' => collect($assessment['feedback'] ?? [])
+                    ->map(fn (string $feedback): string => trim($feedback))
+                    ->filter()
+                    ->values()
+                    ->toJson(),
                 'source_file' => $validated['source_file'],
                 'uploaded_by' => $request->user()->id,
                 'created_at' => $now,
@@ -42,13 +48,23 @@ class QaAssessmentImportController extends Controller
             ];
         });
 
-        $existingCount = QaAssessment::query()->whereIn('record_key', $rows->pluck('record_key'))->count();
+        $existingKeys = QaAssessment::query()->whereIn('record_key', $rows->pluck('record_key'))->pluck('record_key');
+        $existingCount = $existingKeys->count();
+        $newKeys = $rows->pluck('record_key')->diff($existingKeys)->values();
 
         DB::transaction(fn () => QaAssessment::upsert(
             $rows->all(),
             ['record_key'],
             ['processor_id', 'processor_name', 'project_id', 'qc_name', 'report_url', 'score', 'feedback', 'source_file', 'uploaded_by', 'updated_at'],
         ));
+
+        QaAssessment::query()
+            ->with('processor')
+            ->whereIn('record_key', $newKeys)
+            ->get()
+            ->each(function (QaAssessment $assessment): void {
+                $assessment->processor?->notify(new NewQaAssessment($assessment));
+            });
 
         $previousUrl = url()->previous();
         $redirectUrl = parse_url($previousUrl, PHP_URL_HOST) === $request->getHost()

@@ -328,6 +328,14 @@ test('QA score imports calculate an average and update repeated report uploads w
     expect($upload('Chris', '677617', 86))->toMatchArray(['created' => 1, 'updated' => 0, 'matched' => 1]);
 
     expect(QaAssessment::query()->count())->toBe(2);
+    expect($processor->notifications()->count())->toBe(2);
+    expect($processor->unreadNotifications()->count())->toBe(2);
+    expect($processor->notifications->pluck('data.project_id')->all())->toContain('677616', '677617');
+    expect($processor->notifications->first(fn ($notification): bool => $notification->data['project_id'] === '677617')->data)->toMatchArray([
+        'project_id' => '677617',
+        'score' => 86.0,
+        'title' => 'New QA result available',
+    ]);
     expect(QaAssessment::query()->pluck('processor_id')->unique()->all())->toBe([$processor->id]);
     expect(QaAssessment::query()->first()->feedback)->toBe(['(-2) Elevation: Sample error', '(-2) Elevation: Sample error']);
 

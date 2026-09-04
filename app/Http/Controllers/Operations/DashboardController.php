@@ -74,11 +74,10 @@ class DashboardController extends Controller
         $startDate = $selectedMonth->startOfMonth();
         $endDate = $selectedMonth->endOfMonth();
 
-        $phEntries = ReportEntry::query()
+        $allPhEntries = ReportEntry::query()
             ->whereBetween('report_date', [$startDate->toDateString(), $endDate->toDateString()])
             ->orderByDesc('source')
             ->get(['report_date', 'source', 'processor_name', 'project_id', 'inspection_type', 'report_category'])
-            ->filter(fn (ReportEntry $entry): bool => $this->belongsToProcessor($processor, $entry->processor_name))
             ->unique(fn (ReportEntry $entry): string => implode('|', [
                 $entry->report_date->format('Y-m-d'),
                 $this->processorKey($entry->processor_name),
@@ -86,24 +85,35 @@ class DashboardController extends Controller
                 $entry->inspection_type,
             ]))
             ->values();
+        $phEntries = $allPhEntries
+            ->filter(fn (ReportEntry $entry): bool => $this->belongsToProcessor($processor, $entry->processor_name))
+            ->values();
 
-        $cstMetrics = CstProcessorMetric::query()
+        $allCstMetrics = CstProcessorMetric::query()
             ->whereBetween('report_date', [$startDate->toDateString(), $endDate->toDateString()])
             ->orderByDesc('updated_at')
             ->get()
-            ->filter(fn (CstProcessorMetric $metric): bool => $this->belongsToProcessor($processor, $metric->processor_name))
             ->groupBy(fn (CstProcessorMetric $metric): string => $metric->report_date->format('Y-m-d').'|'.$this->processorKey($metric->processor_name))
             ->map(fn (Collection $duplicates): CstProcessorMetric => $duplicates->first())
             ->values();
+        $cstMetrics = $allCstMetrics
+            ->filter(fn (CstProcessorMetric $metric): bool => $this->belongsToProcessor($processor, $metric->processor_name))
+            ->values();
 
-        $qaAssessments = QaAssessment::query()
+        $allQaAssessments = QaAssessment::query()
             ->whereBetween('assessment_date', [$startDate->toDateString(), $endDate->toDateString()])
             ->orderByDesc('assessment_date')
             ->orderByDesc('id')
             ->get()
+            ->values();
+        $qaAssessments = $allQaAssessments
             ->filter(fn (QaAssessment $assessment): bool => $assessment->processor_id === $processor->id
                 || $this->belongsToProcessor($processor, $assessment->processor_name))
             ->values();
+        $processorAccounts = User::query()
+            ->where('role', UserRole::Processor->value)
+            ->where('is_active', true)
+            ->get(['id', 'name', 'n_name']);
 
         $qaScore = $qaAssessments->isNotEmpty()
             ? round($qaAssessments->avg(fn (QaAssessment $assessment): float => (float) $assessment->score), 2)
@@ -114,6 +124,14 @@ class DashboardController extends Controller
         $cstGeneralExterior = $cstMetrics->sum('general_exterior');
         $cstFourPoint = $cstMetrics->sum('four_point');
 
+        $leaderboards = $this->processorLeaderboards(
+            $allPhEntries,
+            $allCstMetrics,
+            $allQaAssessments,
+            $processorAccounts,
+            $processor,
+        );
+
         return Inertia::render('processor-dashboard', [
             'selectedMonth' => $selectedMonth->format('Y-m'),
             'periodLabel' => $selectedMonth->format('F Y'),
@@ -123,6 +141,7 @@ class DashboardController extends Controller
                     'value' => sprintf('%04d-%02d', $year, $month),
                     'label' => CarbonImmutable::create($year, $month, 1, 0, 0, 0, 'Asia/Manila')->format('F Y'),
                 ]))
+                ->filter(fn (array $month): bool => $month['value'] <= $phNow->format('Y-m'))
                 ->sortByDesc('value')
                 ->values(),
             'metrics' => [
@@ -140,10 +159,136 @@ class DashboardController extends Controller
                 'qcName' => $assessment->qc_name,
                 'reportUrl' => $assessment->report_url,
                 'score' => (float) $assessment->score,
-                'feedback' => $assessment->feedback ?? [],
+                'feedback' => collect($assessment->feedback ?? [])
+                    ->filter(fn (mixed $feedback): bool => is_string($feedback))
+                    ->map(fn (string $feedback): string => trim($feedback))
+                    ->filter()
+                    ->values(),
             ]),
+            'leaderboards' => $leaderboards,
+            'achievement' => $this->processorAchievement($request, $processor, $selectedMonth, $leaderboards),
             'phNow' => $phNow->toIso8601String(),
         ]);
+    }
+
+    private function processorAchievement(Request $request, User $processor, CarbonImmutable $month, array $leaderboards): ?array
+    {
+        $achievements = collect([
+            ['key' => 'ph-production', 'earned' => (bool) data_get($leaderboards, 'ph.0.isCurrentUser'), 'label' => 'Highest PH production', 'detail' => data_get($leaderboards, 'ph.0.totalCases').' reports finished'],
+            ['key' => 'cst-production', 'earned' => (bool) data_get($leaderboards, 'cst.0.isCurrentUser'), 'label' => 'Highest CST production', 'detail' => data_get($leaderboards, 'cst.0.totalCases').' reports finished'],
+            ['key' => 'qa-accuracy', 'earned' => (bool) data_get($leaderboards, 'accuracy.0.isCurrentUser'), 'label' => 'Highest QA accuracy', 'detail' => data_get($leaderboards, 'accuracy.0.qaScore').'% average accuracy'],
+        ])->filter(fn (array $achievement): bool => $achievement['earned'])
+            ->map(fn (array $achievement): array => collect($achievement)->except('earned')->all())
+            ->values();
+
+        if ($achievements->isEmpty()) {
+            return null;
+        }
+
+        $signature = implode('|', [
+            $processor->id,
+            $month->format('Y-m'),
+            $achievements->pluck('key')->implode(','),
+        ]);
+
+        if ($request->session()->get('processor_achievement_seen') === $signature) {
+            return null;
+        }
+
+        $request->session()->put('processor_achievement_seen', $signature);
+
+        return [
+            'title' => $achievements->count() > 1 ? 'You are a Bees360 top performer!' : 'You earned the top spot!',
+            'period' => $month->format('F Y'),
+            'items' => $achievements,
+        ];
+    }
+
+    private function processorLeaderboards(
+        Collection $phEntries,
+        Collection $cstMetrics,
+        Collection $qaAssessments,
+        Collection $accounts,
+        User $currentProcessor,
+    ): array {
+        $accountsById = $accounts->keyBy('id');
+        $accountsByKey = $accounts->keyBy(fn (User $account): string => $this->processorKey($account->name));
+        $qaByProcessor = $qaAssessments
+            ->groupBy(function (QaAssessment $assessment) use ($accountsById): string {
+                /** @var User|null $account */
+                $account = $assessment->processor_id ? $accountsById->get($assessment->processor_id) : null;
+
+                return $this->processorKey($account?->name ?? $assessment->processor_name);
+            })
+            ->map(fn (Collection $assessments): array => [
+                'score' => round($assessments->avg(fn (QaAssessment $assessment): float => (float) $assessment->score), 2),
+                'reviews' => $assessments->count(),
+            ]);
+        $currentKey = $this->processorKey($currentProcessor->name);
+
+        $productionLeaders = function (Collection $records, bool $isCst) use ($accountsByKey, $qaByProcessor, $currentKey): Collection {
+            return $records
+                ->groupBy(fn (ReportEntry|CstProcessorMetric $record): string => $this->processorKey($record->processor_name))
+                ->map(function (Collection $processorRecords, string $key) use ($accountsByKey, $qaByProcessor, $currentKey, $isCst): array {
+                    /** @var User|null $account */
+                    $account = $accountsByKey->get($key);
+                    $first = $processorRecords->first();
+                    $generalExterior = $isCst
+                        ? $processorRecords->sum('general_exterior')
+                        : $processorRecords->where('report_category', 'general_exterior')->count();
+                    $fourPoint = $isCst
+                        ? $processorRecords->sum('four_point')
+                        : $processorRecords->where('report_category', 'four_point')->count();
+                    $qa = $qaByProcessor->get($key);
+
+                    return [
+                        'processor' => $account?->name ?? $first->processor_name,
+                        'totalCases' => $generalExterior + $fourPoint,
+                        'generalExterior' => $generalExterior,
+                        'fourPoint' => $fourPoint,
+                        'qaScore' => $qa['score'] ?? null,
+                        'qaReviews' => $qa['reviews'] ?? 0,
+                        'isCurrentUser' => $key === $currentKey,
+                    ];
+                })
+                ->filter(fn (array $leader): bool => $leader['totalCases'] > 0)
+                ->sort(function (array $left, array $right): int {
+                    return ($right['totalCases'] <=> $left['totalCases'])
+                        ?: (($right['qaScore'] ?? -1) <=> ($left['qaScore'] ?? -1))
+                        ?: ($left['processor'] <=> $right['processor']);
+                })
+                ->take(3)
+                ->values()
+                ->map(fn (array $leader, int $index): array => [...$leader, 'rank' => $index + 1]);
+        };
+
+        $accuracyLeaders = $qaByProcessor
+            ->map(function (array $qa, string $key) use ($accountsByKey, $currentKey, $qaAssessments): array {
+                /** @var User|null $account */
+                $account = $accountsByKey->get($key);
+                /** @var QaAssessment|null $assessment */
+                $assessment = $qaAssessments->first(fn (QaAssessment $item): bool => $this->processorKey($item->processor_name) === $key);
+
+                return [
+                    'processor' => $account?->name ?? $assessment?->processor_name ?? 'Processor',
+                    'qaScore' => $qa['score'],
+                    'qaReviews' => $qa['reviews'],
+                    'isCurrentUser' => $key === $currentKey,
+                ];
+            })
+            ->sort(function (array $left, array $right): int {
+                return ($right['qaScore'] <=> $left['qaScore'])
+                    ?: ($right['qaReviews'] <=> $left['qaReviews'])
+                    ?: ($left['processor'] <=> $right['processor']);
+            })
+            ->take(3)
+            ->values();
+
+        return [
+            'ph' => $productionLeaders($phEntries, false),
+            'cst' => $productionLeaders($cstMetrics, true),
+            'accuracy' => $accuracyLeaders->map(fn (array $leader, int $index): array => [...$leader, 'rank' => $index + 1]),
+        ];
     }
 
     private function processorPerformance(int $generalExterior, int $fourPoint, ?float $qaScore, int $qaReviews): array

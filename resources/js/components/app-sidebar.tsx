@@ -77,11 +77,29 @@ const qualityNavItems: NavItem[] = [
     },
 ];
 
+const processorNavItems: NavItem[] = [
+    {
+        title: 'My Dashboard',
+        url: '/dashboard',
+        icon: LayoutGrid,
+    },
+    {
+        title: 'My QA Feedback',
+        url: '/dashboard#qa-history',
+        icon: ShieldCheck,
+    },
+    {
+        title: 'My Daily Reports',
+        url: '/dashboard?view=daily',
+        icon: FileText,
+    },
+];
+
 export function AppSidebar() {
     const { auth } = usePage<SharedData>().props;
     const isProcessor = auth.user.role === 'processor';
     const visibleMainNavItems = isProcessor
-        ? mainNavItems.filter((item) => item.url === '/dashboard')
+        ? processorNavItems
         : mainNavItems.filter((item) => item.url !== '/operations/users' || auth.user.role === 'operations');
     const visibleQualityNavItems = isProcessor ? [] : qualityNavItems;
 

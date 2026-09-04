@@ -30,6 +30,9 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Users', href: '/operations/users' },
 ];
 
+const accountInputClass =
+    'h-11 border-[#decba9] bg-white text-[#342615] caret-[#b96c00] placeholder:text-[#9a8669] placeholder:opacity-100 focus-visible:border-[#d78b13] focus-visible:ring-[#f1c675]';
+
 const roleDetails: Record<string, string> = {
     operations: 'Full Operations access, including account management.',
     processor: 'Regular user access for Bees360 processors.',
@@ -68,7 +71,7 @@ export default function Users({ users, roles }: UsersProps) {
         email: '',
         password: '',
         password_confirmation: '',
-        role: 'processor',
+        role: '',
         avatar: null as File | null,
     });
 
@@ -144,9 +147,17 @@ export default function Users({ users, roles }: UsersProps) {
 
     function openCreate() {
         setEditingUser(null);
-        form.reset();
         form.clearErrors();
-        form.setData('_method', 'post');
+        form.setData({
+            _method: 'post',
+            name: '',
+            n_name: '',
+            email: '',
+            password: '',
+            password_confirmation: '',
+            role: '',
+            avatar: null,
+        });
         setShowCreate(true);
     }
 
@@ -345,7 +356,11 @@ export default function Users({ users, roles }: UsersProps) {
                                     : 'Add the profile, login details, and access role for a team member.'}
                             </DialogDescription>
                         </DialogHeader>
-                        <form onSubmit={submit} className="grid gap-8 p-6 md:grid-cols-[300px_minmax(0,1fr)]">
+                        <form
+                            autoComplete="off"
+                            onSubmit={submit}
+                            className="grid gap-8 p-6 text-[#342615] md:grid-cols-[300px_minmax(0,1fr)]"
+                        >
                             <div className="grid content-start gap-3">
                                 <Label>Profile image</Label>
                                 <label
@@ -425,8 +440,9 @@ export default function Users({ users, roles }: UsersProps) {
                                         id="user-name"
                                         value={form.data.name}
                                         onChange={(event) => form.setData('name', event.target.value)}
+                                        autoComplete="off"
                                         placeholder="Insert fullname"
-                                        className="h-11 border-[#decba9] bg-white"
+                                        className={accountInputClass}
                                     />
                                     <p className="text-xs text-[#8b7454]">
                                         The default avatar updates instantly using the first two words, such as CJ.
@@ -439,8 +455,9 @@ export default function Users({ users, roles }: UsersProps) {
                                         id="user-n-name"
                                         value={form.data.n_name}
                                         onChange={(e) => form.setData('n_name', e.target.value)}
+                                        autoComplete="off"
                                         placeholder="Nick name"
-                                        className="h-11 border-[#decba9] bg-white"
+                                        className={accountInputClass}
                                     />
                                     <InputError message={form.errors.n_name} />
                                 </div>
@@ -451,8 +468,9 @@ export default function Users({ users, roles }: UsersProps) {
                                         type="email"
                                         value={form.data.email}
                                         onChange={(e) => form.setData('email', e.target.value)}
+                                        autoComplete="off"
                                         placeholder="Email address@gmail.com"
-                                        className="h-11 border-[#decba9] bg-white"
+                                        className={accountInputClass}
                                     />
                                     <InputError message={form.errors.email} />
                                 </div>
@@ -464,8 +482,9 @@ export default function Users({ users, roles }: UsersProps) {
                                             type="password"
                                             value={form.data.password}
                                             onChange={(e) => form.setData('password', e.target.value)}
+                                            autoComplete="new-password"
                                             placeholder="Password"
-                                            className="h-11 border-[#decba9] bg-white"
+                                            className={accountInputClass}
                                         />
                                         <InputError message={form.errors.password} />
                                     </div>
@@ -476,8 +495,9 @@ export default function Users({ users, roles }: UsersProps) {
                                             type="password"
                                             value={form.data.password_confirmation}
                                             onChange={(e) => form.setData('password_confirmation', e.target.value)}
+                                            autoComplete="new-password"
                                             placeholder="Confirm password"
-                                            className="h-11 border-[#decba9] bg-white"
+                                            className={accountInputClass}
                                         />
                                     </div>
                                 </div>
@@ -486,21 +506,25 @@ export default function Users({ users, roles }: UsersProps) {
                                     <Select value={form.data.role} onValueChange={(value) => form.setData('role', value)}>
                                         <SelectTrigger
                                             id="user-role"
-                                            className="h-12 rounded-xl border-[#decba9] bg-white text-[#4a3821] focus:ring-[#d78b13]"
+                                            className="h-12 rounded-xl border-[#decba9] bg-white text-[#342615] data-[placeholder]:text-[#9a8669] focus:ring-[#d78b13]"
                                         >
                                             <ShieldCheck className="mr-2 size-4 text-[#a96300]" />
-                                            <SelectValue />
+                                            <SelectValue placeholder="Select a role" />
                                         </SelectTrigger>
-                                        <SelectContent className="border-[#e3c78f] bg-[#fffdf8]">
+                                        <SelectContent className="border-[#e3c78f] bg-[#fffdf8] text-[#342615] shadow-[0_12px_30px_rgba(88,57,18,0.16)]">
                                             {roles.map((role) => (
-                                                <SelectItem key={role.value} value={role.value}>
+                                                <SelectItem
+                                                    key={role.value}
+                                                    value={role.value}
+                                                    className="cursor-pointer text-[#342615] focus:bg-[#fff0c9] focus:text-[#342615] data-[state=checked]:bg-[#ffe3a0] data-[state=checked]:font-bold data-[state=checked]:text-[#5b3900]"
+                                                >
                                                     {role.label}
                                                 </SelectItem>
                                             ))}
                                         </SelectContent>
                                     </Select>
                                     <p className="rounded-lg bg-[#fff5dc] px-3 py-2 text-xs leading-5 text-[#80602b]">
-                                        {roleDetails[form.data.role]}
+                                        {roleDetails[form.data.role] ?? 'Choose the access level for this account.'}
                                     </p>
                                     <InputError message={form.errors.role} />
                                 </div>

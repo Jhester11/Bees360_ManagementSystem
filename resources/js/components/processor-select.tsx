@@ -5,8 +5,11 @@ type ProcessorSelectProps = {
     id: string;
     value: string;
     processorNames: string[];
+    processorAliases?: Record<string, string[]>;
     onValueChange: (value: string) => void;
     includeAll?: boolean;
+    allowClear?: boolean;
+    clearLabel?: string;
 };
 
 function processorInitials(name: string) {
@@ -19,7 +22,16 @@ function processorInitials(name: string) {
         .toUpperCase();
 }
 
-export function ProcessorSelect({ id, value, processorNames, onValueChange, includeAll = true }: ProcessorSelectProps) {
+export function ProcessorSelect({
+    id,
+    value,
+    processorNames,
+    processorAliases = {},
+    onValueChange,
+    includeAll = true,
+    allowClear = false,
+    clearLabel = 'View monthly summary',
+}: ProcessorSelectProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const searchRef = useRef<HTMLInputElement>(null);
     const [open, setOpen] = useState(false);
@@ -28,8 +40,10 @@ export function ProcessorSelect({ id, value, processorNames, onValueChange, incl
     const filteredProcessorNames = useMemo(() => {
         const query = search.toLowerCase().trim();
 
-        return query === '' ? processorNames : processorNames.filter((name) => name.toLowerCase().includes(query));
-    }, [processorNames, search]);
+        return query === ''
+            ? processorNames
+            : processorNames.filter((name) => [name, ...(processorAliases[name] ?? [])].some((label) => label.toLowerCase().includes(query)));
+    }, [processorAliases, processorNames, search]);
 
     useEffect(() => {
         if (!open) return;
@@ -115,6 +129,21 @@ export function ProcessorSelect({ id, value, processorNames, onValueChange, incl
                     </div>
 
                     <div id={`${id}-options`} role="listbox" className="max-h-64 overflow-y-auto overscroll-contain p-1.5">
+                        {allowClear && search === '' && (
+                            <button
+                                type="button"
+                                role="option"
+                                aria-selected={value === ''}
+                                onClick={() => selectProcessor('')}
+                                className="flex min-h-11 w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-semibold text-[#5d4830] hover:bg-[#fff0c9]"
+                            >
+                                <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[#f5d995] text-[#8b5b11]">
+                                    <UsersRound className="size-3.5" />
+                                </span>
+                                <span className="min-w-0 flex-1 truncate">{clearLabel}</span>
+                                {value === '' && <Check className="size-4 shrink-0 text-[#a96300]" />}
+                            </button>
+                        )}
                         {includeAll && search === '' && (
                             <button
                                 type="button"
@@ -142,7 +171,14 @@ export function ProcessorSelect({ id, value, processorNames, onValueChange, incl
                                 <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[#f6e5bd] text-[10px] font-extrabold tracking-wide text-[#8b5b11]">
                                     {processorInitials(name)}
                                 </span>
-                                <span className="min-w-0 flex-1 truncate">{name}</span>
+                                <span className="min-w-0 flex-1">
+                                    <span className="block truncate">{name}</span>
+                                    {processorAliases[name]?.[0] && (
+                                        <span className="block truncate text-[10px] font-semibold text-[#9a8465]">
+                                            N-name: {processorAliases[name][0]}
+                                        </span>
+                                    )}
+                                </span>
                                 {value === name && <Check className="size-4 shrink-0 text-[#a96300]" />}
                             </button>
                         ))}

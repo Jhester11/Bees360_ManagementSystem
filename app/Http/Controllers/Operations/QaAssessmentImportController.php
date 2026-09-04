@@ -50,7 +50,13 @@ class QaAssessmentImportController extends Controller
             ['processor_id', 'processor_name', 'project_id', 'qc_name', 'report_url', 'score', 'feedback', 'source_file', 'uploaded_by', 'updated_at'],
         ));
 
-        return to_route('operations.processors')->with('qaImportSummary', [
+        $previousUrl = url()->previous();
+        $redirectUrl = parse_url($previousUrl, PHP_URL_HOST) === $request->getHost()
+            && parse_url($previousUrl, PHP_URL_PATH) === '/operations/processors'
+                ? $previousUrl
+                : route('operations.processors');
+
+        return redirect()->to($redirectUrl)->with('qaImportSummary', [
             'saved' => $rows->count(),
             'created' => $rows->count() - $existingCount,
             'updated' => $existingCount,

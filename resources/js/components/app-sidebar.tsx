@@ -79,7 +79,11 @@ const qualityNavItems: NavItem[] = [
 
 export function AppSidebar() {
     const { auth } = usePage<SharedData>().props;
-    const visibleMainNavItems = mainNavItems.filter((item) => item.url !== '/operations/users' || auth.user.role === 'operations');
+    const isProcessor = auth.user.role === 'processor';
+    const visibleMainNavItems = isProcessor
+        ? mainNavItems.filter((item) => item.url === '/dashboard')
+        : mainNavItems.filter((item) => item.url !== '/operations/users' || auth.user.role === 'operations');
+    const visibleQualityNavItems = isProcessor ? [] : qualityNavItems;
 
     return (
         <Sidebar
@@ -100,8 +104,8 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                <NavMain items={visibleMainNavItems} label="Operations" />
-                <NavMain items={qualityNavItems} label="Learning & Quality" />
+                <NavMain items={visibleMainNavItems} label={isProcessor ? 'My workspace' : 'Operations'} />
+                {visibleQualityNavItems.length > 0 && <NavMain items={visibleQualityNavItems} label="Learning & Quality" />}
             </SidebarContent>
 
             <SidebarFooter>
@@ -109,7 +113,7 @@ export function AppSidebar() {
                     <SidebarMenu>
                         <SidebarMenuItem>
                             <SidebarMenuButton asChild>
-                                <Link href="/operations/settings" prefetch>
+                                <Link href={isProcessor ? '/settings/profile' : '/operations/settings'} prefetch>
                                     <Settings />
                                     <span>Settings</span>
                                 </Link>

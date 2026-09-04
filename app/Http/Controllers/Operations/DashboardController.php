@@ -2,17 +2,48 @@
 
 namespace App\Http\Controllers\Operations;
 
+use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
+use App\Models\CstProcessorMetric;
+use App\Models\QaAssessment;
 use App\Models\ReportEntry;
+use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function index(): Response
+    private const PROCESSOR_ALIASES = [
+        'arianne lopez' => 'arianne joy lopez',
+        'chris gozon' => 'christer john c gozon',
+        'christer gozon' => 'christer john c gozon',
+        'christer john gozon' => 'christer john c gozon',
+        'denn zafe' => 'denn charles zafe',
+        'desh completado' => 'lourdes m completado',
+        'don santos' => 'elacio m santos jr',
+        'jhun lester cervantes' => 'jhun cervantes',
+        'king palo' => 'reginald king palo',
+        'kristine espiritu' => 'kristine jewel espiritu',
+        'mac payongayong' => 'mac evens t payongayong',
+        'marie moog' => 'marie anthonette moog',
+        'nikko dungca' => 'nikko adrian dungca',
+        'oliver noble' => 'mc oliver noble',
+        'rainier ana' => 'rainier sta ana',
+        'rheven aladin' => 'rheven violet aladin',
+        'tracy josafat' => 'tracy john josafat',
+        'wengmir africa' => 'wengmir a africa',
+    ];
+
+    public function index(Request $request): Response
     {
+        if ($request->user()?->role === UserRole::Processor) {
+            return $this->renderProcessorDashboard($request);
+        }
+
         return $this->renderDashboard();
     }
 
@@ -32,6 +63,186 @@ class DashboardController extends Controller
             'showReportRange' => $showReportRange,
             ...$this->reportData(),
         ]);
+    }
+
+    private function renderProcessorDashboard(Request $request): Response
+    {
+        /** @var User $processor */
+        $processor = $request->user();
+        $phNow = CarbonImmutable::now('Asia/Manila');
+        $selectedMonth = $this->monthOrDefault($request->string('month')->toString(), $phNow);
+        $startDate = $selectedMonth->startOfMonth();
+        $endDate = $selectedMonth->endOfMonth();
+
+        $phEntries = ReportEntry::query()
+            ->whereBetween('report_date', [$startDate->toDateString(), $endDate->toDateString()])
+            ->orderByDesc('source')
+            ->get(['report_date', 'source', 'processor_name', 'project_id', 'inspection_type', 'report_category'])
+            ->filter(fn (ReportEntry $entry): bool => $this->belongsToProcessor($processor, $entry->processor_name))
+            ->unique(fn (ReportEntry $entry): string => implode('|', [
+                $entry->report_date->format('Y-m-d'),
+                $this->processorKey($entry->processor_name),
+                $entry->project_id,
+                $entry->inspection_type,
+            ]))
+            ->values();
+
+        $cstMetrics = CstProcessorMetric::query()
+            ->whereBetween('report_date', [$startDate->toDateString(), $endDate->toDateString()])
+            ->orderByDesc('updated_at')
+            ->get()
+            ->filter(fn (CstProcessorMetric $metric): bool => $this->belongsToProcessor($processor, $metric->processor_name))
+            ->groupBy(fn (CstProcessorMetric $metric): string => $metric->report_date->format('Y-m-d').'|'.$this->processorKey($metric->processor_name))
+            ->map(fn (Collection $duplicates): CstProcessorMetric => $duplicates->first())
+            ->values();
+
+        $qaAssessments = QaAssessment::query()
+            ->whereBetween('assessment_date', [$startDate->toDateString(), $endDate->toDateString()])
+            ->orderByDesc('assessment_date')
+            ->orderByDesc('id')
+            ->get()
+            ->filter(fn (QaAssessment $assessment): bool => $assessment->processor_id === $processor->id
+                || $this->belongsToProcessor($processor, $assessment->processor_name))
+            ->values();
+
+        $qaScore = $qaAssessments->isNotEmpty()
+            ? round($qaAssessments->avg(fn (QaAssessment $assessment): float => (float) $assessment->score), 2)
+            : null;
+        $qaReviews = $qaAssessments->count();
+        $phGeneralExterior = $phEntries->where('report_category', 'general_exterior')->count();
+        $phFourPoint = $phEntries->where('report_category', 'four_point')->count();
+        $cstGeneralExterior = $cstMetrics->sum('general_exterior');
+        $cstFourPoint = $cstMetrics->sum('four_point');
+
+        return Inertia::render('processor-dashboard', [
+            'selectedMonth' => $selectedMonth->format('Y-m'),
+            'periodLabel' => $selectedMonth->format('F Y'),
+            'availableMonths' => collect([$phNow->year, $selectedMonth->year])
+                ->unique()
+                ->flatMap(fn (int $year): Collection => collect(range(1, 12))->map(fn (int $month): array => [
+                    'value' => sprintf('%04d-%02d', $year, $month),
+                    'label' => CarbonImmutable::create($year, $month, 1, 0, 0, 0, 'Asia/Manila')->format('F Y'),
+                ]))
+                ->sortByDesc('value')
+                ->values(),
+            'metrics' => [
+                'ph' => $this->processorPerformance($phGeneralExterior, $phFourPoint, $qaScore, $qaReviews),
+                'cst' => $this->processorPerformance($cstGeneralExterior, $cstFourPoint, $qaScore, $qaReviews),
+            ],
+            'dailyOutput' => [
+                'ph' => $this->dailyPhOutput($selectedMonth, $phEntries),
+                'cst' => $this->dailyCstOutput($selectedMonth, $cstMetrics),
+            ],
+            'qaHistory' => $qaAssessments->map(fn (QaAssessment $assessment): array => [
+                'id' => $assessment->id,
+                'date' => $assessment->assessment_date->format('Y-m-d'),
+                'projectId' => $assessment->project_id,
+                'qcName' => $assessment->qc_name,
+                'reportUrl' => $assessment->report_url,
+                'score' => (float) $assessment->score,
+                'feedback' => $assessment->feedback ?? [],
+            ]),
+            'phNow' => $phNow->toIso8601String(),
+        ]);
+    }
+
+    private function processorPerformance(int $generalExterior, int $fourPoint, ?float $qaScore, int $qaReviews): array
+    {
+        $credits = round($generalExterior + ($fourPoint * 1.25), 2);
+        $tiers = collect([[550, 100], [650, 200], [750, 300]])
+            ->map(fn (array $tier, int $index): array => [
+                'name' => 'Tier '.($index + 1),
+                'target' => $tier[0],
+                'incentive' => $tier[1],
+                'achieved' => $credits >= $tier[0],
+                'needed' => max(round($tier[0] - $credits, 2), 0),
+                'percentage' => round(min(($credits / $tier[0]) * 100, 100), 1),
+            ])
+            ->values();
+
+        return [
+            'totalCases' => $generalExterior + $fourPoint,
+            'generalExterior' => $generalExterior,
+            'fourPoint' => $fourPoint,
+            'credits' => $credits,
+            'qaScore' => $qaScore,
+            'qaReviews' => $qaReviews,
+            'incentive' => $tiers->where('achieved', true)->max('incentive') ?? 0,
+            'tiers' => $tiers,
+        ];
+    }
+
+    private function dailyPhOutput(CarbonImmutable $month, Collection $entries): Collection
+    {
+        $byDate = $entries->groupBy(fn (ReportEntry $entry): string => $entry->report_date->format('Y-m-d'));
+
+        return collect(range(1, $month->daysInMonth))->map(function (int $day) use ($month, $byDate): array {
+            $date = $month->setDay($day);
+            /** @var Collection<int, ReportEntry> $daily */
+            $daily = $byDate->get($date->toDateString(), collect());
+
+            return [
+                'date' => $date->toDateString(),
+                'day' => $date->format('M j'),
+                'generalExterior' => $daily->where('report_category', 'general_exterior')->count(),
+                'fourPoint' => $daily->where('report_category', 'four_point')->count(),
+                'total' => $daily->count(),
+            ];
+        });
+    }
+
+    private function dailyCstOutput(CarbonImmutable $month, Collection $metrics): Collection
+    {
+        $byDate = $metrics->groupBy(fn (CstProcessorMetric $metric): string => $metric->report_date->format('Y-m-d'));
+
+        return collect(range(1, $month->daysInMonth))->map(function (int $day) use ($month, $byDate): array {
+            $date = $month->setDay($day);
+            /** @var Collection<int, CstProcessorMetric> $daily */
+            $daily = $byDate->get($date->toDateString(), collect());
+            $generalExterior = $daily->sum('general_exterior');
+            $fourPoint = $daily->sum('four_point');
+
+            return [
+                'date' => $date->toDateString(),
+                'day' => $date->format('M j'),
+                'generalExterior' => $generalExterior,
+                'fourPoint' => $fourPoint,
+                'total' => $generalExterior + $fourPoint,
+            ];
+        });
+    }
+
+    private function belongsToProcessor(User $processor, string $name): bool
+    {
+        $normalizedName = $this->normalizeName($name);
+
+        return $this->processorKey($name) === $this->processorKey($processor->name)
+            || ($processor->n_name && $normalizedName === $this->normalizeName($processor->n_name));
+    }
+
+    private function processorKey(string $name): string
+    {
+        $normalized = $this->normalizeName($name);
+
+        return self::PROCESSOR_ALIASES[$normalized] ?? $normalized;
+    }
+
+    private function normalizeName(string $name): string
+    {
+        return Str::of($name)->lower()->replaceMatches('/[^a-z0-9]+/', ' ')->squish()->value();
+    }
+
+    private function monthOrDefault(string $value, CarbonImmutable $default): CarbonImmutable
+    {
+        if (! preg_match('/^\d{4}-\d{2}$/', $value)) {
+            return $default->startOfMonth();
+        }
+
+        try {
+            return CarbonImmutable::createFromFormat('!Y-m', $value, 'Asia/Manila')->startOfMonth();
+        } catch (\Throwable) {
+            return $default->startOfMonth();
+        }
     }
 
     private function reportData(): array

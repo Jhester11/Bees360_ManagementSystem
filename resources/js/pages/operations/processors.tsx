@@ -1,16 +1,17 @@
 import { ProcessorSelect } from '@/components/processor-select';
-import { BeesDatePicker } from '@/components/bees-date-picker';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
-import { Head, router, usePage } from '@inertiajs/react';
+import { Head, router, usePage, usePoll } from '@inertiajs/react';
 import {
     AlertTriangle,
     Award,
     CalendarRange,
     CheckCircle2,
     Clock3,
+    Download,
+    Eye,
     FileSpreadsheet,
     Gauge,
     History,
@@ -20,12 +21,13 @@ import {
     WalletCards,
     X,
 } from 'lucide-react';
-import { DragEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx-js-style';
 
 type Tier = { name: string; target: number; incentive: number; achieved: boolean; needed: number; percentage: number };
 type Performance = {
     processor: string;
+    batch: number | null;
     totalCases: number;
     generalExterior: number;
     fourPoint: number;
@@ -49,11 +51,13 @@ type QaHistoryRow = {
 type Props = {
     phPerformance: Performance[];
     cstPerformance: Performance[];
+    approvedProcessors: { name: string; nickname: string | null }[];
     qaHistory: QaHistoryRow[];
     periods: { ph: string; cst: string; qa: string | null };
     filters: { startDate: string; endDate: string; latestQaStart: string | null; latestQaEnd: string | null };
 };
 type Timezone = 'ph' | 'cst';
+type CstFileKind = 'active' | 'closed' | 'qa';
 type ImportMetric = {
     report_date: string;
     processor_name: string;
@@ -78,6 +82,31 @@ const breadcrumbs: BreadcrumbItem[] = [
 ];
 
 const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+const philippinesMonth = (date = new Date()) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        year: 'numeric',
+        month: '2-digit',
+        timeZone: 'Asia/Manila',
+    }).formatToParts(date);
+    const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
+
+    return `${value('year')}-${value('month')}`;
+};
+const formatQaMonth = (month: string) =>
+    new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${month}-01T00:00:00Z`));
+const formatQaDay = (date: string) =>
+    new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
+const formatPhilippinesDateTime = (date: Date) =>
+    new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZone: 'Asia/Manila',
+        timeZoneName: 'short',
+    }).format(date);
 const valueFor = (row: Record<string, unknown>, aliases: string[]) => {
     const keys = Object.keys(row);
     const key = keys.find((candidate) => aliases.includes(normalize(candidate)));
@@ -87,7 +116,7 @@ const integer = (value: unknown) => Math.max(0, Math.round(Number(String(value ?
 const dateValue = (value: unknown) => {
     if (value instanceof Date && !Number.isNaN(value.valueOf())) return value.toISOString().slice(0, 10);
     const parsed = new Date(String(value ?? ''));
-    return Number.isNaN(parsed.valueOf()) ? new Date().toISOString().slice(0, 10) : parsed.toISOString().slice(0, 10);
+    return Number.isNaN(parsed.valueOf()) ? '' : parsed.toISOString().slice(0, 10);
 };
 
 async function metricsFromWorkbook(file: File): Promise<ImportMetric[]> {
@@ -138,6 +167,34 @@ async function metricsFromWorkbook(file: File): Promise<ImportMetric[]> {
     return metrics;
 }
 
+function combineMetrics(metricGroups: ImportMetric[][]): ImportMetric[] {
+    const combined = new Map<string, ImportMetric>();
+
+    metricGroups.flat().forEach((metric) => {
+        const key = `${metric.report_date}|${normalize(metric.processor_name)}`;
+        const current = combined.get(key) ?? {
+            ...metric,
+            general_exterior: 0,
+            four_point: 0,
+            qc_score: null,
+            qc_reviews: 0,
+        };
+        const currentWeightedScore = (current.qc_score ?? 0) * current.qc_reviews;
+        const addedWeightedScore = (metric.qc_score ?? 0) * metric.qc_reviews;
+        const reviews = current.qc_reviews + metric.qc_reviews;
+
+        combined.set(key, {
+            ...current,
+            general_exterior: current.general_exterior + metric.general_exterior,
+            four_point: current.four_point + metric.four_point,
+            qc_score: reviews > 0 ? Number(((currentWeightedScore + addedWeightedScore) / reviews).toFixed(2)) : null,
+            qc_reviews: reviews,
+        });
+    });
+
+    return [...combined.values()];
+}
+
 async function qaFromWorkbook(file: File): Promise<QaAssessment[]> {
     const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -160,7 +217,7 @@ async function qaFromWorkbook(file: File): Promise<QaAssessment[]> {
             .map(([, value]) => String(value).trim());
         return [
             {
-                assessment_date: dateValue(valueFor(row, ['submissiondate', 'assessmentdate', 'reportdate', 'qadate', 'date'])),
+                assessment_date: dateValue(valueFor(row, ['submissiondate', 'subdate', 'assessmentdate', 'reportdate', 'qadate', 'date'])),
                 processor_name: processorName,
                 score: Number(score.toFixed(2)),
                 project_id: String(valueFor(row, ['projectid']) ?? '').trim(),
@@ -185,11 +242,11 @@ function QaAccuracyGauge({ score, reviews, period }: { score: number | null; rev
     }, [score]);
 
     return (
-        <article className="relative overflow-hidden rounded-2xl border border-[#bcd9c8] bg-[#fffdf8] p-5 shadow-[0_8px_30px_rgba(20,122,81,0.08)]">
+        <article className="relative h-full overflow-hidden rounded-2xl border border-[#bcd9c8] bg-[#fffdf8] p-5 shadow-[0_8px_30px_rgba(20,122,81,0.08)]">
             <div className="flex items-center justify-between">
                 <div>
-                    <p className="text-sm font-extrabold text-[#342615]">QA Accuracy</p>
-                    <p className="mt-1 text-xs text-[#806f59]">Average Total Score · {period ?? 'No uploads'}</p>
+                    <p className="text-sm font-extrabold text-[#342615]">Total Accuracy</p>
+                    <p className="mt-1 text-xs text-[#806f59]">QA Total Score · {period ?? 'No uploads'}</p>
                 </div>
                 <span className="grid size-10 place-items-center rounded-xl bg-[#e3f3e8] text-[#147a51]">
                     <ShieldCheck className="size-5" />
@@ -227,18 +284,22 @@ function QaAccuracyGauge({ score, reviews, period }: { score: number | null; rev
                     />
                 </svg>
                 <div className="absolute inset-x-0 bottom-0 text-center">
-                    <p className="text-4xl font-black tracking-tight text-[#342615]">{score === null ? '—' : `${score}%`}</p>
-                    <p className="text-[10px] font-bold tracking-[0.12em] text-[#147a51] uppercase">QA accuracy</p>
+                    <p className={`${score === null ? 'text-2xl' : 'text-4xl'} font-black tracking-tight text-[#342615]`}>
+                        {score === null ? 'No data' : `${score}%`}
+                    </p>
+                    <p className="text-[10px] font-bold tracking-[0.12em] text-[#147a51] uppercase">Total accuracy</p>
                 </div>
             </div>
             <p className="mt-3 text-center text-xs font-semibold text-[#806f59]">
-                {reviews > 0 ? `Average from ${reviews} QA assessment${reviews === 1 ? '' : 's'}` : 'Upload QA results to calculate the average'}
+                {reviews > 0
+                    ? `Average from ${reviews} QA assessment${reviews === 1 ? '' : 's'}`
+                    : `No QA score available for ${period ?? 'this period'}`}
             </p>
         </article>
     );
 }
 
-function TierProgressGauge({ tier }: { tier: Tier }) {
+function TierProgressGauge({ tier, period }: { tier: Tier; period: string }) {
     const segments = 25;
     const completed = Math.round((tier.percentage / 100) * segments);
 
@@ -287,6 +348,7 @@ function TierProgressGauge({ tier }: { tier: Tier }) {
                 </div>
             </div>
             <h3 className="mt-3 text-center text-lg font-extrabold text-[#342615]">{tier.name}</h3>
+            <p className="mt-1 text-center text-[10px] font-bold tracking-wide text-[#8b7557] uppercase">{period}</p>
             <div
                 className={`mt-3 rounded-xl border px-3 py-3 text-center ${tier.achieved ? 'border-[#b9dbb9] bg-[#e5f5e2]' : 'border-[#f0c675] bg-[#fff3d8]'}`}
             >
@@ -301,7 +363,9 @@ function TierProgressGauge({ tier }: { tier: Tier }) {
     );
 }
 
-export default function Processors({ phPerformance, cstPerformance, qaHistory, periods, filters }: Props) {
+export default function Processors({ phPerformance, cstPerformance, approvedProcessors, qaHistory, periods, filters }: Props) {
+    usePoll(30_000, { only: ['phPerformance', 'cstPerformance', 'approvedProcessors', 'qaHistory', 'periods'] });
+
     const page = usePage<{
         flash?: {
             cstImportSummary?: { saved: number; file: string };
@@ -309,11 +373,9 @@ export default function Processors({ phPerformance, cstPerformance, qaHistory, p
         };
         errors?: Record<string, string>;
     }>();
-    const fileRef = useRef<HTMLInputElement>(null);
     const [timezone, setTimezone] = useState<Timezone>('ph');
     const [processor, setProcessor] = useState('');
-    const [file, setFile] = useState<File | null>(null);
-    const [dragging, setDragging] = useState(false);
+    const [cstFiles, setCstFiles] = useState<Record<CstFileKind, File | null>>({ active: null, closed: null, qa: null });
     const [uploading, setUploading] = useState(false);
     const [progress, setProgress] = useState(0);
     const [error, setError] = useState<string | null>(null);
@@ -325,28 +387,44 @@ export default function Processors({ phPerformance, cstPerformance, qaHistory, p
     const [qaUploading, setQaUploading] = useState(false);
     const [qaProgress, setQaProgress] = useState(0);
     const [qaError, setQaError] = useState<string | null>(null);
+    const [feedbackScope, setFeedbackScope] = useState<'all' | string | null>(null);
+    const [phNow, setPhNow] = useState(() => new Date());
+    const phCurrentMonth = philippinesMonth(phNow);
+    const previousPhMonth = useRef(phCurrentMonth);
+    const qaMonths = useMemo(() => {
+        const year = phCurrentMonth.slice(0, 4);
+        const calendarMonths = Array.from({ length: 12 }, (_, index) => `${year}-${String(index + 1).padStart(2, '0')}`);
+
+        return [...new Set([...calendarMonths, ...qaHistory.map((row) => row.date.slice(0, 7))])].filter(Boolean).sort((a, b) => a.localeCompare(b));
+    }, [phCurrentMonth, qaHistory]);
     const [qaRange, setQaRange] = useState<'month' | 'all'>('month');
-    const [startDate, setStartDate] = useState(filters.startDate);
-    const [endDate, setEndDate] = useState(filters.endDate);
-    const [applyingDates, setApplyingDates] = useState(false);
+    const [selectedQaMonth, setSelectedQaMonth] = useState(() => filters.startDate.slice(0, 7) || philippinesMonth());
+    const [applyingMonth, setApplyingMonth] = useState(false);
+    const [incentiveView, setIncentiveView] = useState<'overall' | 'tier3'>('overall');
     const performances = timezone === 'ph' ? phPerformance : cstPerformance;
-    const names = useMemo(() => performances.map((item) => item.processor), [performances]);
-    const selected = performances.find((item) => item.processor === processor) ?? null;
-    const latestQaMonth = useMemo(
+    const names = useMemo(
         () =>
-            qaHistory
-                .map((row) => row.date.slice(0, 7))
-                .sort()
-                .at(-1) ?? '',
-        [qaHistory],
+            [
+                ...new Set([
+                    ...approvedProcessors.map((item) => item.name),
+                    ...performances.map((item) => item.processor),
+                    ...qaHistory.map((row) => row.processor),
+                ]),
+            ].sort((a, b) => a.localeCompare(b)),
+        [approvedProcessors, performances, qaHistory],
     );
+    const processorAliases = useMemo(
+        () => Object.fromEntries(approvedProcessors.filter((item) => item.nickname).map((item) => [item.name, [item.nickname as string]])),
+        [approvedProcessors],
+    );
+    const selected = performances.find((item) => item.processor === processor) ?? null;
     const visibleQaHistory = useMemo(
         () =>
             qaHistory.filter((row) => {
                 const sameProcessor = !processor || row.processor === processor || row.nickname?.toLowerCase() === processor.toLowerCase();
-                return sameProcessor && (qaRange === 'all' || row.date.startsWith(latestQaMonth));
+                return sameProcessor && (qaRange === 'all' || row.date.startsWith(selectedQaMonth));
             }),
-        [processor, qaHistory, qaRange, latestQaMonth],
+        [processor, qaHistory, qaRange, selectedQaMonth],
     );
     const feedbackSummary = useMemo(() => {
         const counts = new Map<string, number>();
@@ -356,71 +434,179 @@ export default function Processors({ phPerformance, cstPerformance, qaHistory, p
             .forEach((feedback) => counts.set(feedback, (counts.get(feedback) ?? 0) + 1));
         return [...counts.entries()].sort((a, b) => b[1] - a[1]);
     }, [visibleQaHistory]);
+    const qaAccuracy = useMemo(() => {
+        const period = qaRange === 'all' ? 'All QA months' : formatQaMonth(selectedQaMonth);
 
-    const applyDateRange = (from = startDate, to = endDate) => {
-        const normalizedStart = from <= to ? from : to;
-        const normalizedEnd = from <= to ? to : from;
-        setStartDate(normalizedStart);
-        setEndDate(normalizedEnd);
-        router.get('/operations/processors', { start_date: normalizedStart, end_date: normalizedEnd }, {
-            preserveScroll: true,
-            preserveState: true,
-            replace: true,
-            onStart: () => setApplyingDates(true),
-            onFinish: () => setApplyingDates(false),
-        });
-    };
+        if (visibleQaHistory.length === 0) return { score: null, reviews: 0, period };
+
+        return {
+            score: Number((visibleQaHistory.reduce((total, row) => total + row.score, 0) / visibleQaHistory.length).toFixed(2)),
+            reviews: visibleQaHistory.length,
+            period,
+        };
+    }, [qaRange, selectedQaMonth, visibleQaHistory]);
+    const feedbackRows = useMemo(
+        () => (feedbackScope === 'all' ? visibleQaHistory : feedbackScope ? visibleQaHistory.filter((row) => row.date === feedbackScope) : []),
+        [feedbackScope, visibleQaHistory],
+    );
+    const feedbackErrors = useMemo(
+        () => feedbackRows.reduce((total, row) => total + row.feedback.filter((feedback) => !normalize(feedback).includes('noerror')).length, 0),
+        [feedbackRows],
+    );
+    const incentiveRows = useMemo(
+        () =>
+            performances
+                .map((performance) => ({
+                    ...performance,
+                    highestTier: [...performance.tiers].reverse().find((tier) => tier.achieved)?.name ?? 'Not achieved',
+                }))
+                .filter((performance) => incentiveView === 'overall' || performance.incentive === 300)
+                .sort(
+                    (left, right) =>
+                        right.incentive - left.incentive || right.credits - left.credits || left.processor.localeCompare(right.processor),
+                ),
+        [incentiveView, performances],
+    );
+    const tierThreeEarners = useMemo(() => performances.filter((performance) => performance.incentive === 300).length, [performances]);
+    const incentiveTotals = useMemo(
+        () => ({
+            generalExterior: incentiveRows.reduce((total, row) => total + row.generalExterior, 0),
+            fourPoint: incentiveRows.reduce((total, row) => total + row.fourPoint, 0),
+            totalCases: incentiveRows.reduce((total, row) => total + row.totalCases, 0),
+            credits: incentiveRows.reduce((total, row) => total + row.credits, 0),
+            payout: incentiveRows.reduce((total, row) => total + row.incentive, 0),
+        }),
+        [incentiveRows],
+    );
 
     useEffect(() => {
-        if (!names.includes(processor)) setProcessor(names[0] ?? '');
+        if (processor && !names.includes(processor)) setProcessor('');
     }, [names, processor]);
+    useEffect(() => {
+        if (!selectedQaMonth || !qaMonths.includes(selectedQaMonth)) setSelectedQaMonth(qaMonths[0] ?? '');
+    }, [qaMonths, selectedQaMonth]);
+    useEffect(() => {
+        const timer = window.setInterval(() => setPhNow(new Date()), 1_000);
+
+        return () => window.clearInterval(timer);
+    }, []);
+    useEffect(() => {
+        if (previousPhMonth.current === phCurrentMonth) return;
+
+        const previousMonth = previousPhMonth.current;
+        previousPhMonth.current = phCurrentMonth;
+        setSelectedQaMonth((month) => (month === previousMonth ? phCurrentMonth : month));
+    }, [phCurrentMonth]);
     useEffect(() => {
         if (page.props.flash?.cstImportSummary || page.props.flash?.qaImportSummary) setSuccessOpen(true);
     }, [page.props.flash?.cstImportSummary, page.props.flash?.qaImportSummary]);
 
-    const chooseFile = (candidate?: File) => {
+    const applyProcessorMonth = (month: string) => {
+        const [year, monthNumber] = month.split('-').map(Number);
+        const endDate = new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
+
+        setSelectedQaMonth(month);
+        setQaRange('month');
+        router.get(
+            '/operations/processors',
+            { start_date: `${month}-01`, end_date: endDate },
+            {
+                preserveScroll: true,
+                preserveState: true,
+                replace: true,
+                onStart: () => setApplyingMonth(true),
+                onFinish: () => setApplyingMonth(false),
+            },
+        );
+    };
+
+    const chooseCstFile = (kind: CstFileKind, candidate?: File) => {
         if (!candidate) return;
-        if (!/\.xlsx?$/.test(candidate.name.toLowerCase())) {
-            setError('Choose an Excel .xlsx or .xls file.');
+        const accepted = kind === 'qa' ? /\.(xlsx?|csv)$/ : /\.xlsx?$/;
+        if (!accepted.test(candidate.name.toLowerCase())) {
+            setError(kind === 'qa' ? 'Choose an Excel or CSV file for QA.' : 'Choose an Excel .xlsx or .xls file.');
             return;
         }
-        setFile(candidate);
+        setCstFiles((files) => ({ ...files, [kind]: candidate }));
         setError(null);
     };
-    const dropFile = (event: DragEvent<HTMLDivElement>) => {
-        event.preventDefault();
-        setDragging(false);
-        chooseFile(event.dataTransfer.files[0]);
-    };
-    const upload = async () => {
-        if (!file) return;
+    const uploadCstBundle = async () => {
+        const selectedFiles = Object.values(cstFiles).filter((file): file is File => file !== null);
+        if (selectedFiles.length === 0) return;
+
         setUploading(true);
         setError(null);
         setProgress(15);
+
+        const clearCstFiles = () => setCstFiles({ active: null, closed: null, qa: null });
+        const failUpload = (message: string) => {
+            setError(message);
+            setProgress(0);
+            setUploading(false);
+        };
+
         try {
-            const metrics = await metricsFromWorkbook(file);
-            setProgress(55);
+            const metricGroups = await Promise.all(
+                [cstFiles.active, cstFiles.closed].filter((file): file is File => file !== null).map(metricsFromWorkbook),
+            );
+            const metrics = combineMetrics(metricGroups);
+            const assessments = cstFiles.qa ? await qaFromWorkbook(cstFiles.qa) : [];
+            const sourceFile = selectedFiles
+                .map((file) => file.name)
+                .join(' + ')
+                .slice(0, 255);
+            setProgress(50);
+
+            const uploadQaAssessments = () => {
+                if (!cstFiles.qa || assessments.length === 0) {
+                    setProgress(100);
+                    clearCstFiles();
+                    setUploading(false);
+                    return;
+                }
+
+                router.post(
+                    '/operations/processors/qa-import',
+                    { source_file: cstFiles.qa.name, assessments },
+                    {
+                        preserveScroll: true,
+                        onProgress: (event) => setProgress(Math.max(80, event.percentage ?? 80)),
+                        onError: (errors) => failUpload(Object.values(errors)[0] ?? 'The QA workbook could not be saved.'),
+                        onSuccess: () => {
+                            setProgress(100);
+                            clearCstFiles();
+                            setUploading(false);
+                        },
+                    },
+                );
+            };
+
+            if (metrics.length === 0) {
+                uploadQaAssessments();
+                return;
+            }
+
             router.post(
                 '/operations/processors/cst-import',
-                { source_file: file.name, metrics },
+                { source_file: sourceFile, metrics },
                 {
                     preserveScroll: true,
                     onProgress: (event) => setProgress(Math.max(55, event.percentage ?? 55)),
-                    onError: (errors) => {
-                        setError(Object.values(errors)[0] ?? 'The CST workbook could not be saved.');
-                        setProgress(0);
-                    },
+                    onError: (errors) => failUpload(Object.values(errors)[0] ?? 'The CST workbooks could not be saved.'),
                     onSuccess: () => {
-                        setProgress(100);
-                        setFile(null);
+                        if (assessments.length > 0) {
+                            setProgress(78);
+                            uploadQaAssessments();
+                        } else {
+                            setProgress(100);
+                            clearCstFiles();
+                            setUploading(false);
+                        }
                     },
-                    onFinish: () => setUploading(false),
                 },
             );
         } catch (exception) {
-            setError(exception instanceof Error ? exception.message : 'The workbook could not be read.');
-            setProgress(0);
-            setUploading(false);
+            failUpload(exception instanceof Error ? exception.message : 'The CST files could not be read.');
         }
     };
 
@@ -473,6 +659,133 @@ export default function Processors({ phPerformance, cstPerformance, qaHistory, p
               ['4-Point', selected.fourPoint, Gauge, 'bg-[#efe7ff] text-[#7048bd]'],
           ] as const)
         : [];
+
+    const exportMonthlyIncentives = () => {
+        if (incentiveRows.length === 0) return;
+
+        const headerRow = 4;
+        const firstDataRow = headerRow + 1;
+        const totalRow = firstDataRow + incentiveRows.length;
+        const viewLabel = incentiveView === 'overall' ? 'Overall' : '$300 Earners';
+        const timeLabel = timezone === 'ph' ? 'PH Time' : 'CST';
+        const worksheet = XLSX.utils.aoa_to_sheet([
+            ['BEES360 | MONTHLY INCENTIVE SUMMARY'],
+            [`${periods[timezone]} · ${timeLabel} · ${viewLabel}`],
+            [],
+            ['PROCESSOR', 'BATCH', 'GEN EXT', '4-POINT', 'TOTAL CASES', 'EARNED CREDITS', 'QA ACCURACY', 'FINAL TIER', 'INCENTIVE'],
+            ...incentiveRows.map((row) => [
+                row.processor,
+                row.batch ?? '',
+                row.generalExterior,
+                row.fourPoint,
+                row.totalCases,
+                row.credits,
+                row.qcScore === null ? '' : row.qcScore / 100,
+                row.highestTier,
+                row.incentive,
+            ]),
+            [incentiveView === 'overall' ? 'OVERALL TOTAL' : '$300 EARNERS TOTAL', '', 0, 0, 0, 0, '', '', 0],
+        ]) as XLSX.WorkSheet;
+        const titleStyle = {
+            alignment: { horizontal: 'center', vertical: 'center' },
+            font: { name: 'Century Gothic', sz: 10, bold: true, color: { rgb: 'FFF8E7' } },
+            fill: { fgColor: { rgb: '4A351D' } },
+        };
+        const subtitleStyle = {
+            alignment: { horizontal: 'center', vertical: 'center' },
+            font: { name: 'Century Gothic', sz: 10, bold: true, color: { rgb: '805C24' } },
+            fill: { fgColor: { rgb: 'FFF1CC' } },
+        };
+        const headerStyle = {
+            alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+            font: { name: 'Century Gothic', sz: 10, bold: true, color: { rgb: 'FFF8E7' } },
+            fill: { fgColor: { rgb: '3B2915' } },
+            border: { bottom: { style: 'thin', color: { rgb: '80603A' } } },
+        };
+        const bodyStyle = {
+            alignment: { vertical: 'center' },
+            font: { name: 'Century Gothic', sz: 10, color: { rgb: '4A3821' } },
+            fill: { fgColor: { rgb: 'FFFFFF' } },
+            border: { bottom: { style: 'thin', color: { rgb: 'F0E5D4' } } },
+        };
+        const alternateStyle = { ...bodyStyle, fill: { fgColor: { rgb: 'FFF8E8' } } };
+        const totalStyle = {
+            alignment: { horizontal: 'center', vertical: 'center' },
+            font: { name: 'Century Gothic', sz: 10, bold: true, color: { rgb: '5A3900' } },
+            fill: { fgColor: { rgb: 'FFF0C5' } },
+            border: { top: { style: 'medium', color: { rgb: '4A351D' } } },
+        };
+
+        for (let row = 1; row <= totalRow; row += 1) {
+            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']) {
+                const address = `${column}${row}`;
+                worksheet[address] ??= { t: 's', v: '' };
+                worksheet[address].s = { ...bodyStyle, fill: { fgColor: { rgb: 'FFFFFF' } } };
+            }
+        }
+
+        worksheet['!merges'] = [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
+            { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
+            { s: { r: totalRow - 1, c: 0 }, e: { r: totalRow - 1, c: 1 } },
+        ];
+        worksheet['!cols'] = [{ wch: 31 }, { wch: 11 }, { wch: 13 }, { wch: 13 }, { wch: 15 }, { wch: 18 }, { wch: 17 }, { wch: 15 }, { wch: 15 }];
+        worksheet['!rows'] = [{ hpt: 27 }, { hpt: 20 }, { hpt: 8 }, { hpt: 28 }];
+        worksheet.A1.s = titleStyle;
+        worksheet.A2.s = subtitleStyle;
+
+        for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']) worksheet[`${column}${headerRow}`].s = headerStyle;
+        worksheet[`I${headerRow}`].s = { ...headerStyle, fill: { fgColor: { rgb: '2F2112' } } };
+
+        incentiveRows.forEach((row, index) => {
+            const rowNumber = firstDataRow + index;
+            const rowStyle = index % 2 === 0 ? bodyStyle : alternateStyle;
+            const fill = index % 2 === 0 ? 'FFFFFF' : 'FFF8E8';
+
+            worksheet[`A${rowNumber}`].s = rowStyle;
+            for (const column of ['B', 'C', 'D', 'E', 'F', 'G', 'H']) {
+                worksheet[`${column}${rowNumber}`].s = { ...rowStyle, alignment: { horizontal: 'center', vertical: 'center' } };
+            }
+            worksheet[`E${rowNumber}`] = { f: `C${rowNumber}+D${rowNumber}`, v: row.totalCases, t: 'n', s: worksheet[`E${rowNumber}`].s };
+            worksheet[`F${rowNumber}`] = {
+                f: `C${rowNumber}+(D${rowNumber}*1.25)`,
+                v: row.credits,
+                t: 'n',
+                s: { ...worksheet[`F${rowNumber}`].s, numFmt: '#,##0.00' },
+            };
+            worksheet[`G${rowNumber}`].s = { ...worksheet[`G${rowNumber}`].s, numFmt: '0.00%' };
+            worksheet[`I${rowNumber}`].s = {
+                ...rowStyle,
+                alignment: { horizontal: 'center', vertical: 'center' },
+                font: { name: 'Century Gothic', sz: 10, bold: true, color: { rgb: row.incentive === 300 ? 'FFFFFF' : '694400' } },
+                fill: { fgColor: { rgb: row.incentive === 300 ? 'D99000' : fill } },
+                numFmt: '$#,##0.00',
+            };
+        });
+
+        for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']) worksheet[`${column}${totalRow}`].s = totalStyle;
+        worksheet[`C${totalRow}`] = { f: `SUM(C${firstDataRow}:C${totalRow - 1})`, v: incentiveTotals.generalExterior, t: 'n', s: totalStyle };
+        worksheet[`D${totalRow}`] = { f: `SUM(D${firstDataRow}:D${totalRow - 1})`, v: incentiveTotals.fourPoint, t: 'n', s: totalStyle };
+        worksheet[`E${totalRow}`] = { f: `SUM(E${firstDataRow}:E${totalRow - 1})`, v: incentiveTotals.totalCases, t: 'n', s: totalStyle };
+        worksheet[`F${totalRow}`] = {
+            f: `SUM(F${firstDataRow}:F${totalRow - 1})`,
+            v: incentiveTotals.credits,
+            t: 'n',
+            s: { ...totalStyle, numFmt: '#,##0.00' },
+        };
+        worksheet[`I${totalRow}`] = {
+            f: `SUM(I${firstDataRow}:I${totalRow - 1})`,
+            v: incentiveTotals.payout,
+            t: 'n',
+            s: { ...totalStyle, fill: { fgColor: { rgb: 'F2CF72' } }, numFmt: '$#,##0.00' },
+        };
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Monthly Incentives');
+        XLSX.writeFile(workbook, `Bees360_Monthly_Incentives_${selectedQaMonth}_${timezone.toUpperCase()}_${incentiveView}.xlsx`, {
+            compression: true,
+        });
+    };
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -601,6 +914,103 @@ export default function Processors({ phPerformance, cstPerformance, qaHistory, p
                     </DialogContent>
                 </Dialog>
 
+                <Dialog open={feedbackScope !== null} onOpenChange={(open) => !open && setFeedbackScope(null)}>
+                    <DialogContent className="max-h-[88vh] overflow-hidden border-[#e5ce9f] bg-[#fffdf8] sm:max-w-3xl">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-3 text-2xl text-[#342615]">
+                                <span className="grid size-11 place-items-center rounded-xl bg-[#fff0c9] text-[#a96300]">
+                                    <Eye className="size-5" />
+                                </span>
+                                {feedbackScope === 'all' ? 'Overall processor feedback' : 'Daily QA feedback'}
+                            </DialogTitle>
+                            <DialogDescription>
+                                {processor || 'Selected processor'} ·{' '}
+                                {feedbackScope === 'all'
+                                    ? qaRange === 'all'
+                                        ? 'All QA months'
+                                        : formatQaMonth(selectedQaMonth)
+                                    : feedbackScope
+                                      ? formatQaDay(feedbackScope)
+                                      : ''}{' '}
+                                · {feedbackRows.length} assessment(s)
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                            <div className="rounded-xl border border-[#eadbc6] bg-white p-3 text-center">
+                                <p className="text-xs font-bold text-[#806f59]">Assessments</p>
+                                <p className="mt-1 text-2xl font-black text-[#342615]">{feedbackRows.length}</p>
+                            </div>
+                            <div className="rounded-xl border border-[#eadbc6] bg-white p-3 text-center">
+                                <p className="text-xs font-bold text-[#806f59]">Total errors</p>
+                                <p className="mt-1 text-2xl font-black text-[#b96c00]">{feedbackErrors}</p>
+                            </div>
+                            <div className="col-span-2 rounded-xl border border-[#bcd9c8] bg-[#f3faef] p-3 text-center sm:col-span-1">
+                                <p className="text-xs font-bold text-[#51705e]">{feedbackScope === 'all' ? 'Overall accuracy' : 'Daily accuracy'}</p>
+                                <p className="mt-1 text-2xl font-black text-[#147a51]">
+                                    {feedbackRows.length
+                                        ? `${Number((feedbackRows.reduce((total, row) => total + row.score, 0) / feedbackRows.length).toFixed(2))}%`
+                                        : 'No data'}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="grid max-h-[52vh] gap-3 overflow-y-auto pr-1">
+                            {feedbackRows.map((row) => {
+                                const errors = row.feedback.filter((feedback) => !normalize(feedback).includes('noerror'));
+
+                                return (
+                                    <article key={row.id} className="rounded-2xl border border-[#eadbc6] bg-white p-4 shadow-sm">
+                                        <div className="flex flex-wrap items-start justify-between gap-3">
+                                            <div>
+                                                <p className="font-black text-[#342615]">Project {row.projectId || 'Not provided'}</p>
+                                                <p className="mt-1 text-xs font-semibold text-[#806f59]">
+                                                    {feedbackScope === 'all' ? `${formatQaDay(row.date)} · ` : ''}Reviewed by{' '}
+                                                    {row.qcName || 'QA reviewer'}
+                                                </p>
+                                            </div>
+                                            <span
+                                                className={`rounded-full px-3 py-1 text-xs font-black ${row.score >= 90 ? 'bg-[#e4f3df] text-[#347846]' : 'bg-[#fbe4df] text-[#a04435]'}`}
+                                            >
+                                                {row.score}% score
+                                            </span>
+                                        </div>
+                                        {errors.length ? (
+                                            <div className="mt-3 grid gap-2">
+                                                {errors.map((feedback, index) => (
+                                                    <div
+                                                        key={`${row.id}-${index}`}
+                                                        className="flex items-start gap-3 rounded-xl border border-[#f0dfc1] bg-[#fffaf1] p-3"
+                                                    >
+                                                        <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-[#ffe5b0] text-[10px] font-black text-[#935b00]">
+                                                            {index + 1}
+                                                        </span>
+                                                        <p className="text-sm leading-5 font-semibold text-[#594a37]">{feedback}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="mt-3 rounded-xl bg-[#eef7ef] p-3 text-sm font-bold text-[#347846]">
+                                                No error feedback was recorded for this assessment.
+                                            </p>
+                                        )}
+                                    </article>
+                                );
+                            })}
+                        </div>
+
+                        <DialogFooter>
+                            <Button
+                                type="button"
+                                onClick={() => setFeedbackScope(null)}
+                                className="h-11 bg-[#4d2f12] px-7 font-bold text-white hover:bg-[#34200d]"
+                            >
+                                Close feedback view
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
                 <section className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
                     <div>
                         <p className="text-sm font-bold tracking-[0.18em] text-[#b26a00] uppercase">Performance & incentives</p>
@@ -633,16 +1043,47 @@ export default function Processors({ phPerformance, cstPerformance, qaHistory, p
 
                 <section className={`grid gap-4 ${timezone === 'cst' ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
                     <div className="w-full rounded-2xl border border-[#ead4ad] bg-gradient-to-r from-[#fffdf8] to-[#fff7e7] p-6 shadow-[0_8px_30px_rgba(88,57,18,0.06)]">
-                        <label htmlFor="performance-processor" className="mb-2 block text-sm font-bold text-[#594324]">
-                            Select processor name
-                        </label>
-                        <ProcessorSelect
-                            id="performance-processor"
-                            value={processor}
-                            processorNames={names}
-                            onValueChange={setProcessor}
-                            includeAll={false}
-                        />
+                        <div className="grid gap-4 md:grid-cols-2">
+                            <div>
+                                <label htmlFor="performance-processor" className="mb-2 block text-sm font-bold text-[#594324]">
+                                    Select processor name
+                                </label>
+                                <ProcessorSelect
+                                    id="performance-processor"
+                                    value={processor}
+                                    processorNames={names}
+                                    processorAliases={processorAliases}
+                                    onValueChange={setProcessor}
+                                    includeAll={false}
+                                    allowClear
+                                />
+                            </div>
+                            <label htmlFor="processor-reporting-month" className="grid gap-2 text-sm font-bold text-[#594324]">
+                                Reporting month
+                                <span className="relative block">
+                                    {applyingMonth ? (
+                                        <LoaderCircle className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 animate-spin text-[#b96c00]" />
+                                    ) : (
+                                        <CalendarRange className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[#b96c00]" />
+                                    )}
+                                    <select
+                                        id="processor-reporting-month"
+                                        value={selectedQaMonth}
+                                        disabled={applyingMonth}
+                                        onChange={(event) => applyProcessorMonth(event.target.value)}
+                                        className="h-12 w-full appearance-none rounded-xl border border-[#dfc58f] bg-white pr-9 pl-10 text-sm font-bold text-[#4b3820] shadow-[0_4px_14px_rgba(88,57,18,0.06)] outline-none focus:border-[#b96c00] focus:ring-2 focus:ring-[#f3cf81]/60"
+                                    >
+                                        {qaMonths.map((month) => (
+                                            <option key={month} value={month}>
+                                                {formatQaMonth(month)}
+                                                {month === phCurrentMonth ? ' · Current PH month' : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-[#b96c00]">▼</span>
+                                </span>
+                            </label>
+                        </div>
                         <p className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#947650]">
                             <Clock3 className="size-3.5" />
                             {timezone === 'ph' ? 'Philippine' : 'Central'} time · {periods[timezone]}
@@ -650,33 +1091,61 @@ export default function Processors({ phPerformance, cstPerformance, qaHistory, p
                     </div>
                     {timezone === 'cst' && (
                         <div className="rounded-2xl border border-[#ead4ad] bg-[#fffdf8] p-5 shadow-[0_8px_30px_rgba(88,57,18,0.06)]">
-                            <div
-                                onDragOver={(e) => e.preventDefault()}
-                                onDragEnter={() => setDragging(true)}
-                                onDragLeave={() => setDragging(false)}
-                                onDrop={dropFile}
-                                onClick={() => !uploading && fileRef.current?.click()}
-                                className={`flex min-h-28 cursor-pointer items-center gap-4 rounded-xl border-2 border-dashed p-4 transition ${dragging ? 'border-[#b96c00] bg-[#fff0c9]' : 'border-[#dfc58f] bg-white hover:bg-[#fff8e9]'}`}
-                            >
-                                <input
-                                    ref={fileRef}
-                                    type="file"
-                                    accept=".xlsx,.xls"
-                                    className="sr-only"
-                                    onChange={(e) => chooseFile(e.target.files?.[0])}
-                                />
-                                <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-[#fff0c9] text-[#a96300]">
-                                    {uploading ? <LoaderCircle className="size-6 animate-spin" /> : <UploadCloud className="size-6" />}
-                                </span>
-                                <div className="min-w-0">
-                                    <p className="truncate font-bold text-[#3f2e18]">{file?.name ?? 'Drop CST Excel file here'}</p>
-                                    <p className="mt-1 text-xs text-[#806f59]">Processor, General Exterior, 4-Point and optional QC Score.</p>
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <p className="font-extrabold text-[#3f2e18]">CST monthly import</p>
+                                    <p className="mt-1 text-xs leading-5 text-[#806f59]">
+                                        Add any one, two, or all three files. Active and Closed totals are combined; QA supplies monthly accuracy.
+                                    </p>
                                 </div>
+                                <span className="shrink-0 rounded-full bg-[#fff0c9] px-3 py-1 text-xs font-black text-[#9b5d00]">
+                                    {Object.values(cstFiles).filter(Boolean).length}/3 selected
+                                </span>
+                            </div>
+                            <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+                                {(
+                                    [
+                                        ['active', 'Active', 'CST active cases', '.xlsx,.xls'],
+                                        ['closed', 'Closed', 'CST completed cases', '.xlsx,.xls'],
+                                        ['qa', 'QA', 'Accuracy and feedback', '.xlsx,.xls,.csv'],
+                                    ] as const
+                                ).map(([kind, label, description, accept]) => {
+                                    const selectedFile = cstFiles[kind];
+
+                                    return (
+                                        <label
+                                            key={kind}
+                                            onDragOver={(event) => event.preventDefault()}
+                                            onDrop={(event) => {
+                                                event.preventDefault();
+                                                chooseCstFile(kind, event.dataTransfer.files[0]);
+                                            }}
+                                            className={`cursor-pointer rounded-xl border-2 border-dashed p-3 transition ${selectedFile ? 'border-[#7eb797] bg-[#eef8ef]' : 'border-[#dfc58f] bg-white hover:border-[#b96c00] hover:bg-[#fff8e9]'}`}
+                                        >
+                                            <input
+                                                type="file"
+                                                accept={accept}
+                                                disabled={uploading}
+                                                className="sr-only"
+                                                onChange={(event) => chooseCstFile(kind, event.target.files?.[0])}
+                                            />
+                                            <span
+                                                className={`grid size-9 place-items-center rounded-lg ${selectedFile ? 'bg-[#d9efdf] text-[#147a51]' : 'bg-[#fff0c9] text-[#a96300]'}`}
+                                            >
+                                                {selectedFile ? <CheckCircle2 className="size-5" /> : <UploadCloud className="size-5" />}
+                                            </span>
+                                            <p className="mt-3 text-sm font-extrabold text-[#3f2e18]">{label} file</p>
+                                            <p className="mt-1 truncate text-[11px] font-semibold text-[#806f59]">
+                                                {selectedFile?.name ?? description}
+                                            </p>
+                                        </label>
+                                    );
+                                })}
                             </div>
                             {(uploading || progress > 0) && (
                                 <div className="mt-3">
                                     <div className="flex justify-between text-xs font-bold text-[#806f59]">
-                                        <span>Uploading CST data</span>
+                                        <span>Combining and saving CST monthly data</span>
                                         <span>{progress}%</span>
                                     </div>
                                     <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[#f0e1c8]">
@@ -687,20 +1156,18 @@ export default function Processors({ phPerformance, cstPerformance, qaHistory, p
                             {error && <p className="mt-2 text-sm font-semibold text-[#a04435]">{error}</p>}
                             <Button
                                 type="button"
-                                disabled={!file || uploading}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    void upload();
-                                }}
+                                disabled={!Object.values(cstFiles).some(Boolean) || uploading}
+                                onClick={() => void uploadCstBundle()}
                                 className="mt-3 h-11 w-full bg-[#b96c00] font-bold text-white hover:bg-[#925400]"
                             >
-                                <UploadCloud className="size-4" /> Upload CST workbook
+                                {uploading ? <LoaderCircle className="size-4 animate-spin" /> : <UploadCloud className="size-4" />}
+                                {uploading ? 'Saving selected files…' : 'Generate & save selected files'}
                             </Button>
                         </div>
                     )}
                 </section>
 
-                {!selected ? (
+                {processor && !selected ? (
                     <section className="grid min-h-72 place-items-center rounded-2xl border border-dashed border-[#dfc58f] bg-[#fffdf8] p-8 text-center">
                         <div>
                             <FileSpreadsheet className="mx-auto size-10 text-[#c17b12]" />
@@ -712,13 +1179,13 @@ export default function Processors({ phPerformance, cstPerformance, qaHistory, p
                             </p>
                         </div>
                     </section>
-                ) : (
+                ) : processor && selected ? (
                     <>
-                        <section className="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        <section className="grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-4">
                             {statCards.map(([label, value, Icon, tone]) => (
                                 <article
                                     key={label}
-                                    className="group relative w-full overflow-hidden rounded-2xl border border-[#eadbc6] bg-gradient-to-br from-[#fffdf8] to-[#fff8eb] p-5 shadow-[0_8px_30px_rgba(88,57,18,0.05)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_14px_34px_rgba(88,57,18,0.1)]"
+                                    className="group relative h-full w-full overflow-hidden rounded-2xl border border-[#eadbc6] bg-gradient-to-br from-[#fffdf8] to-[#fff8eb] p-5 shadow-[0_8px_30px_rgba(88,57,18,0.05)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_14px_34px_rgba(88,57,18,0.1)]"
                                 >
                                     <span className={`grid size-10 place-items-center rounded-xl ${tone}`}>
                                         <Icon className="size-5" />
@@ -729,16 +1196,17 @@ export default function Processors({ phPerformance, cstPerformance, qaHistory, p
                                 </article>
                             ))}
                             <QaAccuracyGauge
-                                key={`${selected.processor}-${selected.qcScore}-${selected.qcReviews}`}
-                                score={selected.qcScore}
-                                reviews={selected.qcReviews}
-                                period={periods.qa}
+                                key={`${selected.processor}-${selectedQaMonth}-${qaAccuracy.score}-${qaAccuracy.reviews}`}
+                                score={qaAccuracy.score}
+                                reviews={qaAccuracy.reviews}
+                                period={qaAccuracy.period}
                             />
                         </section>
                         <section className="grid gap-5 lg:grid-cols-[1.1fr_1.9fr]">
                             <article className="relative overflow-hidden rounded-2xl bg-[#4d2f12] p-6 text-white shadow-[0_16px_36px_rgba(77,47,18,0.2)]">
                                 <div className="absolute -top-16 -right-12 size-48 rounded-full bg-[#f0a91e]/25" />
                                 <p className="text-sm font-bold text-[#f7d994]">TOTAL EARNED CREDITS</p>
+                                <p className="mt-1 text-xs font-semibold text-[#ead8be]">Monthly tier progress · {periods[timezone]}</p>
                                 <p className="mt-3 text-5xl font-black">{selected.credits.toLocaleString()}</p>
                                 <p className="mt-2 text-sm text-[#ead8be]">
                                     {selected.generalExterior} × 1 + {selected.fourPoint} × 1.25
@@ -753,40 +1221,173 @@ export default function Processors({ phPerformance, cstPerformance, qaHistory, p
                             </article>
                             <div className="grid gap-4 md:grid-cols-3">
                                 {selected.tiers.map((tier) => (
-                                    <TierProgressGauge key={tier.name} tier={tier} />
+                                    <TierProgressGauge key={tier.name} tier={tier} period={periods[timezone]} />
                                 ))}
                             </div>
                         </section>
                     </>
+                ) : null}
+
+                {!processor && (
+                    <section className="overflow-hidden rounded-2xl border border-[#e5ce9f] bg-[#fffdf8] shadow-[0_10px_34px_rgba(88,57,18,0.08)]">
+                        <div className="flex flex-col justify-between gap-4 border-b border-[#eadbc6] bg-gradient-to-r from-[#fff8e8] to-[#fffdf8] px-5 py-5 lg:flex-row lg:items-end">
+                            <div>
+                                <p className="text-xs font-extrabold tracking-[0.16em] text-[#b26a00] uppercase">Incentive overview</p>
+                                <h2 className="mt-1 text-2xl font-black text-[#342615]">Monthly incentive summary</h2>
+                                <p className="mt-1 text-sm text-[#806f59]">
+                                    {periods[timezone]} · {timezone === 'ph' ? 'PH Time' : 'CST'} · {tierThreeEarners} processor
+                                    {tierThreeEarners === 1 ? '' : 's'} earned $300
+                                </p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 self-start">
+                                <div className="inline-flex rounded-xl border border-[#dfc58f] bg-white p-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIncentiveView('overall')}
+                                        className={`h-10 rounded-lg px-4 text-sm font-extrabold transition ${incentiveView === 'overall' ? 'bg-[#4d2f12] text-white' : 'text-[#765b35] hover:bg-[#fff2d2]'}`}
+                                    >
+                                        Overall
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIncentiveView('tier3')}
+                                        className={`h-10 rounded-lg px-4 text-sm font-extrabold transition ${incentiveView === 'tier3' ? 'bg-[#d99000] text-white' : 'text-[#936000] hover:bg-[#fff2d2]'}`}
+                                    >
+                                        $300 Earners
+                                    </button>
+                                </div>
+                                <Button
+                                    type="button"
+                                    disabled={incentiveRows.length === 0}
+                                    onClick={exportMonthlyIncentives}
+                                    className="h-12 gap-2 rounded-xl bg-[#b96c00] px-5 font-extrabold text-white shadow-[0_6px_18px_rgba(185,108,0,0.22)] hover:bg-[#925400] disabled:bg-[#d4c2a5]"
+                                >
+                                    <Download className="size-4" />
+                                    Export Excel
+                                </Button>
+                            </div>
+                        </div>
+
+                        {incentiveRows.length > 0 ? (
+                            <div className="overflow-x-auto">
+                                <table className="w-full min-w-[1100px] text-left text-sm">
+                                    <thead className="bg-[#3b2915] text-[11px] tracking-wide text-[#fff8e7] uppercase">
+                                        <tr>
+                                            <th className="px-4 py-4">Processor</th>
+                                            <th className="px-4 py-4 text-center">Batch</th>
+                                            <th className="px-4 py-4 text-center">Gen Ext</th>
+                                            <th className="px-4 py-4 text-center">4-Point</th>
+                                            <th className="px-4 py-4 text-center">Total cases</th>
+                                            <th className="px-4 py-4 text-center">Earned credits</th>
+                                            <th className="px-4 py-4 text-center">Accuracy</th>
+                                            <th className="px-4 py-4 text-center">Final tier</th>
+                                            <th className="bg-[#2f2112] px-4 py-4 text-center">Incentive</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-[#eee2d0]">
+                                        {incentiveRows.map((row) => (
+                                            <tr key={`${timezone}-${row.processor}`} className="odd:bg-white even:bg-[#fff8e8]">
+                                                <td className="px-4 py-3.5 font-extrabold text-[#3f2e18]">{row.processor}</td>
+                                                <td className="px-4 py-3.5 text-center">
+                                                    <span className="inline-flex rounded-full bg-[#f2eadf] px-2.5 py-1 text-xs font-black text-[#684b29]">
+                                                        Batch {row.batch ?? '—'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3.5 text-center font-bold text-[#594a37]">{row.generalExterior}</td>
+                                                <td className="px-4 py-3.5 text-center font-bold text-[#594a37]">{row.fourPoint}</td>
+                                                <td className="px-4 py-3.5 text-center font-black text-[#342615]">{row.totalCases}</td>
+                                                <td className="px-4 py-3.5 text-center font-black text-[#9b5d00]">{row.credits.toLocaleString()}</td>
+                                                <td className="px-4 py-3.5 text-center font-bold text-[#147a51]">
+                                                    {row.qcScore === null ? 'No QA' : `${row.qcScore}%`}
+                                                </td>
+                                                <td className="px-4 py-3.5 text-center">
+                                                    <span
+                                                        className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${row.incentive === 300 ? 'bg-[#fff0b8] text-[#8b5700]' : row.incentive > 0 ? 'bg-[#e4f3df] text-[#347846]' : 'bg-[#eeeae4] text-[#786b5b]'}`}
+                                                    >
+                                                        {row.highestTier}
+                                                    </span>
+                                                </td>
+                                                <td className="bg-[#fff3d3] px-4 py-3.5 text-center">
+                                                    <span
+                                                        className={`inline-flex min-w-20 justify-center rounded-lg px-3 py-2 font-black ${row.incentive === 300 ? 'bg-[#d99000] text-white shadow-sm' : 'text-[#795000]'}`}
+                                                    >
+                                                        ${row.incentive.toFixed(2)}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                    <tfoot className="border-t-[3px] border-[#4d2f12] bg-[#fff0c9] font-black text-[#4d351b]">
+                                        <tr>
+                                            <td colSpan={2} className="px-4 py-4 text-center uppercase">
+                                                {incentiveView === 'overall' ? 'Overall total' : '$300 earners total'}
+                                            </td>
+                                            <td className="px-4 py-4 text-center">{incentiveTotals.generalExterior}</td>
+                                            <td className="px-4 py-4 text-center">{incentiveTotals.fourPoint}</td>
+                                            <td className="px-4 py-4 text-center">{incentiveTotals.totalCases}</td>
+                                            <td className="px-4 py-4 text-center">{incentiveTotals.credits.toLocaleString()}</td>
+                                            <td colSpan={2} />
+                                            <td className="bg-[#f2cf72] px-4 py-4 text-center text-base">${incentiveTotals.payout.toFixed(2)}</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        ) : (
+                            <div className="grid min-h-48 place-items-center px-6 py-10 text-center">
+                                <div>
+                                    <Award className="mx-auto size-11 text-[#d49a28]" />
+                                    <p className="mt-3 font-extrabold text-[#342615]">No $300 earners for {periods[timezone]}</p>
+                                    <p className="mt-1 text-sm text-[#806f59]">Processors will appear here when they reach 750 monthly credits.</p>
+                                </div>
+                            </div>
+                        )}
+                    </section>
                 )}
 
-                {
+                {processor && (
                     <section className="grid gap-5 rounded-2xl border border-[#cce0d5] bg-[#f9fdf9] p-5 shadow-[0_10px_34px_rgba(20,122,81,0.08)]">
                         <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
                             <div>
                                 <p className="text-xs font-extrabold tracking-[0.16em] text-[#147a51] uppercase">Quality history</p>
                                 <h2 className="mt-1 text-2xl font-black text-[#342615]">QA results and recurring feedback</h2>
                                 <p className="mt-1 text-sm text-[#71624e]">
-                                    {processor || 'Select a processor'} · {visibleQaHistory.length} assessment(s)
+                                    {processor || 'Select a processor'} ·{' '}
+                                    {qaRange === 'all' ? 'All QA months' : selectedQaMonth ? formatQaMonth(selectedQaMonth) : 'No QA month'} ·{' '}
+                                    {visibleQaHistory.length} assessment(s)
+                                </p>
+                                <p className="mt-2 flex items-center gap-1.5 text-xs font-bold text-[#147a51]">
+                                    <Clock3 className="size-3.5" />
+                                    Live PH time · {formatPhilippinesDateTime(phNow)}
                                 </p>
                             </div>
-                            <div className="inline-flex self-start rounded-xl border border-[#bed8ca] bg-white p-1">
-                                <button
+                            <div className="flex flex-wrap items-end gap-2 self-start">
+                                <div className="inline-flex rounded-xl border border-[#bed8ca] bg-white p-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setQaRange('month')}
+                                        className={`flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-bold ${qaRange === 'month' ? 'bg-[#147a51] text-white' : 'text-[#37624e]'}`}
+                                    >
+                                        <CalendarRange className="size-4" />
+                                        Selected month
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setQaRange('all')}
+                                        className={`flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-bold ${qaRange === 'all' ? 'bg-[#147a51] text-white' : 'text-[#37624e]'}`}
+                                    >
+                                        <History className="size-4" />
+                                        Start to latest
+                                    </button>
+                                </div>
+                                <Button
                                     type="button"
-                                    onClick={() => setQaRange('month')}
-                                    className={`flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-bold ${qaRange === 'month' ? 'bg-[#147a51] text-white' : 'text-[#37624e]'}`}
+                                    disabled={visibleQaHistory.length === 0}
+                                    onClick={() => setFeedbackScope('all')}
+                                    className="h-11 bg-[#4d2f12] px-4 font-bold text-white hover:bg-[#34200d] disabled:bg-[#c9c0b5]"
                                 >
-                                    <CalendarRange className="size-4" />
-                                    Latest month
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setQaRange('all')}
-                                    className={`flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-bold ${qaRange === 'all' ? 'bg-[#147a51] text-white' : 'text-[#37624e]'}`}
-                                >
-                                    <History className="size-4" />
-                                    Start to latest
-                                </button>
+                                    <Eye className="size-4" />
+                                    View all feedback
+                                </Button>
                             </div>
                         </div>
                         <div className="grid gap-4 lg:grid-cols-[1fr_1.6fr]">
@@ -809,7 +1410,11 @@ export default function Processors({ phPerformance, cstPerformance, qaHistory, p
                                     ))}
                                     {feedbackSummary.length === 0 && (
                                         <p className="rounded-xl bg-[#eef7ef] p-4 text-sm font-semibold text-[#347846]">
-                                            No error feedback for this selection.
+                                            {visibleQaHistory.length === 0
+                                                ? qaRange === 'all'
+                                                    ? 'There is no QA feedback data for this processor.'
+                                                    : `There is no QA feedback data for ${formatQaMonth(selectedQaMonth)}.`
+                                                : 'No error feedback was recorded for this selection.'}
                                         </p>
                                     )}
                                 </div>
@@ -829,6 +1434,7 @@ export default function Processors({ phPerformance, cstPerformance, qaHistory, p
                                                 <th className="px-4 py-3">QC</th>
                                                 <th className="px-4 py-3 text-center">Score</th>
                                                 <th className="px-4 py-3 text-center">Errors</th>
+                                                <th className="px-4 py-3 text-center">Feedback</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[#edf0ec]">
@@ -851,12 +1457,24 @@ export default function Processors({ phPerformance, cstPerformance, qaHistory, p
                                                     <td className="px-4 py-3 text-center font-bold text-[#a05e09]">
                                                         {row.feedback.filter((item) => !normalize(item).includes('noerror')).length}
                                                     </td>
+                                                    <td className="px-4 py-3 text-center">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setFeedbackScope(row.date)}
+                                                            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#dfc58f] bg-[#fff8e8] px-3 text-xs font-extrabold text-[#8a5708] transition hover:border-[#b96c00] hover:bg-[#ffedbd]"
+                                                        >
+                                                            <Eye className="size-3.5" />
+                                                            View
+                                                        </button>
+                                                    </td>
                                                 </tr>
                                             ))}
                                             {visibleQaHistory.length === 0 && (
                                                 <tr>
-                                                    <td colSpan={6} className="px-5 py-12 text-center text-[#806f59]">
-                                                        No QA results found for this processor and period.
+                                                    <td colSpan={7} className="px-5 py-12 text-center text-[#806f59]">
+                                                        {qaRange === 'all'
+                                                            ? 'There is no QA data for this processor.'
+                                                            : `There is no QA data for this processor in ${formatQaMonth(selectedQaMonth)}.`}
                                                     </td>
                                                 </tr>
                                             )}
@@ -866,7 +1484,7 @@ export default function Processors({ phPerformance, cstPerformance, qaHistory, p
                             </article>
                         </div>
                     </section>
-                }
+                )}
             </div>
         </AppLayout>
     );

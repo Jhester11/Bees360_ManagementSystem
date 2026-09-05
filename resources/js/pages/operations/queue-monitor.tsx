@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import AppLayout from '@/layouts/app-layout';
+import { assertWorksheetRowLimit, readSpreadsheet } from '@/lib/spreadsheet-upload';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, usePage } from '@inertiajs/react';
 import {
@@ -25,9 +26,10 @@ import {
     UsersRound,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import * as XLSX from 'xlsx-js-style';
+import * as SheetJS from 'xlsx';
 
 type CheckpointId = 'start' | '11am' | '2pm' | '4pm';
+type QueueDetailMetric = 'waiting' | 'aging' | 'completion';
 type BatchQueue = { batch: number; team: string; waiting: number; processed: number; aging: number };
 type QueueSnapshot = { waiting: number; processed: number; aging: number; batches: BatchQueue[] };
 type ProcessorDefinition = { name: string; batch: number; aliases: string[] };
@@ -121,6 +123,7 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Operations', href: '/dashboard' },
     { title: 'Queue Monitor', href: '/operations/queue-monitor' },
 ];
+const maximumQueueRows = 100_000;
 const teamNames: Record<number, string> = { 1: "Jhun's Team", 2: "Allan's Team", 3: "Chrismer's Team" };
 
 function normalizeName(value: unknown): string {
@@ -201,11 +204,13 @@ function percentage(processed: number, waiting: number): number {
 }
 
 async function inspectWorkbook(file: File, checkpoint: CheckpointId): Promise<WorkbookResult> {
-    const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: false });
+    const workbook = await readSpreadsheet(file, ['xlsx', 'xls'], maximumQueueRows, { cellDates: false });
     const worksheet = workbook.Sheets[workbook.SheetNames[0]];
     if (!worksheet) throw new Error(`${file.name} does not contain a worksheet.`);
 
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '', raw: false });
+    assertWorksheetRowLimit(worksheet, maximumQueueRows, file.name);
+    const rows = SheetJS.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '', raw: false });
+    if (rows.length > maximumQueueRows) throw new Error(`${file.name} contains more than ${maximumQueueRows.toLocaleString()} queue rows.`);
     if (rows.length === 0) throw new Error(`${file.name} does not contain any queue rows.`);
     if (!Object.prototype.hasOwnProperty.call(rows[0], 'Processor Name')) throw new Error(`${file.name} is missing the Processor Name column.`);
 
@@ -268,6 +273,7 @@ export default function QueueMonitor({ savedSnapshots = [] }: { savedSnapshots?:
     const [showSuccess, setShowSuccess] = useState(false);
     const [isChecking, setIsChecking] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
+    const [detailMetric, setDetailMetric] = useState<QueueDetailMetric | null>(null);
 
     useEffect(() => {
         const value = new URLSearchParams(page.url.split('?')[1] ?? '').get('checkpoint');
@@ -368,7 +374,8 @@ export default function QueueMonitor({ savedSnapshots = [] }: { savedSnapshots?:
         }
     }
 
-    function exportDailyQueue() {
+    async function exportDailyQueue() {
+        const XLSX = await import('xlsx-js-style');
         const checkpointResult = (checkpoint: CheckpointId) => currentDayQueues[checkpoint];
         const latestComparison = (
             [
@@ -588,7 +595,7 @@ export default function QueueMonitor({ savedSnapshots = [] }: { savedSnapshots?:
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Queue Monitor" />
-            <div className="min-h-full bg-[#fffaf1] p-4 text-[#352515] sm:p-6 lg:p-8">
+            <div data-tour="queue-page" className="min-h-full bg-[#fffaf1] p-4 text-[#352515] sm:p-6 lg:p-8">
                 <ConfirmationDialog
                     open={showConfirmation}
                     onOpenChange={setShowConfirmation}
@@ -597,6 +604,12 @@ export default function QueueMonitor({ savedSnapshots = [] }: { savedSnapshots?:
                     onConfirm={confirmWorkbookCheck}
                 />
                 <SuccessDialog open={showSuccess} onOpenChange={setShowSuccess} result={importedResult} activeProcessors={activeProcessors} />
+                <QueueMetricDetailsDialog
+                    metric={detailMetric}
+                    onOpenChange={(open) => !open && setDetailMetric(null)}
+                    batches={displayedBatches}
+                    checkpoint={selectedCheckpoint.label}
+                />
 
                 <section className="overflow-hidden rounded-3xl border border-[#ead7b9] bg-white shadow-[0_18px_50px_rgba(83,55,22,0.08)]">
                     <div className="relative overflow-hidden bg-[#3a2817] px-5 py-6 text-white sm:px-7 lg:px-9">
@@ -825,6 +838,7 @@ export default function QueueMonitor({ savedSnapshots = [] }: { savedSnapshots?:
                                         value={displayedWaiting}
                                         note={`${totalQueue} total available`}
                                         tone="amber"
+                                        onViewDetails={() => setDetailMetric('waiting')}
                                     />
                                     <MetricCard
                                         icon={CircleCheckBig}
@@ -839,6 +853,7 @@ export default function QueueMonitor({ savedSnapshots = [] }: { savedSnapshots?:
                                         value={displayedAging}
                                         note="Items needing attention"
                                         tone="red"
+                                        onViewDetails={() => setDetailMetric('aging')}
                                     />
                                     <MetricCard
                                         icon={Gauge}
@@ -846,6 +861,7 @@ export default function QueueMonitor({ savedSnapshots = [] }: { savedSnapshots?:
                                         value={`${completion}%`}
                                         note="Processed vs. total queue"
                                         tone="brown"
+                                        onViewDetails={() => setDetailMetric('completion')}
                                     />
                                 </>
                             )}
@@ -1208,7 +1224,38 @@ function BatchBreakdown({
     aging: number;
     imported: boolean;
 }) {
+    const [showBalancingTips, setShowBalancingTips] = useState(false);
     const completion = percentage(processed, waiting);
+    const baseTarget = batches.length === 0 ? 0 : Math.floor(waiting / batches.length);
+    const extraSlots = batches.length === 0 ? 0 : waiting % batches.length;
+    const targetByBatch = new Map(
+        [...batches]
+            .sort((left, right) => right.waiting - left.waiting)
+            .map((batch, index) => [batch.batch, baseTarget + (index < extraSlots ? 1 : 0)]),
+    );
+    const overloaded = batches
+        .map((batch) => ({ ...batch, excess: batch.waiting - (targetByBatch.get(batch.batch) ?? 0) }))
+        .filter((batch) => batch.excess > 0);
+    const underloaded = batches
+        .map((batch) => ({ ...batch, needed: (targetByBatch.get(batch.batch) ?? 0) - batch.waiting }))
+        .filter((batch) => batch.needed > 0);
+    const balancingTips: Array<{ from: number; to: number; count: number }> = [];
+    let sourceIndex = 0;
+    let destinationIndex = 0;
+
+    while (sourceIndex < overloaded.length && destinationIndex < underloaded.length) {
+        const source = overloaded[sourceIndex];
+        const destination = underloaded[destinationIndex];
+        const count = Math.min(source.excess, destination.needed);
+        balancingTips.push({ from: source.batch, to: destination.batch, count });
+        source.excess -= count;
+        destination.needed -= count;
+        if (source.excess === 0) sourceIndex += 1;
+        if (destination.needed === 0) destinationIndex += 1;
+    }
+    const isBalanced = balancingTips.length === 0;
+    const equalShare = batches.length === 0 || waiting === 0 ? 0 : 100 / batches.length;
+
     return (
         <div className="mt-6 overflow-hidden rounded-2xl border border-[#e7d6bd] bg-white">
             <div className="flex flex-col gap-3 border-b border-[#eadfcf] bg-[#fff9ed] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1220,10 +1267,67 @@ function BatchBreakdown({
                             : 'Team progress for the selected Philippine-time checkpoint.'}
                     </p>
                 </div>
-                <div className="flex items-center gap-2 text-xs font-bold text-[#73532e]">
-                    <UsersRound className="size-4 text-[#bd7200]" />3 operations batches
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#73532e]">
+                        <UsersRound className="size-4 text-[#bd7200]" />3 operations batches
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setShowBalancingTips(true)}
+                        className="inline-flex items-center gap-2 rounded-xl bg-[#3a2817] px-4 py-2.5 text-xs font-extrabold text-white shadow-sm transition hover:bg-[#5b3c1d] focus-visible:ring-2 focus-visible:ring-[#d78b16]/50 focus-visible:outline-none"
+                    >
+                        <Sparkles className="size-4 text-[#ffd15a]" />
+                        Balance queue
+                    </button>
                 </div>
             </div>
+            <Dialog open={showBalancingTips} onOpenChange={setShowBalancingTips}>
+                <DialogContent className="max-w-xl overflow-hidden border-[#e5cda6] bg-[#fffdf9] p-0 text-[#352515] sm:rounded-3xl [&>button]:top-5 [&>button]:right-5 [&>button]:grid [&>button]:size-9 [&>button]:place-items-center [&>button]:rounded-full [&>button]:bg-white [&>button]:text-[#3a2817] [&>button]:opacity-100 [&>button]:shadow-md [&>button]:hover:bg-[#ffd15a]">
+                    <div className="bg-[#3a2817] px-6 py-5 text-white">
+                        <div className="flex items-center gap-3">
+                            <div className="grid size-10 place-items-center rounded-xl bg-[#ffd15a] text-[#3a2817]">
+                                <Sparkles className="size-5" />
+                            </div>
+                            <div>
+                                <DialogTitle className="text-lg font-black">Queue balancing recommendation</DialogTitle>
+                                <DialogDescription className="mt-1 text-xs text-[#ead9bd]">
+                                    Equal distribution across all Operations batches
+                                </DialogDescription>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="px-6 py-5">
+                        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#efd498] bg-[#fff8e5] p-4">
+                            <p className="text-sm font-bold text-[#5d472d]">
+                                Equal target: <strong className="text-[#3b2917]">{baseTarget}</strong>
+                                {extraSlots > 0 ? `–${baseTarget + 1}` : ''} reports per batch
+                            </p>
+                            <span
+                                className={`rounded-full px-3 py-1.5 text-xs font-extrabold ${
+                                    isBalanced ? 'bg-[#e5f3e8] text-[#317347]' : 'bg-[#fff0c5] text-[#925b08]'
+                                }`}
+                            >
+                                {isBalanced ? 'Queue is balanced' : `${balancingTips.length} suggested move${balancingTips.length === 1 ? '' : 's'}`}
+                            </span>
+                        </div>
+                        {balancingTips.length > 0 && (
+                            <div className="mt-4 grid gap-3">
+                                {balancingTips.map((tip) => (
+                                    <div
+                                        key={`${tip.from}-${tip.to}`}
+                                        className="flex items-center gap-2 rounded-xl border border-[#eadbc6] bg-white px-4 py-3 text-sm text-[#604c34]"
+                                    >
+                                        <TrendingDown className="size-4 shrink-0 text-[#b26a00]" />
+                                        Move <strong className="text-[#3b2917]">{tip.count}</strong> report{tip.count === 1 ? '' : 's'} from
+                                        <strong className="text-[#9b5c00]">Batch {tip.from}</strong> to
+                                        <strong className="text-[#317347]">Batch {tip.to}</strong>.
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
             <div className="overflow-x-auto">
                 <table className="w-full min-w-[620px] text-left text-sm">
                     <thead className="bg-[#3a2817] text-xs tracking-wide text-[#fff7e8] uppercase">
@@ -1237,7 +1341,8 @@ function BatchBreakdown({
                     </thead>
                     <tbody className="divide-y divide-[#eee3d2]">
                         {batches.map((batch) => {
-                            const share = waiting === 0 ? 0 : Math.round((batch.waiting / waiting) * 100);
+                            const actualShare = waiting === 0 ? 0 : (batch.waiting / waiting) * 100;
+                            const displayedShare = isBalanced ? equalShare : actualShare;
                             return (
                                 <tr key={batch.batch} className="bg-white transition-colors hover:bg-[#fffbf3]">
                                     <td className="px-5 py-4">
@@ -1253,10 +1358,10 @@ function BatchBreakdown({
                                             <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#eee5d8]">
                                                 <div
                                                     className="h-full rounded-full bg-gradient-to-r from-[#f0a500] to-[#ffc83d]"
-                                                    style={{ width: `${share}%` }}
+                                                    style={{ width: `${displayedShare}%` }}
                                                 />
                                             </div>
-                                            <span className="w-10 text-right text-xs font-black text-[#4e3820]">{share}%</span>
+                                            <span className="w-14 text-right text-xs font-black text-[#4e3820]">{displayedShare.toFixed(2)}%</span>
                                         </div>
                                     </td>
                                 </tr>
@@ -1292,27 +1397,116 @@ function MetricCard({
     value,
     note,
     tone,
+    onViewDetails,
 }: {
     icon: typeof Inbox;
     label: string;
     value: number | string;
     note: string;
     tone: MetricTone;
+    onViewDetails?: () => void;
 }) {
     const colors = metricTones[tone];
     return (
         <div className="relative overflow-hidden rounded-2xl border border-[#eadbc6] bg-white p-5 shadow-[0_8px_24px_rgba(72,48,20,0.06)]">
             <div className={`absolute inset-y-0 left-0 w-1 ${colors.accent}`} />
             <div className="flex items-start justify-between gap-4">
-                <div>
+                <div className="min-w-0">
                     <p className="text-xs font-extrabold tracking-wide text-[#80705a] uppercase">{label}</p>
                     <p className="mt-2 text-3xl font-black tracking-tight text-[#342414]">{value}</p>
                     <p className="mt-1 text-xs text-[#8b7b67]">{note}</p>
+                    {onViewDetails && (
+                        <button
+                            type="button"
+                            onClick={onViewDetails}
+                            className="mt-4 inline-flex items-center rounded-lg border border-[#dfbd82] bg-[#fff8e8] px-3 py-2 text-xs font-extrabold text-[#86530b] transition hover:border-[#c98211] hover:bg-[#ffefc7] focus-visible:ring-2 focus-visible:ring-[#d78b16]/40 focus-visible:outline-none"
+                        >
+                            View details
+                        </button>
+                    )}
                 </div>
                 <div className={`grid size-11 shrink-0 place-items-center rounded-xl ${colors.icon}`}>
                     <Icon className="size-5" />
                 </div>
             </div>
         </div>
+    );
+}
+
+function QueueMetricDetailsDialog({
+    metric,
+    onOpenChange,
+    batches,
+    checkpoint,
+}: {
+    metric: QueueDetailMetric | null;
+    onOpenChange: (open: boolean) => void;
+    batches: BatchQueue[];
+    checkpoint: string;
+}) {
+    const configuration = {
+        waiting: { title: 'Waiting in Queue', description: 'Reports currently waiting per batch.', icon: Inbox, tone: 'text-[#9a6207] bg-[#fff0c5]' },
+        aging: {
+            title: 'Aging Queue',
+            description: 'Queue items requiring attention per batch.',
+            icon: TriangleAlert,
+            tone: 'text-[#a33e2d] bg-[#fee8e2]',
+        },
+        completion: {
+            title: 'Completion Rate',
+            description: 'Processed reports compared with the total queue per batch.',
+            icon: Gauge,
+            tone: 'text-[#56391e] bg-[#ede4da]',
+        },
+    } as const;
+    const selected = metric ? configuration[metric] : configuration.waiting;
+    const DetailIcon = selected.icon;
+
+    return (
+        <Dialog open={metric !== null} onOpenChange={onOpenChange}>
+            <DialogContent className="max-w-2xl overflow-hidden border-[#e5cda6] bg-[#fffdf9] p-0 text-[#352515] sm:rounded-3xl [&>button]:top-5 [&>button]:right-5 [&>button]:grid [&>button]:size-9 [&>button]:place-items-center [&>button]:rounded-full [&>button]:bg-white [&>button]:text-[#3a2817] [&>button]:opacity-100 [&>button]:shadow-md [&>button]:hover:bg-[#ffd15a]">
+                <div className="bg-[#3a2817] px-6 py-5 text-white">
+                    <div className="flex items-center gap-3">
+                        <div className={`grid size-10 place-items-center rounded-xl ${selected.tone}`}>
+                            <DetailIcon className="size-5" />
+                        </div>
+                        <div>
+                            <DialogTitle className="text-lg font-black">{selected.title}</DialogTitle>
+                            <DialogDescription className="mt-1 text-xs text-[#ead9bd]">{checkpoint} · Philippine Time</DialogDescription>
+                        </div>
+                    </div>
+                </div>
+                <div className="px-6 py-5">
+                    <p className="mb-4 text-sm text-[#7d6b54]">{selected.description}</p>
+                    <div className="overflow-hidden rounded-2xl border border-[#eadbc6]">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-[#fff3d5] text-xs font-extrabold tracking-wide text-[#684719] uppercase">
+                                <tr>
+                                    <th className="px-4 py-3">Batch</th>
+                                    <th className="px-4 py-3 text-right">{selected.title}</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[#efe2cf] bg-white">
+                                {batches.map((batch) => {
+                                    const value =
+                                        metric === 'aging'
+                                            ? batch.aging
+                                            : metric === 'completion'
+                                              ? `${percentage(batch.processed, batch.waiting)}%`
+                                              : batch.waiting;
+
+                                    return (
+                                        <tr key={batch.batch}>
+                                            <td className="px-4 py-3 font-extrabold text-[#8b5709]">Batch {batch.batch}</td>
+                                            <td className="px-4 py-3 text-right text-base font-black text-[#352515]">{value}</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
     );
 }

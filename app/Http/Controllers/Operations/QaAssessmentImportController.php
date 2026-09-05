@@ -8,6 +8,7 @@ use App\Http\Requests\StoreQaAssessmentsRequest;
 use App\Models\QaAssessment;
 use App\Models\User;
 use App\Notifications\NewQaAssessment;
+use App\Services\PerformanceAnnouncementService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +16,10 @@ use Illuminate\Support\Str;
 
 class QaAssessmentImportController extends Controller
 {
+    private const UPSERT_CHUNK_SIZE = 500;
+
+    public function __construct(private readonly PerformanceAnnouncementService $announcements) {}
+
     public function __invoke(StoreQaAssessmentsRequest $request): RedirectResponse
     {
         $validated = $request->validated();
@@ -22,9 +27,8 @@ class QaAssessmentImportController extends Controller
         $now = now();
         $matched = 0;
 
-        $rows = collect($validated['assessments'])->map(function (array $assessment) use ($users, $request, $validated, $now, &$matched): array {
+        $rows = collect($validated['assessments'])->map(function (array $assessment) use ($users, $request, $validated, $now): array {
             $processor = $this->matchProcessor($assessment['processor_name'], $users);
-            $matched += $processor === null ? 0 : 1;
 
             $processorName = $processor?->name ?? trim($assessment['processor_name']);
 
@@ -46,17 +50,21 @@ class QaAssessmentImportController extends Controller
                 'created_at' => $now,
                 'updated_at' => $now,
             ];
-        });
+        })->reverse()->unique('record_key')->reverse()->values();
+
+        $matched = $rows->whereNotNull('processor_id')->count();
 
         $existingKeys = QaAssessment::query()->whereIn('record_key', $rows->pluck('record_key'))->pluck('record_key');
         $existingCount = $existingKeys->count();
         $newKeys = $rows->pluck('record_key')->diff($existingKeys)->values();
 
-        DB::transaction(fn () => QaAssessment::upsert(
-            $rows->all(),
-            ['record_key'],
-            ['processor_id', 'processor_name', 'project_id', 'qc_name', 'report_url', 'score', 'feedback', 'source_file', 'uploaded_by', 'updated_at'],
-        ));
+        DB::transaction(function () use ($rows): void {
+            $rows->chunk(self::UPSERT_CHUNK_SIZE)->each(fn (Collection $chunk) => QaAssessment::upsert(
+                $chunk->all(),
+                ['record_key'],
+                ['processor_id', 'processor_name', 'project_id', 'qc_name', 'report_url', 'score', 'feedback', 'source_file', 'uploaded_by', 'updated_at'],
+            ));
+        });
 
         QaAssessment::query()
             ->with('processor')
@@ -65,6 +73,8 @@ class QaAssessmentImportController extends Controller
             ->each(function (QaAssessment $assessment): void {
                 $assessment->processor?->notify(new NewQaAssessment($assessment));
             });
+
+        $this->announcements->refreshCurrentMonth();
 
         $previousUrl = url()->previous();
         $redirectUrl = parse_url($previousUrl, PHP_URL_HOST) === $request->getHost()

@@ -8,7 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-interface LoginForm {
+interface LoginForm extends Record<string, string | boolean> {
     email: string;
     password: string;
     remember: boolean;

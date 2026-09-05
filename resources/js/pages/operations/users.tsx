@@ -238,7 +238,7 @@ export default function Users({ users, roles }: UsersProps) {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Users" />
-            <div className="flex flex-1 flex-col gap-6 bg-[#fffaf1] p-5 md:p-8">
+            <div data-tour="users-page" className="flex flex-1 flex-col gap-6 bg-[#fffaf1] p-5 md:p-8">
                 <Dialog open={showSuccess}>
                     <DialogContent
                         onEscapeKeyDown={(event) => event.preventDefault()}
@@ -356,11 +356,7 @@ export default function Users({ users, roles }: UsersProps) {
                                     : 'Add the profile, login details, and access role for a team member.'}
                             </DialogDescription>
                         </DialogHeader>
-                        <form
-                            autoComplete="off"
-                            onSubmit={submit}
-                            className="grid gap-8 p-6 text-[#342615] md:grid-cols-[300px_minmax(0,1fr)]"
-                        >
+                        <form autoComplete="off" onSubmit={submit} className="grid gap-8 p-6 text-[#342615] md:grid-cols-[300px_minmax(0,1fr)]">
                             <div className="grid content-start gap-3">
                                 <Label>Profile image</Label>
                                 <label
@@ -506,7 +502,7 @@ export default function Users({ users, roles }: UsersProps) {
                                     <Select value={form.data.role} onValueChange={(value) => form.setData('role', value)}>
                                         <SelectTrigger
                                             id="user-role"
-                                            className="h-12 rounded-xl border-[#decba9] bg-white text-[#342615] data-[placeholder]:text-[#9a8669] focus:ring-[#d78b13]"
+                                            className="h-12 rounded-xl border-[#decba9] bg-white text-[#342615] focus:ring-[#d78b13] data-[placeholder]:text-[#9a8669]"
                                         >
                                             <ShieldCheck className="mr-2 size-4 text-[#a96300]" />
                                             <SelectValue placeholder="Select a role" />
@@ -569,14 +565,16 @@ export default function Users({ users, roles }: UsersProps) {
 
                 <section className="grid gap-4 sm:grid-cols-3">
                     {[
-                        ['Total accounts', users.length, UsersRound, 'bg-[#fff0c9] text-[#a96300]'],
-                        ['Active', activeCount, CheckCircle2, 'bg-[#e4f3df] text-[#347846]'],
-                        ['Deactivated', users.length - activeCount, LockKeyhole, 'bg-[#f7e3df] text-[#a04435]'],
-                    ].map(([label, value, Icon, tone]) => (
-                        <article
-                            key={String(label)}
-                            className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5 shadow-[0_8px_30px_rgb(88,57,18,0.05)]"
-                        >
+                        { label: 'Total accounts', value: users.length, icon: UsersRound, tone: 'bg-[#fff0c9] text-[#a96300]' },
+                        { label: 'Active', value: activeCount, icon: CheckCircle2, tone: 'bg-[#e4f3df] text-[#347846]' },
+                        {
+                            label: 'Deactivated',
+                            value: users.length - activeCount,
+                            icon: LockKeyhole,
+                            tone: 'bg-[#f7e3df] text-[#a04435]',
+                        },
+                    ].map(({ label, value, icon: Icon, tone }) => (
+                        <article key={label} className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5 shadow-[0_8px_30px_rgb(88,57,18,0.05)]">
                             <div className={`grid size-10 place-items-center rounded-xl ${tone}`}>
                                 <Icon className="size-5" />
                             </div>

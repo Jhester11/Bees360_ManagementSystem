@@ -8,14 +8,22 @@ use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
 use App\Http\Requests\UpdateUserStatusRequest;
 use App\Models\User;
+use App\Services\AvatarStorage;
+use App\Services\PerformanceAnnouncementService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 class UserController extends Controller
 {
+    public function __construct(
+        private readonly AvatarStorage $avatars,
+        private readonly PerformanceAnnouncementService $announcements,
+    ) {}
+
     public function index(): Response
     {
         return Inertia::render('operations/users', [
@@ -45,12 +53,22 @@ class UserController extends Controller
     public function store(StoreUserRequest $request): RedirectResponse
     {
         $data = $request->safe()->only(['name', 'n_name', 'email', 'password', 'role']);
+        $newAvatarPath = null;
 
         if ($request->hasFile('avatar')) {
-            $data['avatar_path'] = $request->file('avatar')->store('avatars', 'public');
+            $newAvatarPath = $this->avatars->store($request->file('avatar'));
+            $data['avatar_path'] = $newAvatarPath;
         }
 
-        User::query()->create($data);
+        try {
+            $user = User::query()->create($data);
+        } catch (Throwable $exception) {
+            $this->avatars->delete($newAvatarPath);
+
+            throw $exception;
+        }
+
+        $this->announcements->announceNewAccount($user);
 
         return to_route('operations.users.index')->with('userMessage', 'The Bees360 account was created successfully.');
     }
@@ -60,11 +78,19 @@ class UserController extends Controller
         abort_if($request->user()->is($user), 422, 'You cannot deactivate your own account.');
 
         $isActive = $request->boolean('is_active');
-        $user->update(['is_active' => $isActive]);
+        DB::transaction(function () use ($isActive, $user): void {
+            $lockedUser = User::query()->lockForUpdate()->findOrFail($user->getKey());
 
-        if (! $isActive) {
-            DB::table('sessions')->where('user_id', $user->getKey())->delete();
-        }
+            if (! $isActive) {
+                $this->assertActiveOperationsAccountRemains($lockedUser);
+            }
+
+            $lockedUser->update(['is_active' => $isActive]);
+
+            if (! $isActive) {
+                DB::table(config('session.table', 'sessions'))->where('user_id', $lockedUser->getKey())->delete();
+            }
+        });
 
         return back()->with(
             'userMessage',
@@ -80,16 +106,57 @@ class UserController extends Controller
             $data['password'] = $request->validated('password');
         }
 
-        if ($request->hasFile('avatar')) {
-            $oldAvatarPath = $user->avatar_path;
-            $data['avatar_path'] = $request->file('avatar')->store('avatars', 'public');
-            $user->update($data);
+        $newAvatarPath = null;
+        $oldAvatarPath = null;
+        $currentPasswordChanged = false;
 
-            if ($oldAvatarPath) {
-                Storage::disk('public')->delete($oldAvatarPath);
-            }
-        } else {
-            $user->update($data);
+        if ($request->hasFile('avatar')) {
+            $newAvatarPath = $this->avatars->store($request->file('avatar'));
+            $data['avatar_path'] = $newAvatarPath;
+        }
+
+        try {
+            DB::transaction(function () use ($data, $request, $user, &$currentPasswordChanged, &$oldAvatarPath): void {
+                $lockedUser = User::query()->lockForUpdate()->findOrFail($user->getKey());
+                $oldAvatarPath = $lockedUser->avatar_path;
+                $newRole = UserRole::from($data['role']);
+
+                if ($newRole !== UserRole::Operations) {
+                    $this->assertActiveOperationsAccountRemains($lockedUser);
+                }
+
+                $lockedUser->fill($data);
+                $shouldRevokeSessions = $lockedUser->isDirty(['name', 'n_name', 'email', 'password', 'role']);
+                $passwordChanged = $lockedUser->isDirty('password');
+                $lockedUser->save();
+
+                if ($passwordChanged) {
+                    $lockedUser->forceFill(['remember_token' => Str::random(60)])->save();
+                    $currentPasswordChanged = $request->user()->is($lockedUser);
+                }
+
+                if ($shouldRevokeSessions) {
+                    $sessions = DB::table(config('session.table', 'sessions'))->where('user_id', $lockedUser->getKey());
+
+                    if ($request->user()->is($lockedUser)) {
+                        $sessions->where('id', '!=', $request->session()->getId());
+                    }
+
+                    $sessions->delete();
+                }
+            });
+        } catch (Throwable $exception) {
+            $this->avatars->delete($newAvatarPath);
+
+            throw $exception;
+        }
+
+        if ($newAvatarPath && $oldAvatarPath) {
+            $this->avatars->delete($oldAvatarPath);
+        }
+
+        if ($currentPasswordChanged) {
+            $request->session()->regenerate(true);
         }
 
         return back()->with('userMessage', 'The Bees360 account was updated successfully.');
@@ -102,16 +169,38 @@ class UserController extends Controller
         $avatarPath = $user->avatar_path;
 
         DB::transaction(function () use ($user): void {
-            $user->queueSnapshots()->delete();
-            $user->platformPullSnapshots()->delete();
-            DB::table('sessions')->where('user_id', $user->getKey())->delete();
-            $user->delete();
+            $lockedUser = User::query()->lockForUpdate()->findOrFail($user->getKey());
+
+            $this->assertActiveOperationsAccountRemains($lockedUser);
+
+            $lockedUser->notifications()->delete();
+            $lockedUser->queueSnapshots()->delete();
+            $lockedUser->platformPullSnapshots()->delete();
+            DB::table(config('session.table', 'sessions'))->where('user_id', $lockedUser->getKey())->delete();
+            $lockedUser->delete();
         });
 
-        if ($avatarPath) {
-            Storage::disk('public')->delete($avatarPath);
-        }
+        $this->avatars->delete($avatarPath);
 
         return back()->with('userMessage', 'The Bees360 account and all connected data were deleted successfully.');
+    }
+
+    private function assertActiveOperationsAccountRemains(User $user): void
+    {
+        if ($user->role !== UserRole::Operations || ! $user->is_active) {
+            return;
+        }
+
+        $activeOperationsIds = User::query()
+            ->where('role', UserRole::Operations->value)
+            ->where('is_active', true)
+            ->lockForUpdate()
+            ->pluck('id');
+
+        abort_if(
+            $activeOperationsIds->count() <= 1,
+            422,
+            'At least one active Operations account is required.',
+        );
     }
 }

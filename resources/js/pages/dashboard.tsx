@@ -184,7 +184,7 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
                 <Head title="Operations dashboard" />
 
                 <div className="flex flex-1 flex-col gap-6 bg-[#fffaf1] p-5 md:p-8">
-                    <section className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+                    <section data-tour="operations-welcome" className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
                         <div>
                             <p className="text-sm font-bold tracking-[0.18em] text-[#b26a00] uppercase">Operations overview</p>
                             <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#342615]">{greeting}, Operations.</h1>
@@ -196,7 +196,7 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
                         </span>
                     </section>
 
-                    <section className="grid gap-4 md:grid-cols-3">
+                    <section data-tour="operations-summary" className="grid gap-4 md:grid-cols-3">
                         {[
                             {
                                 label: 'Reports polished this week',
@@ -238,7 +238,10 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
                     </section>
 
                     <section className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.55fr)]">
-                        <article className="min-w-0 rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5 shadow-[0_8px_30px_rgb(88,57,18,0.05)] sm:p-6">
+                        <article
+                            data-tour="weekly-production"
+                            className="min-w-0 rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5 shadow-[0_8px_30px_rgb(88,57,18,0.05)] sm:p-6"
+                        >
                             <div className="flex items-start justify-between gap-4">
                                 <div>
                                     <h2 className="text-lg font-bold tracking-tight text-[#342615]">Reports finished this week</h2>
@@ -280,7 +283,10 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
                             </div>
                         </article>
 
-                        <article className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-6 shadow-[0_8px_30px_rgb(88,57,18,0.05)]">
+                        <article
+                            data-tour="report-mix"
+                            className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-6 shadow-[0_8px_30px_rgb(88,57,18,0.05)]"
+                        >
                             <p className="text-sm font-bold tracking-[0.16em] text-[#9d650c] uppercase">Report mix</p>
                             <h2 className="mt-2 text-lg font-bold tracking-tight text-[#342615]">Imported categories</h2>
                             <div className="mt-6 grid gap-3">
@@ -387,7 +393,7 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
         <AppLayout breadcrumbs={reportRangeBreadcrumbs}>
             <Head title="MTD Reports" />
 
-            <div className="flex flex-1 flex-col gap-6 bg-[#fffaf1] p-5 md:p-8">
+            <div data-tour="mtd-page" className="flex flex-1 flex-col gap-6 bg-[#fffaf1] p-5 md:p-8">
                 <section className="flex flex-col justify-between gap-5 xl:flex-row xl:items-end">
                     <div>
                         <p className="text-sm font-bold tracking-[0.18em] text-[#b26a00] uppercase">Operations overview</p>

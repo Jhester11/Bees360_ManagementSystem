@@ -5,7 +5,7 @@ import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { CalendarClock, CheckCircle2, Database, Download, PackageCheck } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import * as XLSX from 'xlsx-js-style';
+import type { WorkSheet } from 'xlsx-js-style';
 
 type Source = 'active' | 'closed';
 type CheckpointId = '10am' | '12nn' | '2pm' | '4pm' | '5pm';
@@ -149,7 +149,8 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
         router.get('/operations/reports/platform-pulls', { date: value }, { preserveScroll: true, preserveState: false, replace: true });
     }
 
-    function exportPlatformPulls() {
+    async function exportPlatformPulls() {
+        const XLSX = await import('xlsx-js-style');
         if (!hasStoredData) return;
 
         type ExportSection = {
@@ -224,7 +225,7 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
             });
         });
 
-        const worksheet = XLSX.utils.aoa_to_sheet(sheetRows) as XLSX.WorkSheet;
+        const worksheet = XLSX.utils.aoa_to_sheet(sheetRows) as WorkSheet;
         const white = {
             font: { name: 'Century Gothic', sz: 10, color: { rgb: '4A3821' } },
             fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFF' } },

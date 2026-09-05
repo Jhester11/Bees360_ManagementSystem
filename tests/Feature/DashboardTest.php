@@ -154,10 +154,10 @@ test('processor dashboard exposes new QA notifications for the signed in account
     $this->actingAs($processor)
         ->get('/dashboard?month=2026-09')
         ->assertInertia(fn (Assert $page) => $page
-            ->has('processorNotifications', 1)
-            ->where('processorNotifications.0.title', 'New QA result available')
-            ->where('processorNotifications.0.projectId', 'NOTICE-1')
-            ->where('processorNotifications.0.score', 97));
+            ->has('notifications', 1)
+            ->where('notifications.0.title', 'New QA result available')
+            ->where('notifications.0.projectId', 'NOTICE-1')
+            ->where('notifications.0.score', 97));
 });
 
 test('processor can mark their QA notification as read', function () {
@@ -257,27 +257,27 @@ test('leaderboard combines a processors over-delivered days into one overall res
         ->where('overview.topProcessor.name', 'Chrismer Flores'));
 });
 
-test('authenticated users can open an operations module', function () {
-    $this->actingAs($user = User::factory()->create());
+test('staff users can open an operations module', function () {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Trainer]));
 
     $this->get('/operations/reports')->assertOk();
 });
 
-test('authenticated users can monitor the operations queue', function () {
-    $this->actingAs(User::factory()->create());
+test('staff users can monitor the operations queue', function () {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Qa]));
 
     $this->get('/operations/queue-monitor')->assertInertia(fn (Assert $page) => $page
         ->component('operations/queue-monitor'));
 });
 
-test('authenticated users can compare two report periods', function () {
-    $this->actingAs($user = User::factory()->create());
+test('staff users can compare two report periods', function () {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Reviewer]));
 
     $this->get('/operations/report-comparison')->assertOk();
 });
 
 test('operations routes return 404 for an unknown module', function () {
-    $this->actingAs($user = User::factory()->create());
+    $this->actingAs(User::factory()->create(['role' => UserRole::Operations]));
 
     $this->get('/operations/unknown')->assertNotFound();
 });

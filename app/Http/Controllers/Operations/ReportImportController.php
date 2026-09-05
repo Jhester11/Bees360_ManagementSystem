@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Operations;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreReportImportRequest;
 use App\Models\ReportEntry;
+use App\Services\PerformanceAnnouncementService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
@@ -40,6 +41,8 @@ class ReportImportController extends Controller
         'oliver noble' => 'Mc Oliver Noble',
     ];
 
+    public function __construct(private readonly PerformanceAnnouncementService $announcements) {}
+
     public function index(): Response
     {
         $entries = ReportEntry::query()
@@ -71,6 +74,10 @@ class ReportImportController extends Controller
                     return null;
                 }
 
+                if ($assembledAt->isAfter(CarbonImmutable::now('Asia/Manila')->endOfDay())) {
+                    return null;
+                }
+
                 return [
                     'report_date' => $assembledAt->toDateString(),
                     'source' => $entry['source'],
@@ -98,6 +105,8 @@ class ReportImportController extends Controller
                 );
             });
         });
+
+        $this->announcements->refreshCurrentMonth();
 
         return to_route('operations.reports')->with('importSummary', [
             'saved' => $records->count(),

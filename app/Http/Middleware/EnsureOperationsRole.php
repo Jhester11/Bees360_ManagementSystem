@@ -14,9 +14,14 @@ class EnsureOperationsRole
      *
      * @param  Closure(Request): (Response)  $next
      */
-    public function handle(Request $request, Closure $next): Response
+    public function handle(Request $request, Closure $next, string ...$allowedRoles): Response
     {
-        abort_unless($request->user()?->role === UserRole::Operations, 403);
+        $allowedRoles = $allowedRoles ?: [UserRole::Operations->value];
+
+        abort_unless(
+            in_array($request->user()?->role?->value, $allowedRoles, true),
+            403,
+        );
 
         return $next($request);
     }

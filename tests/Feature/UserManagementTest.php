@@ -21,6 +21,7 @@ test('operations administrators can view user management', function () {
 });
 
 test('operations administrators can create an account with a profile image and role', function () {
+    Storage::fake('local');
     Storage::fake('public');
     $administrator = User::factory()->create(['role' => UserRole::Operations]);
 
@@ -48,7 +49,7 @@ test('operations administrators can create an account with a profile image and r
         ->and($user->role)->toBe(UserRole::Reviewer)
         ->and($user->is_active)->toBeTrue()
         ->and($user->avatar_path)->not->toBeNull();
-    Storage::disk('public')->assertExists($user->avatar_path);
+    Storage::disk('local')->assertExists($user->avatar_path);
 });
 
 test('account creation validates the profile image and account fields', function () {
@@ -64,6 +65,41 @@ test('account creation validates the profile image and account fields', function
             'role' => 'owner',
         ])
         ->assertSessionHasErrors(['name', 'n_name', 'email', 'password', 'role']);
+});
+
+test('account creation rejects duplicate processor identities', function () {
+    $administrator = User::factory()->create(['role' => UserRole::Operations]);
+    User::factory()->create(['name' => 'Existing Processor', 'n_name' => 'Existing']);
+
+    $this->actingAs($administrator)
+        ->post(route('operations.users.store'), [
+            'name' => 'Another Processor',
+            'n_name' => 'Existing Processor',
+            'email' => 'another@bees360.com',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
+            'role' => UserRole::Processor->value,
+        ])
+        ->assertSessionHasErrors('n_name');
+
+    $this->assertDatabaseMissing('users', ['email' => 'another@bees360.com']);
+});
+
+test('account names cannot become spreadsheet formulas', function () {
+    $administrator = User::factory()->create(['role' => UserRole::Operations]);
+
+    $this->actingAs($administrator)
+        ->post(route('operations.users.store'), [
+            'name' => '=HYPERLINK("https://example.test")',
+            'n_name' => 'Formula',
+            'email' => 'formula@bees360.com',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
+            'role' => UserRole::Processor->value,
+        ])
+        ->assertSessionHasErrors('name');
+
+    $this->assertDatabaseMissing('users', ['email' => 'formula@bees360.com']);
 });
 
 test('operations administrators can create an account without a profile image', function () {
@@ -82,10 +118,34 @@ test('operations administrators can create an account without a profile image', 
 
     expect($user->name)->toBe('Christer John Gozon')
         ->and($user->avatar)->toBeNull()
+        ->and($user->onboarding_completed_at)->toBeNull()
         ->and($user->role)->toBe(UserRole::Processor);
 });
 
+test('creating an account announces the new teammate to every active account', function () {
+    $administrator = User::factory()->create(['role' => UserRole::Operations]);
+    $activeProcessor = User::factory()->create();
+    $inactiveProcessor = User::factory()->create(['is_active' => false]);
+
+    $this->actingAs($administrator)->post(route('operations.users.store'), [
+        'name' => 'New Bees360 User',
+        'n_name' => 'New User',
+        'email' => 'new.user@bees360.com',
+        'password' => 'SecurePass123!',
+        'password_confirmation' => 'SecurePass123!',
+        'role' => UserRole::Processor->value,
+    ])->assertRedirect(route('operations.users.index'));
+
+    $newUser = User::query()->where('email', 'new.user@bees360.com')->firstOrFail();
+
+    expect($administrator->notifications()->where('data->type', 'new_account')->count())->toBe(1)
+        ->and($activeProcessor->notifications()->where('data->type', 'new_account')->count())->toBe(1)
+        ->and($newUser->notifications()->where('data->type', 'new_account')->count())->toBe(1)
+        ->and($inactiveProcessor->notifications()->where('data->type', 'new_account')->count())->toBe(0);
+});
+
 test('operations administrators can update account details and replace the profile image', function () {
+    Storage::fake('local');
     Storage::fake('public');
     Storage::disk('public')->put('avatars/old.png', 'old-image');
     $administrator = User::factory()->create(['role' => UserRole::Operations]);
@@ -114,10 +174,11 @@ test('operations administrators can update account details and replace the profi
         ->and($user->role)->toBe(UserRole::Trainer)
         ->and($user->avatar_path)->not->toBe('avatars/old.png');
     Storage::disk('public')->assertMissing('avatars/old.png');
-    Storage::disk('public')->assertExists($user->avatar_path);
+    Storage::disk('local')->assertExists($user->avatar_path);
 });
 
 test('deleting an account removes its profile image and all connected data', function () {
+    Storage::fake('local');
     Storage::fake('public');
     Storage::disk('public')->put('avatars/delete-me.png', 'profile-image');
     $administrator = User::factory()->create(['role' => UserRole::Operations]);
@@ -179,6 +240,24 @@ test('deleting an account removes its profile image and all connected data', fun
     Storage::disk('public')->assertMissing('avatars/delete-me.png');
 });
 
+test('profile images are private to the account and Operations', function () {
+    Storage::fake('local');
+    Storage::disk('local')->put('avatars/private.png', 'private-image');
+
+    $operations = User::factory()->create(['role' => UserRole::Operations]);
+    $owner = User::factory()->create(['avatar_path' => 'avatars/private.png']);
+    $otherProcessor = User::factory()->create();
+
+    $this->actingAs($owner)
+        ->get(route('users.avatar', $owner))
+        ->assertOk()
+        ->assertHeader('Cache-Control', 'max-age=300, private')
+        ->assertHeader('X-Content-Type-Options', 'nosniff');
+
+    $this->actingAs($operations)->get(route('users.avatar', $owner))->assertOk();
+    $this->actingAs($otherProcessor)->get(route('users.avatar', $owner))->assertNotFound();
+});
+
 test('non operations users cannot manage accounts', function () {
     $user = User::factory()->create(['role' => UserRole::Processor]);
 
@@ -226,6 +305,27 @@ test('operations administrators cannot delete their own account', function () {
         ->assertUnprocessable();
 
     $this->assertModelExists($administrator);
+});
+
+test('the only active Operations account cannot demote itself', function () {
+    $administrator = User::factory()->create([
+        'name' => 'Only Operations User',
+        'n_name' => 'Only Ops',
+        'role' => UserRole::Operations,
+    ]);
+
+    $this->actingAs($administrator)
+        ->patch(route('operations.users.update', $administrator), [
+            'name' => $administrator->name,
+            'n_name' => $administrator->n_name,
+            'email' => $administrator->email,
+            'password' => '',
+            'password_confirmation' => '',
+            'role' => UserRole::Processor->value,
+        ])
+        ->assertUnprocessable();
+
+    expect($administrator->fresh()->role)->toBe(UserRole::Operations);
 });
 
 test('an already signed in deactivated account is logged out', function () {

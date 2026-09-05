@@ -10,7 +10,7 @@ use Inertia\Testing\AssertableInertia as Assert;
 
 test('processor page calculates weighted credits tiers and incentives for the current PH month', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-04 10:00:00', 'Asia/Manila'));
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->create(['role' => UserRole::Operations]));
 
     foreach (range(1, 500) as $index) {
         ReportEntry::query()->create([
@@ -145,9 +145,9 @@ test('processor page displays July QA scores under approved processor names', fu
             ->where('qaHistory.0.date', '2026-07-31'));
 });
 
-test('authenticated users can upload CST processor metrics and weighted QC scores are displayed', function () {
+test('operations users can upload CST processor metrics and weighted QC scores are displayed', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-04 10:00:00', 'America/Chicago'));
-    $user = User::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Operations]);
 
     $response = $this->actingAs($user)->post('/operations/processors/cst-import', [
         'source_file' => 'CST September.xlsx',
@@ -261,7 +261,7 @@ test('processor reports group stored aliases under one canonical processor name'
 });
 
 test('CST imports require valid bounded metrics', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Operations]);
 
     $this->actingAs($user)->post('/operations/processors/cst-import', [
         'source_file' => 'invalid.xlsx',
@@ -269,6 +269,55 @@ test('CST imports require valid bounded metrics', function () {
     ])->assertSessionHasErrors(['metrics.0.report_date', 'metrics.0.processor_name', 'metrics.0.general_exterior', 'metrics.0.qc_score']);
 
     expect(CstProcessorMetric::query()->count())->toBe(0);
+});
+
+test('QA and CST imports reject future reporting dates', function () {
+    $operations = User::factory()->create(['role' => UserRole::Operations]);
+
+    $this->actingAs($operations)->post('/operations/processors/cst-import', [
+        'source_file' => 'future.xlsx',
+        'metrics' => [[
+            'report_date' => '2999-01-01',
+            'processor_name' => 'Allan Layug',
+            'general_exterior' => 1,
+            'four_point' => 0,
+            'qc_score' => null,
+            'qc_reviews' => 0,
+        ]],
+    ])->assertSessionHasErrors('metrics.0.report_date');
+
+    $this->actingAs($operations)->post('/operations/processors/qa-import', [
+        'source_file' => 'future.csv',
+        'assessments' => [[
+            'assessment_date' => '2999-01-01',
+            'processor_name' => 'Allan Layug',
+            'score' => 100,
+            'project_id' => 'FUTURE-1',
+            'qc_name' => null,
+            'report_url' => null,
+            'feedback' => [],
+        ]],
+    ])->assertSessionHasErrors('assessments.0.assessment_date');
+});
+
+test('large QA imports are saved in safe database chunks', function () {
+    $operations = User::factory()->create(['role' => UserRole::Operations]);
+    $assessments = collect(range(1, 3000))->map(fn (int $number): array => [
+        'assessment_date' => '2026-08-01',
+        'processor_name' => 'Unmatched Processor',
+        'score' => 95,
+        'project_id' => 'LARGE-'.$number,
+        'qc_name' => null,
+        'report_url' => null,
+        'feedback' => [],
+    ])->all();
+
+    $this->actingAs($operations)->post('/operations/processors/qa-import', [
+        'source_file' => 'large.csv',
+        'assessments' => $assessments,
+    ])->assertRedirect(route('operations.processors'));
+
+    $this->assertDatabaseCount('qa_assessments', 3000);
 });
 
 test('guests cannot open or import processor performance data', function () {
@@ -279,7 +328,7 @@ test('guests cannot open or import processor performance data', function () {
 
 test('current processor month does not carry forward QA accuracy from an older month', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-04 10:00:00', 'Asia/Manila'));
-    $user = User::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Operations]);
 
     ReportEntry::query()->create([
         'report_date' => '2026-09-03', 'source' => 'closed', 'batch' => 2, 'processor_name' => 'Allan Layug',
@@ -305,7 +354,7 @@ test('current processor month does not carry forward QA accuracy from an older m
 
 test('manual processor date range filters production and QA calculations together', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-04 10:00:00', 'Asia/Manila'));
-    $user = User::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Operations]);
 
     foreach ([['2026-08-03', 'AUG', 80], ['2026-09-03', 'SEP', 100]] as [$date, $project, $score]) {
         ReportEntry::query()->create([
@@ -332,7 +381,7 @@ test('manual processor date range filters production and QA calculations togethe
 
 test('QA score imports calculate an average and update repeated report uploads without duplicates', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-04 10:00:00', 'Asia/Manila'));
-    $uploader = User::factory()->create();
+    $uploader = User::factory()->create(['role' => UserRole::Qa]);
     $processor = User::factory()->create(['name' => 'Christer John Gozon', 'n_name' => 'Chris']);
 
     $upload = function (string $name, string $projectId, int $score) use ($uploader): array {
@@ -357,10 +406,10 @@ test('QA score imports calculate an average and update repeated report uploads w
     expect($upload('Chris', '677617', 86))->toMatchArray(['created' => 1, 'updated' => 0, 'matched' => 1]);
 
     expect(QaAssessment::query()->count())->toBe(2);
-    expect($processor->notifications()->count())->toBe(2);
-    expect($processor->unreadNotifications()->count())->toBe(2);
+    expect($processor->notifications()->where('data->type', 'latest_qa')->count())->toBe(2);
+    expect($processor->unreadNotifications()->where('data->type', 'latest_qa')->count())->toBe(2);
     expect($processor->notifications->pluck('data.project_id')->all())->toContain('677616', '677617');
-    expect($processor->notifications->first(fn ($notification): bool => $notification->data['project_id'] === '677617')->data)->toMatchArray([
+    expect($processor->notifications->first(fn ($notification): bool => ($notification->data['project_id'] ?? null) === '677617')->data)->toMatchArray([
         'project_id' => '677617',
         'score' => 86.0,
         'title' => 'New QA result available',

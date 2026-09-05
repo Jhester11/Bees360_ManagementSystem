@@ -3,7 +3,7 @@ import { UserInfo } from '@/components/user-info';
 import { useMobileNavigation } from '@/hooks/use-mobile-navigation';
 import { type User } from '@/types';
 import { Link } from '@inertiajs/react';
-import { LogOut, Settings } from 'lucide-react';
+import { Compass, LogOut, Settings } from 'lucide-react';
 
 interface UserMenuContentProps {
     user: User;
@@ -26,6 +26,15 @@ export function UserMenuContent({ user }: UserMenuContentProps) {
                         <Settings className="mr-2" />
                         Settings
                     </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                    onSelect={() => {
+                        cleanup();
+                        window.dispatchEvent(new Event('bees360:start-guide'));
+                    }}
+                >
+                    <Compass className="mr-2" />
+                    Platform guide
                 </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />

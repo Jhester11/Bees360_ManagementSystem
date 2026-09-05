@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 
 test('reset password link screen can be rendered', function () {
@@ -14,6 +15,14 @@ test('reset password link can be requested', function () {
     Notification::fake();
 
     $user = User::factory()->create();
+    DB::table('sessions')->insert([
+        'id' => 'compromised-session',
+        'user_id' => $user->id,
+        'ip_address' => '127.0.0.1',
+        'user_agent' => 'Test browser',
+        'payload' => 'test-session',
+        'last_activity' => now()->timestamp,
+    ]);
 
     $this->post('/forgot-password', ['email' => $user->email]);
 
@@ -47,13 +56,14 @@ test('password can be reset with valid token', function () {
         $response = $this->post('/reset-password', [
             'token' => $notification->token,
             'email' => $user->email,
-            'password' => 'password',
-            'password_confirmation' => 'password',
+            'password' => 'NewSecurePass123!',
+            'password_confirmation' => 'NewSecurePass123!',
         ]);
 
         $response
             ->assertSessionHasNoErrors()
             ->assertRedirect(route('login'));
+        $this->assertDatabaseMissing('sessions', ['id' => 'compromised-session']);
 
         return true;
     });

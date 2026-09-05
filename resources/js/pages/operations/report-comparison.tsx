@@ -6,7 +6,7 @@ import { type BreadcrumbItem } from '@/types';
 import { Head } from '@inertiajs/react';
 import { ArrowDownRight, ArrowUpRight, BarChart3, CalendarDays, Download, Equal, GitCompareArrows, UsersRound } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import * as XLSX from 'xlsx-js-style';
+import type { WorkSheet } from 'xlsx-js-style';
 
 type DateRange = {
     start: string;
@@ -109,7 +109,8 @@ export default function ReportComparison({
             };
         });
 
-    function exportComparison() {
+    async function exportComparison() {
+        const XLSX = await import('xlsx-js-style');
         if (!appliedProcessor) return;
 
         const headerRow = 4;
@@ -144,7 +145,7 @@ export default function ReportComparison({
                 secondData.total,
                 difference,
             ],
-        ]) as XLSX.WorkSheet;
+        ]) as WorkSheet;
         const titleStyle = {
             alignment: { horizontal: 'center', vertical: 'center' },
             font: { name: 'Century Gothic', sz: 10, bold: true, color: { rgb: 'FFF8E7' } },
@@ -236,7 +237,7 @@ export default function ReportComparison({
                 ['REPORT DATE', 'GEN EXT', '4-POINT', 'TOTAL', 'STATUS'],
                 ...days.map((day) => [formatDate(day.date), day.generalExterior, day.fourPoint, day.total, deliveryStatus(day.total).label]),
                 ['PERIOD TOTAL', totals.generalExterior, totals.fourPoint, totals.total, ''],
-            ]) as XLSX.WorkSheet;
+            ]) as WorkSheet;
 
             for (let row = 1; row <= dailyTotalRow; row += 1) {
                 for (const column of ['A', 'B', 'C', 'D', 'E']) {
@@ -285,7 +286,7 @@ export default function ReportComparison({
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Report comparison" />
 
-            <div className="flex flex-1 flex-col gap-6 bg-[#fffaf1] p-5 md:p-8">
+            <div data-tour="comparison-page" className="flex flex-1 flex-col gap-6 bg-[#fffaf1] p-5 md:p-8">
                 <section className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
                     <div>
                         <p className="text-sm font-bold tracking-[0.18em] text-[#b26a00] uppercase">Operations reporting</p>

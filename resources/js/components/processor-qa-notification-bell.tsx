@@ -2,20 +2,21 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { type SharedData } from '@/types';
 import { router, usePage, usePoll } from '@inertiajs/react';
-import { Bell, BellRing, CheckCheck, Eye, ShieldCheck } from 'lucide-react';
+import { Bell, BellRing, CheckCheck, Eye, Medal, Megaphone, ShieldCheck, Sparkles, Trophy } from 'lucide-react';
 
 export type ProcessorQaNotification = {
     id: string;
     title: string;
     message: string;
     href: string;
-    score: number;
+    score: number | null;
     projectId: string | null;
-    assessmentDate: string;
+    assessmentDate: string | null;
+    type: string;
     createdAt: string;
 };
 
-type ProcessorNotificationSharedData = SharedData & { processorNotifications: ProcessorQaNotification[] };
+type ProcessorNotificationSharedData = SharedData & { notifications: ProcessorQaNotification[] };
 
 export function openProcessorNotification(notification: ProcessorQaNotification) {
     router.post(
@@ -29,8 +30,8 @@ export function openProcessorNotification(notification: ProcessorQaNotification)
 }
 
 export function ProcessorQaNotificationBell() {
-    const { processorNotifications = [] } = usePage<ProcessorNotificationSharedData>().props;
-    usePoll(30_000, { only: ['processorNotifications'] });
+    const { notifications = [] } = usePage<ProcessorNotificationSharedData>().props;
+    usePoll(30_000, { only: ['notifications'] });
 
     function markAllRead() {
         router.post('/processor-notifications/read-all', {}, { preserveScroll: true, preserveState: true });
@@ -43,17 +44,17 @@ export function ProcessorQaNotificationBell() {
                     type="button"
                     variant="ghost"
                     size="icon"
-                    aria-label={`${processorNotifications.length} unread QA notifications`}
+                    aria-label={`${notifications.length} unread Bees360 notifications`}
                     className="relative size-10 rounded-xl border border-[#e1bd71] bg-[#fff8e8] text-[#6a3f15] shadow-sm hover:bg-[#ffedbd] hover:text-[#4a2d10]"
                 >
-                    {processorNotifications.length ? (
+                    {notifications.length ? (
                         <BellRing className="size-5 animate-[pulse_1.5s_ease-in-out_infinite] text-[#c87500]" />
                     ) : (
                         <Bell className="size-5" />
                     )}
-                    {processorNotifications.length > 0 && (
+                    {notifications.length > 0 && (
                         <span className="absolute -top-1.5 -right-1.5 grid min-h-5 min-w-5 place-items-center rounded-full border-2 border-white bg-[#c77a00] px-1 text-[10px] leading-none font-black text-white">
-                            {processorNotifications.length > 9 ? '9+' : processorNotifications.length}
+                            {notifications.length > 9 ? '9+' : notifications.length}
                         </span>
                     )}
                 </Button>
@@ -71,11 +72,11 @@ export function ProcessorQaNotificationBell() {
                                 <BellRing className="size-5" />
                             </span>
                             <div>
-                                <DropdownMenuLabel className="p-0 text-base font-black">My QA notifications</DropdownMenuLabel>
-                                <p className="mt-1 text-xs text-[#f0dcb7]">New quality results for your account</p>
+                                <DropdownMenuLabel className="p-0 text-base font-black">Bees360 notifications</DropdownMenuLabel>
+                                <p className="mt-1 text-xs text-[#f0dcb7]">QA results, achievements and team news</p>
                             </div>
                         </div>
-                        {processorNotifications.length > 0 && (
+                        {notifications.length > 0 && (
                             <button
                                 type="button"
                                 onClick={markAllRead}
@@ -87,9 +88,9 @@ export function ProcessorQaNotificationBell() {
                     </div>
                 </div>
                 <DropdownMenuSeparator className="m-0 bg-[#eadbc6]" />
-                {processorNotifications.length ? (
+                {notifications.length ? (
                     <div className="max-h-[430px] overflow-y-auto p-3">
-                        {processorNotifications.map((notification) => (
+                        {notifications.map((notification) => (
                             <button
                                 key={notification.id}
                                 type="button"
@@ -97,18 +98,30 @@ export function ProcessorQaNotificationBell() {
                                 className="mb-2 flex w-full gap-3 rounded-xl border border-[#eadbc6] bg-[#fffdf8] p-3 text-left shadow-[0_3px_12px_rgba(74,45,16,0.04)] transition last:mb-0 hover:border-[#dfb96d] hover:bg-[#fff5dc]"
                             >
                                 <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#fff0c9] text-[#a96300]">
-                                    <ShieldCheck className="size-5" />
+                                    {notification.type === 'latest_qa' ? (
+                                        <ShieldCheck className="size-5" />
+                                    ) : notification.type === 'tier_achievement' ? (
+                                        <Medal className="size-5" />
+                                    ) : notification.type === 'new_account' ? (
+                                        <Sparkles className="size-5" />
+                                    ) : notification.type.includes('top') || notification.type.includes('highest') ? (
+                                        <Trophy className="size-5" />
+                                    ) : (
+                                        <Megaphone className="size-5" />
+                                    )}
                                 </span>
                                 <span className="min-w-0 flex-1">
                                     <span className="flex items-center justify-between gap-3">
                                         <span className="font-black text-[#4a2d10]">{notification.title}</span>
-                                        <span className="rounded-full bg-[#e1f3df] px-2 py-0.5 text-[11px] font-black text-[#347846]">
-                                            {notification.score}%
-                                        </span>
+                                        {notification.score !== null && (
+                                            <span className="rounded-full bg-[#e1f3df] px-2 py-0.5 text-[11px] font-black text-[#347846]">
+                                                {notification.score}%
+                                            </span>
+                                        )}
                                     </span>
                                     <span className="mt-1 block text-xs leading-5 text-[#806f59]">{notification.message}</span>
                                     <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-[#a96300]">
-                                        <Eye className="size-3.5" /> Review feedback
+                                        <Eye className="size-3.5" /> {notification.type === 'latest_qa' ? 'Review feedback' : 'View details'}
                                     </span>
                                 </span>
                             </button>
@@ -121,7 +134,7 @@ export function ProcessorQaNotificationBell() {
                                 <CheckCheck className="size-6" />
                             </span>
                             <p className="mt-4 text-base font-black text-[#4a2d10]">You’re all caught up</p>
-                            <p className="mt-1 text-xs leading-5 text-[#806f59]">New QA results will appear here automatically.</p>
+                            <p className="mt-1 text-xs leading-5 text-[#806f59]">QA results, achievements and announcements will appear here.</p>
                         </div>
                     </div>
                 )}

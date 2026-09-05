@@ -1,11 +1,12 @@
 <?php
 
+use App\Enums\UserRole;
 use App\Models\ReportEntry;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
 
-test('authenticated users can import approved processor reports from either workbook', function () {
-    $user = User::factory()->create();
+test('operations users can import approved processor reports from either workbook', function () {
+    $user = User::factory()->create(['role' => UserRole::Operations]);
 
     $response = $this->actingAs($user)->post('/operations/reports/import', [
         'entries' => json_encode([
@@ -35,7 +36,7 @@ test('guests cannot import reports', function () {
 });
 
 test('large report imports are saved without exceeding database placeholder limits', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Operations]);
     $entries = collect(range(1, 6000))->map(fn (int $number) => [
         'source' => 'active',
         'project_id' => (string) (700000 + $number),

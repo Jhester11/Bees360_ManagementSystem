@@ -31,6 +31,7 @@ const mainNavItems: NavItem[] = [
         title: 'Dashboard',
         url: '/dashboard',
         icon: LayoutGrid,
+        tourId: 'nav-dashboard',
     },
     {
         title: 'Reports',
@@ -41,33 +42,38 @@ const mainNavItems: NavItem[] = [
         title: 'Queue Monitor',
         url: '/operations/queue-monitor',
         icon: Activity,
+        tourId: 'nav-queue-monitor',
     },
     {
         title: 'MTD Reports',
         url: '/operations/mtd',
         icon: CalendarDays,
+        tourId: 'nav-mtd-reports',
     },
     {
         title: 'Compare Reports',
         url: '/operations/report-comparison',
         icon: GitCompareArrows,
+        tourId: 'nav-compare-reports',
     },
     {
         title: 'Processors',
         url: '/operations/processors',
         icon: BarChart3,
+        tourId: 'nav-processors',
     },
     {
         title: 'Users',
         url: '/operations/users',
         icon: UsersRound,
+        tourId: 'nav-users',
     },
 ];
 
 const qualityNavItems: NavItem[] = [
     {
-        title: 'Training Center',
-        url: '/operations/training',
+        title: 'Training Library',
+        url: '/training/library',
         icon: BookOpenCheck,
     },
     {
@@ -79,19 +85,32 @@ const qualityNavItems: NavItem[] = [
 
 const processorNavItems: NavItem[] = [
     {
+        title: 'Training Library',
+        url: '/training/library',
+        icon: BookOpenCheck,
+    },
+    {
+        title: 'My Training',
+        url: '/training/my-training',
+        icon: BookOpenCheck,
+    },
+    {
         title: 'Dashboard',
         url: '/dashboard',
         icon: LayoutGrid,
+        tourId: 'nav-dashboard',
     },
     {
         title: 'QA Feedback',
         url: '/dashboard?view=qa#qa-history',
         icon: ShieldCheck,
+        tourId: 'nav-qa-feedback',
     },
     {
         title: 'Daily Reports',
         url: '/dashboard?view=daily',
         icon: FileText,
+        tourId: 'nav-daily-reports',
     },
 ];
 
@@ -101,7 +120,22 @@ export function AppSidebar() {
     const visibleMainNavItems = isProcessor
         ? processorNavItems
         : mainNavItems.filter((item) => item.url !== '/operations/users' || auth.user.role === 'operations');
-    const visibleQualityNavItems = isProcessor ? [] : qualityNavItems;
+    const trainingItems: NavItem[] = ['trainer', 'operations'].includes(auth.user.role)
+        ? [
+              { title: 'Training Dashboard', url: '/training', icon: BookOpenCheck },
+              { title: 'Training Library', url: '/training/library', icon: BookOpenCheck },
+              { title: 'Materials', url: '/training/materials', icon: FileText },
+              { title: 'Assessments', url: '/training/assessments', icon: ShieldCheck },
+              { title: 'Assignments', url: '/training/assignments', icon: UsersRound },
+              { title: 'Training Reports', url: '/training/reports', icon: BarChart3 },
+          ]
+        : isProcessor
+          ? []
+          : [
+                { title: 'Training Library', url: '/training/library', icon: BookOpenCheck },
+                { title: 'My Training', url: '/training/my-training', icon: BookOpenCheck },
+            ];
+    const visibleQualityNavItems = isProcessor ? [] : qualityNavItems.filter((item) => item.url !== '/training/library');
 
     return (
         <Sidebar
@@ -113,7 +147,7 @@ export function AppSidebar() {
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild>
-                            <Link href="/dashboard" prefetch>
+                            <Link href="/dashboard" prefetch="hover" cacheFor="30s">
                                 <AppLogo />
                             </Link>
                         </SidebarMenuButton>
@@ -121,8 +155,9 @@ export function AppSidebar() {
                 </SidebarMenu>
             </SidebarHeader>
 
-            <SidebarContent>
+            <SidebarContent className="[scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <NavMain items={visibleMainNavItems} label={isProcessor ? 'My workspace' : 'Operations'} />
+                {trainingItems.length > 0 && <NavMain items={trainingItems} label="Training" />}
                 {visibleQualityNavItems.length > 0 && <NavMain items={visibleQualityNavItems} label="Learning & Quality" />}
             </SidebarContent>
 
@@ -131,7 +166,12 @@ export function AppSidebar() {
                     <SidebarMenu>
                         <SidebarMenuItem>
                             <SidebarMenuButton asChild>
-                                <Link href={isProcessor ? '/settings/profile' : '/operations/settings'} prefetch>
+                                <Link
+                                    href={isProcessor ? '/settings/profile' : '/operations/settings'}
+                                    prefetch="hover"
+                                    cacheFor="30s"
+                                    data-tour="nav-settings"
+                                >
                                     <Settings />
                                     <span>Settings</span>
                                 </Link>

@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import AppLayout from '@/layouts/app-layout';
+import { assertWorksheetRowLimit, readSpreadsheet } from '@/lib/spreadsheet-upload';
 import { BeesDatePicker, formatDate, philippinesToday } from '@/pages/dashboard';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
@@ -18,7 +19,8 @@ import {
     Upload,
 } from 'lucide-react';
 import { DragEvent, useEffect, useMemo, useState } from 'react';
-import * as XLSX from 'xlsx-js-style';
+import * as SheetJS from 'xlsx';
+import type { WorkSheet } from 'xlsx-js-style';
 
 type ReportType = 'midday' | 'endOfDay';
 type Batch = 'batch1' | 'batch2' | 'batch3' | 'overall';
@@ -66,13 +68,16 @@ const processorRoster: Omit<ReportRow, 'generalExtensions' | 'fourPoint'>[] = [
     { name: 'Reginald King Palo', nickname: 'King', batch: 1 },
 ];
 const requiredColumns = ['Project ID', 'Insured by', 'Inspection Type', 'First Assembled by', 'First Assembled Time'];
+const maximumImportRows = 10_000;
 const dateKey = (value: string) => value.slice(0, 10);
 
 async function rowsFromWorkbook(file: File, source: Source): Promise<ImportEntry[]> {
-    const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: false });
+    const workbook = await readSpreadsheet(file, ['xlsx'], maximumImportRows, { cellDates: false });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     if (!sheet) throw new Error(`${file.name} does not contain a worksheet.`);
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: false });
+    assertWorksheetRowLimit(sheet, maximumImportRows, file.name);
+    const rows = SheetJS.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: false });
+    if (rows.length > maximumImportRows) throw new Error(`${file.name} contains more than ${maximumImportRows.toLocaleString()} report rows.`);
     const missingColumns = requiredColumns.filter((column) => !Object.prototype.hasOwnProperty.call(rows[0] ?? {}, column));
     if (missingColumns.length > 0) throw new Error(`${file.name} is missing: ${missingColumns.join(', ')}.`);
     return rows.map((row) => ({
@@ -161,8 +166,10 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
         { generalExtensions: 0, fourPoint: 0 },
     );
 
-    function exportCombinedReport() {
+    async function exportCombinedReport() {
         if (!hasReportData) return;
+
+        const XLSX = await import('xlsx-js-style');
 
         const headerRow = 4;
         const firstDataRow = headerRow + 1;
@@ -174,7 +181,7 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
             ['NAMES', 'N-NAME', 'BATCH', 'DAY', 'GEN EXT', '4-POINT', 'TOTAL'],
             ...allRows.map((row) => [row.name, row.nickname, `Batch ${row.batch}`, formatDate(reportDate), row.generalExtensions, row.fourPoint, 0]),
             ['COMBINED TOTAL', '', '', '', 0, 0, 0],
-        ]) as XLSX.WorkSheet;
+        ]) as WorkSheet;
         const titleStyle = {
             alignment: { horizontal: 'center', vertical: 'center' },
             font: { name: 'Century Gothic', sz: 10, bold: true, color: { rgb: 'FFF8E7' } },
@@ -297,7 +304,7 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
                 { entries: JSON.stringify(entries) },
                 {
                     preserveScroll: true,
-                    onProgress: (progress) => setUploadProgress(Math.max(60, progress.percentage ?? 60)),
+                    onProgress: (progress) => setUploadProgress(Math.max(60, progress?.percentage ?? 60)),
                     onError: (errors) => {
                         setUploadProgress(0);
                         setUploadError(
@@ -339,7 +346,7 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Reports" />
-            <div className="flex flex-1 flex-col gap-6 bg-[#fffaf1] p-5 md:p-8">
+            <div data-tour="reports-page" className="flex flex-1 flex-col gap-6 bg-[#fffaf1] p-5 md:p-8">
                 <Dialog open={showImportConfirmation} onOpenChange={setShowImportConfirmation}>
                     <DialogContent className="overflow-hidden border-[#e6c783] bg-[#fffdf8] p-0 sm:max-w-md">
                         <div className="flex flex-col items-center px-7 pt-8 text-center">

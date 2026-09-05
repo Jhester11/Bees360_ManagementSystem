@@ -46,6 +46,7 @@
         "globals": "^15.14.0",
         "laravel-vite-plugin": "^1.0",
         "lucide-react": "^0.475.0",
+        "pdfjs-dist": "^5.7.284",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
         "recharts": "^3.10.1",
@@ -54,7 +55,7 @@
         "tailwindcss-animate": "^1.0.7",
         "typescript": "^5.7.2",
         "vite": "^6.0",
-        "xlsx": "^0.18.5",
+        "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
         "xlsx-js-style": "^1.2.0"
     },
     "optionalDependencies": {

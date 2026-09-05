@@ -1,11 +1,12 @@
 <?php
 
+use App\Enums\UserRole;
 use App\Models\ReportEntry;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('platform pulls display saved report entries for the selected date', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Reviewer]);
     ReportEntry::query()->create([
         'report_date' => '2026-09-02',
         'source' => 'active',
@@ -50,7 +51,7 @@ test('platform pulls display saved report entries for the selected date', functi
 });
 
 test('platform pulls default to the latest stored report date', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Reviewer]);
     ReportEntry::query()->create([
         'report_date' => '2026-08-31',
         'source' => 'active',

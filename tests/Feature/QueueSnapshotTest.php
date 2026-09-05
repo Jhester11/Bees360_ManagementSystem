@@ -1,12 +1,13 @@
 <?php
 
+use App\Enums\UserRole;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Inertia\Testing\AssertableInertia as Assert;
 
-test('authenticated users save only approved processors for the current PH reporting day', function () {
+test('operations users save only approved processors for the current PH reporting day', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-02 10:00:00', 'Asia/Manila'));
-    $user = User::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Operations]);
 
     $response = $this->actingAs($user)->post('/operations/queue-monitor', [
         'report_date' => '2026-09-01',
@@ -51,7 +52,7 @@ test('authenticated users save only approved processors for the current PH repor
 
 test('saving the same reporting checkpoint replaces its previous queue data', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-02 12:00:00', 'Asia/Manila'));
-    $user = User::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Operations]);
     $payload = [
         'report_date' => '2026-09-02',
         'checkpoint' => '11am',
@@ -81,7 +82,7 @@ test('saving the same reporting checkpoint replaces its previous queue data', fu
 });
 
 test('queue snapshot validation rejects an unknown checkpoint', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Operations]);
 
     $response = $this->actingAs($user)->post('/operations/queue-monitor', [
         'report_date' => '2026-09-02',

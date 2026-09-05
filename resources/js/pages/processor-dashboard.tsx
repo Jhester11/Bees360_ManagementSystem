@@ -179,6 +179,7 @@ function DailyTierCard({ tier, period }: { tier: Tier; period: string }) {
 
     return (
         <article
+            data-tour={`tier-${tier.target}`}
             className={`group rounded-2xl border p-5 transition duration-500 hover:-translate-y-1 hover:shadow-[0_16px_35px_rgba(88,57,18,0.12)] ${tier.achieved ? 'border-[#a9d2a6] bg-[#f3faef]' : 'border-[#eadbc6] bg-[#fffdf8]'}`}
         >
             <div className="flex items-center justify-between">
@@ -249,8 +250,8 @@ export default function ProcessorDashboard({
     workspaceOverview,
     phNow,
 }: Props) {
-    const page = usePage<SharedData & { processorNotifications: ProcessorQaNotification[] }>();
-    const { auth, processorNotifications = [] } = page.props;
+    const page = usePage<SharedData & { notifications: ProcessorQaNotification[] }>();
+    const { auth, notifications = [] } = page.props;
     const currentView = new URL(page.url, 'http://bees360.local').searchParams.get('view');
     const isDailyView = currentView === 'daily';
     const isQaView = currentView === 'qa';
@@ -279,7 +280,7 @@ export default function ProcessorDashboard({
         { under: 0, delivered: 0, over: 0 },
     );
     const productionLeaders = leaderboards[timezone];
-    const latestQaNotification = processorNotifications[0];
+    const latestQaNotification = notifications.find((notification) => notification.type === 'latest_qa');
     const highestProduction = productionLeaders[0]?.totalCases || 1;
     const highestAccuracy = leaderboards.accuracy[0]?.qaScore || 100;
     const hasProduction = performance.totalCases > 0;
@@ -684,7 +685,10 @@ export default function ProcessorDashboard({
                     </DialogContent>
                 </Dialog>
 
-                <section className="relative overflow-hidden rounded-3xl bg-[#4a2d10] px-6 py-6 text-white shadow-[0_16px_40px_rgba(74,45,16,0.18)] md:px-8">
+                <section
+                    data-tour="processor-welcome"
+                    className="relative overflow-hidden rounded-3xl bg-[#4a2d10] px-6 py-6 text-white shadow-[0_16px_40px_rgba(74,45,16,0.18)] md:px-8"
+                >
                     <div className="absolute -top-16 -right-10 size-52 rounded-full bg-[#ffc83d]/20" />
                     <div className="absolute right-28 -bottom-20 size-40 rotate-45 rounded-3xl border border-[#ffc83d]/15" />
                     <div className="relative flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
@@ -751,7 +755,7 @@ export default function ProcessorDashboard({
                 </section>
 
                 {!isDailyView && !isQaView && (
-                    <section className="grid gap-4">
+                    <section data-tour="team-overview" className="grid gap-4">
                         <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
                             <div>
                                 <p className="text-xs font-black tracking-[0.16em] text-[#b26a00] uppercase">Team overview</p>
@@ -908,7 +912,7 @@ export default function ProcessorDashboard({
                     </section>
                 )}
 
-                <section className={`grid gap-4 sm:grid-cols-2 ${isDailyView ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}`}>
+                <section data-tour="processor-metrics" className={`grid gap-4 sm:grid-cols-2 ${isDailyView ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}`}>
                     <MetricCard label="Total cases" value={performance.totalCases} icon={FileCheck2} tone="bg-[#fff0c9] text-[#a96300]" />
                     <MetricCard label="General Exterior" value={performance.generalExterior} icon={ShieldCheck} tone="bg-[#e4f3df] text-[#347846]" />
                     <MetricCard label="4-Point" value={performance.fourPoint} icon={Gauge} tone="bg-[#efe6ff] text-[#7146c6]" />
@@ -945,7 +949,10 @@ export default function ProcessorDashboard({
 
                 {isDailyView && (
                     <section className="grid gap-5 lg:grid-cols-[1.1fr_1.9fr]">
-                        <article className="relative overflow-hidden rounded-2xl bg-[#4d2f12] p-6 text-white shadow-[0_16px_36px_rgba(77,47,18,0.2)]">
+                        <article
+                            data-tour="earned-credits"
+                            className="relative overflow-hidden rounded-2xl bg-[#4d2f12] p-6 text-white shadow-[0_16px_36px_rgba(77,47,18,0.2)]"
+                        >
                             <div className="absolute -top-16 -right-12 size-48 rounded-full bg-[#f0a91e]/25" />
                             <div className="relative">
                                 <p className="text-sm font-bold text-[#f7d994]">TOTAL EARNED CREDITS</p>
@@ -973,7 +980,10 @@ export default function ProcessorDashboard({
 
                 {!isDailyView && !isQaView && (
                     <section id="leaderboards" className="grid scroll-mt-6 gap-6 xl:grid-cols-2">
-                        <article className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5 shadow-[0_8px_28px_rgba(88,57,18,0.05)] sm:p-6">
+                        <article
+                            data-tour="production-leaderboard"
+                            className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5 shadow-[0_8px_28px_rgba(88,57,18,0.05)] sm:p-6"
+                        >
                             <div className="flex items-start justify-between gap-4">
                                 <div>
                                     <p className="text-xs font-bold tracking-[0.16em] text-[#b26a00] uppercase">Monthly leaderboard</p>
@@ -1032,7 +1042,10 @@ export default function ProcessorDashboard({
                             </div>
                         </article>
 
-                        <article className="rounded-2xl border border-[#bcd9c8] bg-[#fbfffb] p-5 shadow-[0_8px_28px_rgba(20,122,81,0.06)] sm:p-6">
+                        <article
+                            data-tour="qa-leaderboard"
+                            className="rounded-2xl border border-[#bcd9c8] bg-[#fbfffb] p-5 shadow-[0_8px_28px_rgba(20,122,81,0.06)] sm:p-6"
+                        >
                             <div className="flex items-start justify-between gap-4">
                                 <div>
                                     <p className="text-xs font-bold tracking-[0.16em] text-[#16815b] uppercase">Quality leaderboard</p>
@@ -1093,6 +1106,7 @@ export default function ProcessorDashboard({
                 {isDailyView && (
                     <section
                         id="daily-productivity"
+                        data-tour="daily-productivity"
                         className="scroll-mt-6 overflow-hidden rounded-2xl border border-[#eadbc6] bg-[#fffdf8] shadow-[0_8px_28px_rgba(88,57,18,0.05)]"
                     >
                         <div className="flex flex-col justify-between gap-4 border-b border-[#eadbc6] bg-[#fff9ed] p-5 sm:flex-row sm:items-center sm:p-6">
@@ -1197,7 +1211,10 @@ export default function ProcessorDashboard({
                 )}
 
                 {isDailyView && (
-                    <section className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5 shadow-[0_8px_28px_rgba(88,57,18,0.05)] sm:p-6">
+                    <section
+                        data-tour="delivery-status"
+                        className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5 shadow-[0_8px_28px_rgba(88,57,18,0.05)] sm:p-6"
+                    >
                         <p className="text-xs font-bold tracking-[0.16em] text-[#b26a00] uppercase">Delivery status</p>
                         <h2 className="mt-1 text-xl font-black text-[#342615]">Daily totals grouped by output level</h2>
                         <div className="mt-5 grid gap-3 sm:grid-cols-3">
@@ -1219,7 +1236,10 @@ export default function ProcessorDashboard({
 
                 {isDailyView && (
                     <section className="grid gap-6">
-                        <article className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5 shadow-[0_8px_28px_rgba(88,57,18,0.05)] sm:p-6">
+                        <article
+                            data-tour="daily-chart"
+                            className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5 shadow-[0_8px_28px_rgba(88,57,18,0.05)] sm:p-6"
+                        >
                             <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
                                     <p className="text-xs font-bold tracking-[0.16em] text-[#b26a00] uppercase">Monthly production</p>
@@ -1329,6 +1349,7 @@ export default function ProcessorDashboard({
                 {!isDailyView && (
                     <section
                         id="qa-history"
+                        data-tour="qa-history"
                         className="scroll-mt-6 overflow-hidden rounded-2xl border border-[#bcd9c8] bg-[#fbfffb] shadow-[0_8px_28px_rgba(20,122,81,0.06)]"
                     >
                         <div className="flex flex-col justify-between gap-4 border-b border-[#dceade] p-5 sm:flex-row sm:items-center sm:p-6">

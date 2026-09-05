@@ -1,50 +1,92 @@
 import { router } from '@inertiajs/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const skeletonRows = Array.from({ length: 9 }, (_, index) => index);
 const skeletonColumns = Array.from({ length: 5 }, (_, index) => index);
+const SLOW_NAVIGATION_DELAY = 450;
 
 export function PageLoadingOverlay() {
     const [isLoading, setIsLoading] = useState(false);
+    const activeVisitRef = useRef<object | null>(null);
+    const startedAtRef = useRef(0);
 
     useEffect(() => {
+        let hideTimer: number | undefined;
+        let showTimer: number | undefined;
         let failsafeTimer: number | undefined;
+        let firstFrame: number | undefined;
+        let secondFrame: number | undefined;
 
-        const hideLoader = () => {
-            window.clearTimeout(failsafeTimer);
-            setIsLoading(false);
+        const markPageReady = () => {
+            delete document.documentElement.dataset.pageLoading;
+            window.dispatchEvent(new CustomEvent('bees360:page-ready'));
         };
 
-        const showLoader = () => {
+        const hideLoader = () => {
+            window.clearTimeout(showTimer);
+            window.clearTimeout(hideTimer);
             window.clearTimeout(failsafeTimer);
-            setIsLoading(true);
+            firstFrame = window.requestAnimationFrame(() => {
+                secondFrame = window.requestAnimationFrame(() => {
+                    setIsLoading(false);
+                    markPageReady();
+                });
+            });
+        };
+
+        const showLoader = (visit: object) => {
+            window.clearTimeout(hideTimer);
+            window.clearTimeout(failsafeTimer);
+            window.cancelAnimationFrame(firstFrame ?? 0);
+            window.cancelAnimationFrame(secondFrame ?? 0);
+            activeVisitRef.current = visit;
+            startedAtRef.current = window.performance.now();
+            document.documentElement.dataset.pageLoading = 'true';
+            showTimer = window.setTimeout(() => setIsLoading(true), SLOW_NAVIGATION_DELAY);
             failsafeTimer = window.setTimeout(() => {
+                activeVisitRef.current = null;
                 setIsLoading(false);
-            }, 15_000);
+                markPageReady();
+            }, 10_000);
         };
 
         const stopBeforeListener = router.on('before', (event) => {
             if (event.detail.visit.prefetch) return;
 
             const destination = new URL(String(event.detail.visit.url), window.location.href);
-            if (destination.pathname === window.location.pathname && destination.search === window.location.search) return;
+            const isDifferentPage = destination.pathname !== window.location.pathname || destination.search !== window.location.search;
+            const isAuthenticationTransition =
+                event.detail.visit.method === 'post' && (destination.pathname === '/login' || destination.pathname === '/logout');
 
-            showLoader();
+            if ((event.detail.visit.method !== 'get' || !isDifferentPage) && !isAuthenticationTransition) return;
+
+            showLoader(event.detail.visit);
         });
 
         const stopFinishListener = router.on('finish', (event) => {
             if (event.detail.visit.prefetch) return;
+            if (activeVisitRef.current !== event.detail.visit) return;
 
+            activeVisitRef.current = null;
+            const visibleFor = window.performance.now() - startedAtRef.current;
+            if (visibleFor < SLOW_NAVIGATION_DELAY) {
+                window.clearTimeout(showTimer);
+                setIsLoading(false);
+                markPageReady();
+                return;
+            }
             hideLoader();
         });
-
-        const stopNavigateListener = router.on('navigate', hideLoader);
 
         return () => {
             stopBeforeListener();
             stopFinishListener();
-            stopNavigateListener();
+            window.clearTimeout(hideTimer);
+            window.clearTimeout(showTimer);
             window.clearTimeout(failsafeTimer);
+            window.cancelAnimationFrame(firstFrame ?? 0);
+            window.cancelAnimationFrame(secondFrame ?? 0);
+            delete document.documentElement.dataset.pageLoading;
         };
     }, []);
 
@@ -52,7 +94,7 @@ export function PageLoadingOverlay() {
 
     return (
         <div
-            className="animate-in fade-in fixed inset-0 z-[100] overflow-hidden bg-[#fffdf8] text-[#4a351d] duration-150"
+            className="pointer-events-none fixed inset-0 z-[100] overflow-hidden bg-[#fffdf8] text-[#4a351d]"
             role="status"
             aria-live="polite"
             aria-label="Loading page"

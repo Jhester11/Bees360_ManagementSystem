@@ -2,6 +2,7 @@ import { ProcessorSelect } from '@/components/processor-select';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import AppLayout from '@/layouts/app-layout';
+import { assertWorksheetRowLimit, readSpreadsheet } from '@/lib/spreadsheet-upload';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, usePage, usePoll } from '@inertiajs/react';
 import {
@@ -22,7 +23,8 @@ import {
     X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import * as XLSX from 'xlsx-js-style';
+import * as SheetJS from 'xlsx';
+import type { WorkSheet } from 'xlsx-js-style';
 
 type Tier = { name: string; target: number; incentive: number; achieved: boolean; needed: number; percentage: number };
 type Performance = {
@@ -80,6 +82,10 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Operations dashboard', href: '/dashboard' },
     { title: 'Processors', href: '/operations/processors' },
 ];
+const maximumCstSourceRows = 50_000;
+const maximumCstMetrics = 5_000;
+const maximumQaWorksheetRows = 10_050;
+const maximumQaAssessments = 10_000;
 
 const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
 const philippinesMonth = (date = new Date()) => {
@@ -120,10 +126,12 @@ const dateValue = (value: unknown) => {
 };
 
 async function metricsFromWorkbook(file: File): Promise<ImportMetric[]> {
-    const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+    const workbook = await readSpreadsheet(file, ['xlsx', 'xls'], maximumCstSourceRows, { cellDates: true });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     if (!sheet) throw new Error('The workbook does not contain a worksheet.');
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+    assertWorksheetRowLimit(sheet, maximumCstSourceRows, file.name);
+    const rows = SheetJS.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+    if (rows.length > maximumCstSourceRows) throw new Error(`${file.name} contains too many source rows.`);
     if (rows.length === 0) throw new Error('The worksheet does not contain data.');
 
     const grouped = new Map<string, { date: string; name: string; ge: number; fp: number; score: number; reviews: number }>();
@@ -164,6 +172,7 @@ async function metricsFromWorkbook(file: File): Promise<ImportMetric[]> {
         qc_reviews: item.reviews,
     }));
     if (metrics.length === 0) throw new Error('No processor names were found. Add a Processor or Processor Name column.');
+    if (metrics.length > maximumCstMetrics) throw new Error(`The CST import cannot contain more than ${maximumCstMetrics.toLocaleString()} metrics.`);
     return metrics;
 }
 
@@ -196,10 +205,11 @@ function combineMetrics(metricGroups: ImportMetric[][]): ImportMetric[] {
 }
 
 async function qaFromWorkbook(file: File): Promise<QaAssessment[]> {
-    const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+    const workbook = await readSpreadsheet(file, ['xlsx', 'xls', 'csv'], maximumQaWorksheetRows, { cellDates: true });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     if (!sheet) throw new Error('The QA workbook does not contain a worksheet.');
-    const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
+    assertWorksheetRowLimit(sheet, maximumQaWorksheetRows, file.name);
+    const rawRows = SheetJS.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
     const headerIndex = rawRows.findIndex((row) => row.some((cell) => normalize(String(cell)) === 'totalscore'));
     if (headerIndex < 0) throw new Error('The QA file must contain a Total Score column.');
     const headers = rawRows[headerIndex].map((cell) => String(cell));
@@ -228,6 +238,9 @@ async function qaFromWorkbook(file: File): Promise<QaAssessment[]> {
         ];
     });
     if (assessments.length === 0) throw new Error('Add Processor Name and QA Score columns with valid data.');
+    if (assessments.length > maximumQaAssessments) {
+        throw new Error(`The QA import cannot contain more than ${maximumQaAssessments.toLocaleString()} assessments.`);
+    }
     return assessments;
 }
 
@@ -573,7 +586,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                     { source_file: cstFiles.qa.name, assessments },
                     {
                         preserveScroll: true,
-                        onProgress: (event) => setProgress(Math.max(80, event.percentage ?? 80)),
+                        onProgress: (event) => setProgress(Math.max(80, event?.percentage ?? 80)),
                         onError: (errors) => failUpload(Object.values(errors)[0] ?? 'The QA workbook could not be saved.'),
                         onSuccess: () => {
                             setProgress(100);
@@ -594,7 +607,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                 { source_file: sourceFile, metrics },
                 {
                     preserveScroll: true,
-                    onProgress: (event) => setProgress(Math.max(55, event.percentage ?? 55)),
+                    onProgress: (event) => setProgress(Math.max(55, event?.percentage ?? 55)),
                     onError: (errors) => failUpload(Object.values(errors)[0] ?? 'The CST workbooks could not be saved.'),
                     onSuccess: () => {
                         if (assessments.length > 0) {
@@ -635,7 +648,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                 { source_file: qaFile.name, assessments },
                 {
                     preserveScroll: true,
-                    onProgress: (event) => setQaProgress(Math.max(55, event.percentage ?? 55)),
+                    onProgress: (event) => setQaProgress(Math.max(55, event?.percentage ?? 55)),
                     onError: (errors) => {
                         setQaError(Object.values(errors)[0] ?? 'The QA workbook could not be saved.');
                         setQaProgress(0);
@@ -663,7 +676,8 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
           ] as const)
         : [];
 
-    const exportMonthlyIncentives = () => {
+    const exportMonthlyIncentives = async () => {
+        const XLSX = await import('xlsx-js-style');
         if (incentiveRows.length === 0) return;
 
         const headerRow = 4;
@@ -688,7 +702,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                 row.incentive,
             ]),
             [incentiveView === 'overall' ? 'OVERALL TOTAL' : '$300 EARNERS TOTAL', '', 0, 0, 0, 0, '', '', 0],
-        ]) as XLSX.WorkSheet;
+        ]) as WorkSheet;
         const titleStyle = {
             alignment: { horizontal: 'center', vertical: 'center' },
             font: { name: 'Century Gothic', sz: 10, bold: true, color: { rgb: 'FFF8E7' } },
@@ -793,7 +807,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Processor performance" />
-            <div className="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl bg-[#fffaf1] p-4 sm:p-6">
+            <div data-tour="processors-page" className="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl bg-[#fffaf1] p-4 sm:p-6">
                 <Dialog open={successOpen} onOpenChange={() => undefined}>
                     <DialogContent
                         showCloseButton={false}

@@ -107,8 +107,9 @@ class DashboardController extends Controller
             ->get()
             ->values();
         $qaAssessments = $allQaAssessments
-            ->filter(fn (QaAssessment $assessment): bool => $assessment->processor_id === $processor->id
-                || $this->belongsToProcessor($processor, $assessment->processor_name))
+            ->filter(fn (QaAssessment $assessment): bool => $assessment->processor_id !== null
+                ? $assessment->processor_id === $processor->id
+                : $this->belongsToProcessor($processor, $assessment->processor_name))
             ->values();
         $processorAccounts = User::query()
             ->where('role', UserRole::Processor->value)

@@ -1,8 +1,24 @@
 import { BeesMultiDateCalendar } from '@/components/bees-multi-date-calendar';
+import { openProcessorNotification, type ProcessorQaNotification } from '@/components/processor-qa-notification-bell';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Link } from '@inertiajs/react';
-import { Activity, Bell, BellRing, CheckCheck, Clock3, FileSpreadsheet, PackageCheck, Volume2, VolumeX } from 'lucide-react';
+import { type SharedData } from '@/types';
+import { Link, router, usePage, usePoll } from '@inertiajs/react';
+import {
+    Activity,
+    Bell,
+    BellRing,
+    CheckCheck,
+    Clock3,
+    FileSpreadsheet,
+    Megaphone,
+    PackageCheck,
+    ShieldCheck,
+    Sparkles,
+    Trophy,
+    Volume2,
+    VolumeX,
+} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 type ReminderKind = 'queue' | 'platform' | 'report';
@@ -218,6 +234,7 @@ async function playReminderRing(sound: ReminderSound): Promise<boolean> {
 }
 
 export function ReportingReminderBell() {
+    const { notifications = [] } = usePage<SharedData & { notifications: ProcessorQaNotification[] }>().props;
     const [now, setNow] = useState(() => new Date());
     const [readIds, setReadIds] = useState<string[]>([]);
     const [scheduleOverrides, setScheduleOverrides] = useState<Record<string, boolean>>({});
@@ -232,6 +249,8 @@ export function ReportingReminderBell() {
     );
     const unreadReminders = useMemo(() => dueReminders.filter((reminder) => !readIds.includes(reminder.id)), [dueReminders, readIds]);
     const nextReminder = todayIsScheduled ? reportingReminders.find((reminder) => reminder.minutes > clock.minutes) : undefined;
+    const combinedUnreadCount = unreadReminders.length + notifications.length;
+    usePoll(30_000, { only: ['notifications'] });
 
     useEffect(() => {
         const timer = window.setInterval(() => setNow(new Date()), 60_000);
@@ -305,6 +324,13 @@ export function ReportingReminderBell() {
         saveReadIds([...readIds, ...dueReminders.map((reminder) => reminder.id)]);
     }
 
+    function markEverythingAsRead() {
+        markAllAsRead();
+        if (notifications.length > 0) {
+            router.post('/processor-notifications/read-all', {}, { preserveScroll: true, preserveState: true });
+        }
+    }
+
     function toggleScheduleDate(date: string) {
         const enabled = !remindersEnabledFor(date, scheduleOverrides);
         const defaultsToEnabled = isWeekday(date);
@@ -364,13 +390,13 @@ export function ReportingReminderBell() {
                     type="button"
                     variant="ghost"
                     size="icon"
-                    aria-label={`${unreadReminders.length} pending reporting reminders`}
+                    aria-label={`${combinedUnreadCount} unread Operations notifications`}
                     className="relative size-10 rounded-xl border border-[#ead7b9] bg-[#fffaf1] text-[#72502a] shadow-sm hover:bg-[#fff0ce] hover:text-[#4a351d]"
                 >
-                    {unreadReminders.length > 0 ? <BellRing className="size-5 animate-pulse text-[#b96c00]" /> : <Bell className="size-5" />}
-                    {unreadReminders.length > 0 && (
+                    {combinedUnreadCount > 0 ? <BellRing className="size-5 animate-pulse text-[#b96c00]" /> : <Bell className="size-5" />}
+                    {combinedUnreadCount > 0 && (
                         <span className="absolute -top-1.5 -right-1.5 grid min-h-5 min-w-5 place-items-center rounded-full border-2 border-white bg-[#c94b24] px-1 text-[10px] leading-none font-black text-white">
-                            {unreadReminders.length > 9 ? '9+' : unreadReminders.length}
+                            {combinedUnreadCount > 9 ? '9+' : combinedUnreadCount}
                         </span>
                     )}
                 </Button>
@@ -383,20 +409,60 @@ export function ReportingReminderBell() {
                 <div className="bg-[#4a351d] px-5 py-4 text-[#fff8e7]">
                     <div className="flex items-start justify-between gap-4">
                         <div>
-                            <DropdownMenuLabel className="p-0 text-base font-black">Reporting reminders</DropdownMenuLabel>
-                            <p className="mt-1 text-xs text-[#f2dca9]">{clock.label} PH Time · refreshes automatically</p>
+                            <DropdownMenuLabel className="p-0 text-base font-black">Operations notifications</DropdownMenuLabel>
+                            <p className="mt-1 text-xs text-[#f2dca9]">Announcements and reporting reminders · {clock.label} PH</p>
                         </div>
-                        {unreadReminders.length > 0 && (
+                        {combinedUnreadCount > 0 && (
                             <button
                                 type="button"
-                                onClick={markAllAsRead}
+                                onClick={markEverythingAsRead}
                                 className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#80613c] px-2.5 py-1.5 text-[11px] font-bold text-[#ffe7ad] transition hover:bg-[#604522]"
                             >
-                                <CheckCheck className="size-3.5" /> Mark all done
+                                <CheckCheck className="size-3.5" /> Mark all read
                             </button>
                         )}
                     </div>
                 </div>
+
+                {notifications.length > 0 && (
+                    <div className="border-b border-[#eadfcf] bg-[#fffaf1] px-3 py-3">
+                        <div className="flex items-center justify-between px-1 pb-2">
+                            <p className="text-[10px] font-black tracking-[0.16em] text-[#9b6210] uppercase">Announcements & achievements</p>
+                            <span className="rounded-full bg-[#4a351d] px-2 py-0.5 text-[10px] font-black text-white">
+                                {notifications.length} new
+                            </span>
+                        </div>
+                        <div className="max-h-52 space-y-2 overflow-y-auto">
+                            {notifications.map((notification) => {
+                                const Icon =
+                                    notification.type === 'latest_qa'
+                                        ? ShieldCheck
+                                        : notification.type === 'new_account'
+                                          ? Sparkles
+                                          : notification.type.includes('top') || notification.type.includes('highest')
+                                            ? Trophy
+                                            : Megaphone;
+
+                                return (
+                                    <button
+                                        key={notification.id}
+                                        type="button"
+                                        onClick={() => openProcessorNotification(notification)}
+                                        className="flex w-full items-start gap-3 rounded-xl border border-[#ead8b7] bg-white p-3 text-left transition hover:border-[#d8aa4e] hover:bg-[#fff4dc]"
+                                    >
+                                        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#fff0c9] text-[#a96300]">
+                                            <Icon className="size-4.5" />
+                                        </span>
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block text-xs font-black text-[#3d2c19]">{notification.title}</span>
+                                            <span className="mt-1 block text-[11px] leading-4 text-[#78684f]">{notification.message}</span>
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
 
                 <div className="grid gap-3 border-b border-[#eadfcf] bg-white px-4 py-4">
                     <BeesMultiDateCalendar
@@ -521,8 +587,8 @@ export function ReportingReminderBell() {
 
                 <DropdownMenuSeparator className="m-0 bg-[#eadfcf]" />
                 <div className="flex items-center justify-between gap-3 bg-white px-4 py-3 text-[11px] text-[#806f59]">
-                    <span>Reports, Platform Pulls, and Queue Monitor only.</span>
-                    <span className="font-bold text-[#94600b]">{unreadReminders.length} pending</span>
+                    <span>Announcements, reports, Platform Pulls, and Queue Monitor.</span>
+                    <span className="font-bold text-[#94600b]">{combinedUnreadCount} unread</span>
                 </div>
             </DropdownMenuContent>
         </DropdownMenu>

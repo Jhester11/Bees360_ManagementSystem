@@ -9,7 +9,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Facades\Storage;
 
 class User extends Authenticatable
 {
@@ -32,6 +31,7 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'batch',
         'avatar_path',
         'is_active',
     ];
@@ -60,12 +60,13 @@ class User extends Authenticatable
             'password' => 'hashed',
             'role' => UserRole::class,
             'is_active' => 'boolean',
+            'onboarding_completed_at' => 'datetime',
         ];
     }
 
     public function getAvatarAttribute(): ?string
     {
-        return $this->avatar_path ? Storage::disk('public')->url($this->avatar_path) : null;
+        return $this->avatar_path ? route('users.avatar', $this) : null;
     }
 
     public function queueSnapshots(): HasMany
@@ -91,5 +92,10 @@ class User extends Authenticatable
     public function uploadedQaAssessments(): HasMany
     {
         return $this->hasMany(QaAssessment::class, 'uploaded_by');
+    }
+
+    public function trainingAssignments(): HasMany
+    {
+        return $this->hasMany(TrainingAssignmentUser::class);
     }
 }

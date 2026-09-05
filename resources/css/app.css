@@ -1,5 +1,94 @@
 @import 'tailwindcss';
 
+@keyframes book-page-turn-forward {
+    0% {
+        transform: rotateY(0deg);
+        filter: brightness(1);
+    }
+    49% {
+        transform: rotateY(-88deg);
+        filter: brightness(0.72);
+        box-shadow: -28px 18px 35px rgba(0, 0, 0, 0.52);
+    }
+    50% {
+        transform: rotateY(88deg);
+        filter: brightness(0.72);
+    }
+    100% {
+        transform: rotateY(0deg);
+        filter: brightness(1);
+    }
+}
+@keyframes book-page-turn-backward {
+    0% {
+        transform: rotateY(0deg);
+        filter: brightness(1);
+    }
+    49% {
+        transform: rotateY(88deg);
+        filter: brightness(0.72);
+        box-shadow: 28px 18px 35px rgba(0, 0, 0, 0.52);
+    }
+    50% {
+        transform: rotateY(-88deg);
+        filter: brightness(0.72);
+    }
+    100% {
+        transform: rotateY(0deg);
+        filter: brightness(1);
+    }
+}
+@keyframes book-particle-drift {
+    0%,
+    100% {
+        transform: translate3d(0, 0, 0);
+        opacity: 0.2;
+    }
+    50% {
+        transform: translate3d(14px, -32px, 0);
+        opacity: 1;
+    }
+}
+@keyframes book-image-focus {
+    0%,
+    100% {
+        transform: scale(1);
+        border-color: #ffc83d;
+    }
+    50% {
+        transform: scale(1.015);
+        border-color: #fff1a8;
+    }
+}
+.book-page-turn-forward {
+    z-index: 30;
+    transform-origin: left center;
+    animation: book-page-turn-forward 0.66s cubic-bezier(0.45, 0, 0.2, 1) both;
+    backface-visibility: hidden;
+    will-change: transform, filter;
+}
+.book-page-turn-backward {
+    z-index: 30;
+    transform-origin: right center;
+    animation: book-page-turn-backward 0.66s cubic-bezier(0.45, 0, 0.2, 1) both;
+    backface-visibility: hidden;
+    will-change: transform, filter;
+}
+.book-particle {
+    animation: book-particle-drift 7s ease-in-out infinite;
+}
+.book-image-focus {
+    animation: book-image-focus 1.5s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    .book-page-turn-forward,
+    .book-page-turn-backward,
+    .book-particle,
+    .book-image-focus {
+        animation: none;
+    }
+}
+
 @plugin 'tailwindcss-animate';
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
@@ -73,6 +162,93 @@
     ::backdrop,
     ::file-selector-button {
         border-color: var(--color-gray-200, currentColor);
+    }
+}
+
+@keyframes bees-balloon-rise {
+    0% {
+        transform: translate3d(0, 70px, 0) rotate(-4deg);
+        opacity: 0;
+    }
+    14% {
+        opacity: 0.78;
+    }
+    55% {
+        transform: translate3d(14px, -150px, 0) rotate(6deg);
+    }
+    100% {
+        transform: translate3d(-8px, -360px, 0) rotate(-5deg);
+        opacity: 0;
+    }
+}
+
+@keyframes bees-firework-burst {
+    0% {
+        transform: translate(-50%, -50%) scale(0.05) rotate(0deg);
+        opacity: 0;
+    }
+    18% {
+        opacity: 1;
+    }
+    72% {
+        opacity: 0.85;
+    }
+    100% {
+        transform: translate(-50%, -50%) scale(1.25) rotate(24deg);
+        opacity: 0;
+    }
+}
+
+.bees-balloon {
+    position: absolute;
+    bottom: -70px;
+    width: 28px;
+    height: 36px;
+    border-radius: 52% 48% 48% 52% / 46% 46% 54% 54%;
+    box-shadow:
+        inset -6px -7px 10px rgb(74 45 16 / 18%),
+        0 8px 18px rgb(0 0 0 / 13%);
+    opacity: 0;
+    animation: bees-balloon-rise 5.5s ease-in infinite;
+}
+
+.bees-balloon::before {
+    position: absolute;
+    bottom: -5px;
+    left: 10px;
+    width: 8px;
+    height: 7px;
+    content: '';
+    background: inherit;
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.bees-balloon::after {
+    position: absolute;
+    top: 40px;
+    left: 14px;
+    width: 1px;
+    height: 55px;
+    content: '';
+    background: rgb(255 239 197 / 48%);
+}
+
+.bees-firework {
+    position: absolute;
+    width: 76px;
+    height: 76px;
+    border-radius: 999px;
+    background: repeating-conic-gradient(from 0deg, #ffc83d 0deg 5deg, transparent 5deg 24deg);
+    mask: radial-gradient(circle, transparent 0 28%, #000 30% 47%, transparent 49%);
+    opacity: 0;
+    animation: bees-firework-burst 1.8s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bees-balloon,
+    .bees-firework {
+        animation: none;
+        opacity: 0.2;
     }
 }
 

@@ -4,10 +4,10 @@ namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
+use App\Services\AvatarStorage;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -27,37 +27,34 @@ class ProfileController extends Controller
     /**
      * Update the user's profile settings.
      */
-    public function update(ProfileUpdateRequest $request): RedirectResponse
+    public function update(ProfileUpdateRequest $request, AvatarStorage $avatars): RedirectResponse
     {
-        $request->user()->fill($request->validated());
+        $user = $request->user();
+        $oldAvatarPath = $user->avatar_path;
+        $newAvatarPath = $request->hasFile('avatar') ? $avatars->store($request->file('avatar')) : null;
 
-        if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
+        $user->fill($request->safe()->only(['email']));
+
+        if ($newAvatarPath) {
+            $user->avatar_path = $newAvatarPath;
         }
 
-        $request->user()->save();
+        if ($user->isDirty('email')) {
+            $user->email_verified_at = null;
+        }
 
-        return to_route('profile.edit');
-    }
+        try {
+            $user->save();
+        } catch (\Throwable $exception) {
+            $avatars->delete($newAvatarPath);
 
-    /**
-     * Delete the user's account.
-     */
-    public function destroy(Request $request): RedirectResponse
-    {
-        $request->validate([
-            'password' => ['required', 'current_password'],
-        ]);
+            throw $exception;
+        }
 
-        $user = $request->user();
+        if ($newAvatarPath) {
+            $avatars->delete($oldAvatarPath);
+        }
 
-        Auth::logout();
-
-        $user->delete();
-
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-
-        return redirect('/');
+        return to_route('profile.edit')->with('userMessage', 'Your Bees360 profile was updated successfully.');
     }
 }

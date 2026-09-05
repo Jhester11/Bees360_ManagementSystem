@@ -2,17 +2,20 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\UserRole;
+use App\Http\Requests\Concerns\ValidatesSpreadsheetInput;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreReportImportRequest extends FormRequest
 {
+    use ValidatesSpreadsheetInput;
+
+    private const MAXIMUM_PAYLOAD_BYTES = 16 * 1024 * 1024;
+
     protected function prepareForValidation(): void
     {
-        $entries = $this->input('entries');
-
-        if (is_string($entries)) {
-            $entries = json_decode($entries, true);
-        }
+        $this->guardSpreadsheetPayloadSize(self::MAXIMUM_PAYLOAD_BYTES);
+        $entries = $this->decodeSpreadsheetArray($this->input('entries'));
 
         if (! is_array($entries)) {
             return;
@@ -20,7 +23,7 @@ class StoreReportImportRequest extends FormRequest
 
         $this->merge([
             'entries' => collect($entries)
-                ->filter(fn (mixed $entry) => is_array($entry)
+                ->filter(fn (mixed $entry): bool => is_array($entry)
                     && filled($entry['source'] ?? null)
                     && filled($entry['project_id'] ?? null)
                     && filled($entry['inspection_type'] ?? null)
@@ -33,19 +36,20 @@ class StoreReportImportRequest extends FormRequest
 
     public function authorize(): bool
     {
-        return $this->user() !== null;
+        return $this->user()?->role === UserRole::Operations;
     }
 
     public function rules(): array
     {
         return [
             'entries' => ['required', 'array', 'min:1', 'max:10000'],
+            'entries.*' => ['required', 'array:source,project_id,insured_by,inspection_type,assembled_by,assembled_at'],
             'entries.*.source' => ['required', 'in:active,closed'],
-            'entries.*.project_id' => ['required', 'string', 'max:50'],
-            'entries.*.insured_by' => ['nullable', 'string', 'max:255'],
-            'entries.*.inspection_type' => ['required', 'string', 'max:255'],
-            'entries.*.assembled_by' => ['required', 'string', 'max:255'],
-            'entries.*.assembled_at' => ['required', 'string', 'max:100'],
+            'entries.*.project_id' => ['bail', 'required', 'string', 'max:50', $this->safeSpreadsheetText()],
+            'entries.*.insured_by' => ['bail', 'nullable', 'string', 'max:255', $this->safeSpreadsheetText()],
+            'entries.*.inspection_type' => ['bail', 'required', 'string', 'max:255', $this->safeSpreadsheetText()],
+            'entries.*.assembled_by' => ['bail', 'required', 'string', 'max:255', $this->safeSpreadsheetText()],
+            'entries.*.assembled_at' => ['bail', 'required', 'string', 'max:100', $this->safeSpreadsheetText()],
         ];
     }
 }

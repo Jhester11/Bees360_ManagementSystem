@@ -19,6 +19,7 @@ export interface NavItem {
     url: string;
     icon?: LucideIcon | null;
     isActive?: boolean;
+    tourId?: string;
 }
 
 export interface SharedData {
@@ -39,5 +40,6 @@ export interface User {
     updated_at: string;
     role: 'operations' | 'processor' | 'trainer' | 'qa' | 'reviewer';
     is_active: boolean;
+    onboarding_completed_at: string | null;
     [key: string]: unknown; // This allows for additional properties...
 }

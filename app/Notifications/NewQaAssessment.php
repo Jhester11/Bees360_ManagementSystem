@@ -22,6 +22,7 @@ class NewQaAssessment extends Notification
     public function toArray(object $notifiable): array
     {
         return [
+            'type' => 'latest_qa',
             'assessment_id' => $this->assessment->id,
             'project_id' => $this->assessment->project_id,
             'score' => (float) $this->assessment->score,

@@ -23,7 +23,10 @@ export default function Reader({
 }) {
     const container = useRef<HTMLDivElement>(null),
         pdfRef = useRef<any>(null),
-        narrationStarted = useRef(false);
+        narrationStarted = useRef(false),
+        discussionRun = useRef(0),
+        spotlightTimeout = useRef<number | null>(null),
+        spotlightInterval = useRef<number | null>(null);
     const [page, setPage] = useState(assignmentUser?.progress?.last_read_page || 0),
         [pages, setPages] = useState(0),
         [scale, setScale] = useState(0.78),
@@ -36,6 +39,8 @@ export default function Reader({
         [guide, setGuide] = useState<number | null>(null),
         [speaking, setSpeaking] = useState(false),
         [narrating, setNarrating] = useState(false),
+        [spotlightPage, setSpotlightPage] = useState<number | null>(null),
+        [spotlightSeconds, setSpotlightSeconds] = useState(0),
         [autoNarrate, setAutoNarrate] = useState(false),
         [isFullscreen, setIsFullscreen] = useState(false);
     const guideSteps = [
@@ -45,7 +50,7 @@ export default function Reader({
         ],
         [
             'Voice discussion',
-            'Select Discuss this spread and Bees360 will read the actual text on the visible PDF pages while highlighting the book.',
+            'Select Discuss this spread and Bees360 will read the visible pages. After speaking, each page with images is highlighted for 15 seconds before continuing.',
         ],
         [
             'Study tools',
@@ -75,6 +80,7 @@ export default function Reader({
         return () => {
             alive = false;
             window.speechSynthesis.cancel();
+            clearSpotlightReview();
         };
     }, [fileUrl]);
     useEffect(() => {
@@ -97,8 +103,10 @@ export default function Reader({
     }, [page, pages, isMobile, material.id]);
 
     function speakGuide(index: number) {
+        discussionRun.current += 1;
         window.speechSynthesis.cancel();
         setNarrating(false);
+        clearSpotlightReview();
         setGuide(index);
         setSpeaking(true);
         const utterance = new SpeechSynthesisUtterance(guideSteps[index][1]);
@@ -108,11 +116,15 @@ export default function Reader({
     }
     async function narrateSpread() {
         if (narrating) {
+            discussionRun.current += 1;
             window.speechSynthesis.cancel();
             setNarrating(false);
+            clearSpotlightReview();
             return;
         }
         if (!pdfRef.current) return;
+        const run = ++discussionRun.current;
+        clearSpotlightReview();
         if (!document.fullscreenElement && container.current) {
             try {
                 await container.current.requestFullscreen();
@@ -121,6 +133,7 @@ export default function Reader({
                 // Narration remains available when fullscreen is blocked by browser policy.
             }
         }
+        if (run !== discussionRun.current) return;
         window.speechSynthesis.cancel();
         if (page === 0 || page > pages) {
             const coverText =
@@ -128,31 +141,31 @@ export default function Reader({
             const coverUtterance = new SpeechSynthesisUtterance(coverText);
             coverUtterance.rate = 0.9;
             coverUtterance.pitch = 0.92;
-            coverUtterance.onend = coverUtterance.onerror = () => setNarrating(false);
+            coverUtterance.onend = () => {
+                if (run !== discussionRun.current) return;
+                setNarrating(false);
+                clearSpotlightReview();
+            };
+            coverUtterance.onerror = () => {
+                if (run !== discussionRun.current) return;
+                discussionRun.current += 1;
+                setNarrating(false);
+                clearSpotlightReview();
+            };
             setNarrating(true);
             window.speechSynthesis.speak(coverUtterance);
             return;
         }
         const visible = [page, ...(isMobile || page >= pages ? [] : [page + 1])];
-        const parts = await Promise.all(
-            visible.map(async (number) => {
-                const content = await (await pdfRef.current.getPage(number)).getTextContent();
-                return content.items.map((item: any) => item.str).join(' ');
-            }),
-        );
-        const text = parts.join('. ').trim();
-        if (!text) return;
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 0.9;
-        utterance.pitch = 0.92;
-        utterance.onend = utterance.onerror = () => setNarrating(false);
         setNarrating(true);
-        window.speechSynthesis.speak(utterance);
+        discussPageSequence(visible, 0, run);
     }
     function turn(direction: 'next' | 'previous') {
         if (turning) return;
+        discussionRun.current += 1;
         window.speechSynthesis.cancel();
         setNarrating(false);
+        clearSpotlightReview();
         setTurning(direction);
         window.setTimeout(() => {
             setPage((current: number) => nextBookPage(current, direction, pages, isMobile));
@@ -232,6 +245,77 @@ export default function Reader({
     async function openOutline(item: any) {
         const destination = typeof item.dest === 'string' ? await pdfRef.current.getDestination(item.dest) : item.dest;
         if (destination?.[0]) setPage((await pdfRef.current.getPageIndex(destination[0])) + 1);
+    }
+
+    function clearSpotlightReview() {
+        if (spotlightTimeout.current !== null) window.clearTimeout(spotlightTimeout.current);
+        if (spotlightInterval.current !== null) window.clearInterval(spotlightInterval.current);
+        spotlightTimeout.current = null;
+        spotlightInterval.current = null;
+        setSpotlightPage(null);
+        setSpotlightSeconds(0);
+    }
+
+    async function discussPageSequence(visiblePages: number[], index: number, run: number) {
+        if (run !== discussionRun.current) return;
+        if (index >= visiblePages.length) {
+            spotlightTimeout.current = window.setTimeout(() => {
+                if (run !== discussionRun.current) return;
+                setNarrating(false);
+                turn('next');
+            }, 450);
+            return;
+        }
+
+        const currentPage = visiblePages[index];
+        const pdfPage = await pdfRef.current.getPage(currentPage);
+        const content = await pdfPage.getTextContent();
+        if (run !== discussionRun.current) return;
+        const text = content.items
+            .map((item: any) => item.str)
+            .join(' ')
+            .trim();
+        const reviewThenContinue = () => reviewPageImages(currentPage, run, () => discussPageSequence(visiblePages, index + 1, run));
+
+        if (!text) {
+            reviewThenContinue();
+            return;
+        }
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 0.9;
+        utterance.pitch = 0.92;
+        utterance.onend = () => {
+            if (run === discussionRun.current) reviewThenContinue();
+        };
+        utterance.onerror = () => {
+            if (run !== discussionRun.current) return;
+            discussionRun.current += 1;
+            setNarrating(false);
+            clearSpotlightReview();
+        };
+        window.speechSynthesis.speak(utterance);
+    }
+
+    async function reviewPageImages(reviewPage: number, run: number, onComplete: () => void) {
+        clearSpotlightReview();
+        const pdfPage = await pdfRef.current.getPage(reviewPage);
+        const imageRegions = await findVisibleImageRegions(pdfPage, pdfPage.getViewport({ scale: 1 }));
+        if (run !== discussionRun.current) return;
+
+        if (imageRegions.length === 0) {
+            onComplete();
+            return;
+        }
+
+        setSpotlightPage(reviewPage);
+        setSpotlightSeconds(15);
+        spotlightInterval.current = window.setInterval(() => setSpotlightSeconds((seconds) => Math.max(0, seconds - 1)), 1000);
+        spotlightTimeout.current = window.setTimeout(() => {
+            if (run !== discussionRun.current) return;
+            clearSpotlightReview();
+            onComplete();
+        }, 15000);
     }
 
     const isFrontCover = page === 0;
@@ -319,7 +403,7 @@ export default function Reader({
                             className="flex items-center gap-1 rounded-lg bg-[#ffc83d] px-3 py-2 text-xs font-black text-[#362207]"
                         >
                             {narrating ? <Pause className="size-4" /> : <Play className="size-4" />}
-                            {narrating ? 'Stop voice' : 'Discuss this spread'}
+                            {narrating ? 'Stop discussion' : 'Discuss this spread'}
                         </button>
                         <label className="flex items-center gap-1 text-xs">
                             <input type="checkbox" checked={autoNarrate} onChange={(event) => setAutoNarrate(event.target.checked)} />
@@ -368,7 +452,7 @@ export default function Reader({
                                         page={page}
                                         scale={scale}
                                         side={isMobile ? 'single' : 'left'}
-                                        highlighted={narrating}
+                                        highlighted={spotlightPage === page}
                                         fullscreen={isFullscreen}
                                         turning={turning}
                                     />
@@ -379,7 +463,7 @@ export default function Reader({
                                         page={page + 1}
                                         scale={scale}
                                         side="right"
-                                        highlighted={narrating}
+                                        highlighted={spotlightPage === page + 1}
                                         fullscreen={isFullscreen}
                                         turning={turning}
                                     />
@@ -414,7 +498,7 @@ export default function Reader({
                             className="absolute bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full bg-[#ffc83d] px-5 py-3 text-sm font-black text-[#362207] shadow-xl"
                         >
                             {narrating ? <Pause className="size-4" /> : <Play className="size-4" />}
-                            {narrating ? 'Stop audio · Space' : 'Play audio · Space'}
+                            {narrating ? 'Stop discussion · Space' : 'Play audio · Space'}
                         </button>
                     </>
                 )}
@@ -423,6 +507,11 @@ export default function Reader({
                 >
                     Reading progress: {readingProgress}%
                 </div>
+                {spotlightPage !== null && (
+                    <div className="absolute right-5 bottom-5 z-40 rounded-full border border-[#ffc83d]/60 bg-black/75 px-4 py-2 text-xs font-bold text-white shadow-xl">
+                        Reviewing page {spotlightPage} images · Next in {spotlightSeconds}s
+                    </div>
+                )}
                 {guide !== null && (
                     <>
                         <div
@@ -552,7 +641,9 @@ function BookPage({
             canvas.height = viewport.height;
             task = pdfPage.render({ canvasContext: canvas.getContext('2d')!, viewport });
             const regions = await findVisibleImageRegions(pdfPage, viewport);
-            if (!cancelled) setImageRegions(regions);
+            if (!cancelled) {
+                setImageRegions(regions);
+            }
         });
         return () => {
             cancelled = true;

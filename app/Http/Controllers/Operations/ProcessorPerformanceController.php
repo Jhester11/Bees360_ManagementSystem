@@ -275,10 +275,17 @@ class ProcessorPerformanceController extends Controller
         });
 
         $previousUrl = url()->previous();
-        $redirectUrl = parse_url($previousUrl, PHP_URL_HOST) === $request->getHost()
-            && parse_url($previousUrl, PHP_URL_PATH) === '/operations/processors'
-                ? $previousUrl
-                : route('operations.processors');
+        $previousPath = parse_url($previousUrl, PHP_URL_PATH);
+        $isTrustedPreviousUrl = parse_url($previousUrl, PHP_URL_HOST) === $request->getHost();
+        $redirectUrl = match (true) {
+            $isTrustedPreviousUrl && $previousPath === '/operations/cst-reports' => route('operations.cst-reports', [
+                'start_date' => $rows->min('report_date'),
+                'end_date' => $rows->max('report_date'),
+                'processor' => 'all',
+            ]),
+            $isTrustedPreviousUrl && $previousPath === '/operations/processors' => $previousUrl,
+            default => route('operations.processors'),
+        };
 
         return redirect()->to($redirectUrl)->with('cstImportSummary', [
             'saved' => $rows->count(),

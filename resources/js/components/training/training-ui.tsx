@@ -51,6 +51,7 @@ export const button =
     'inline-flex items-center justify-center rounded-xl bg-[#b96f00] px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#8d5100] disabled:cursor-not-allowed disabled:opacity-50';
 export const secondary =
     'inline-flex items-center justify-center rounded-xl border border-[#d9b36d] bg-[#fff9ed] px-4 py-2 text-sm font-bold text-[#7a4800] hover:bg-[#fff0ce]';
+export const defaultTrainingCover = '/images/training/default-book-cover.png';
 export function TrainingPage({
     title,
     eyebrow = 'Bees360 Learning',
@@ -103,15 +104,18 @@ export function Status({ value }: { value: string }) {
     );
 }
 export function MaterialCard({ material, progress }: { material: Material; progress?: number }) {
+    const coverSource = material.cover_path ? `/training/materials/${material.id}/cover` : defaultTrainingCover;
+
     return (
         <article className="overflow-hidden rounded-2xl border border-[#ead8bb] bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
-            {material.cover_path ? (
-                <img className="h-32 w-full object-cover" src={`/training/materials/${material.id}/cover`} alt="" />
-            ) : (
-                <div className="grid h-32 place-items-center bg-gradient-to-br from-[#5a3210] to-[#9d650f] text-white">
-                    <BookOpenCheck className="size-12" />
-                </div>
-            )}
+            <img
+                className="h-32 w-full bg-[#344155] object-cover object-center"
+                src={coverSource}
+                alt={`${material.title} book cover`}
+                onError={(event) => {
+                    event.currentTarget.src = defaultTrainingCover;
+                }}
+            />
             <div className="p-4">
                 <div className="flex justify-between gap-2">
                     <p className="text-xs font-bold text-[#b36a00] uppercase">{material.subject?.name || material.category}</p>

@@ -59,15 +59,6 @@ type Props = {
     filters: { manual: boolean; startDate: string; endDate: string; latestQaStart: string | null; latestQaEnd: string | null };
 };
 type Timezone = 'ph' | 'cst';
-type CstFileKind = 'active' | 'closed' | 'qa';
-type ImportMetric = {
-    report_date: string;
-    processor_name: string;
-    general_exterior: number;
-    four_point: number;
-    qc_score: number | null;
-    qc_reviews: number;
-};
 type QaAssessment = {
     assessment_date: string;
     processor_name: string;
@@ -82,8 +73,6 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Operations dashboard', href: '/dashboard' },
     { title: 'Processors', href: '/operations/processors' },
 ];
-const maximumCstSourceRows = 50_000;
-const maximumCstMetrics = 5_000;
 const maximumQaWorksheetRows = 10_050;
 const maximumQaAssessments = 10_000;
 
@@ -118,91 +107,11 @@ const valueFor = (row: Record<string, unknown>, aliases: string[]) => {
     const key = keys.find((candidate) => aliases.includes(normalize(candidate)));
     return key ? row[key] : undefined;
 };
-const integer = (value: unknown) => Math.max(0, Math.round(Number(String(value ?? 0).replace(/,/g, '')) || 0));
 const dateValue = (value: unknown) => {
     if (value instanceof Date && !Number.isNaN(value.valueOf())) return value.toISOString().slice(0, 10);
     const parsed = new Date(String(value ?? ''));
     return Number.isNaN(parsed.valueOf()) ? '' : parsed.toISOString().slice(0, 10);
 };
-
-async function metricsFromWorkbook(file: File): Promise<ImportMetric[]> {
-    const workbook = await readSpreadsheet(file, ['xlsx', 'xls'], maximumCstSourceRows, { cellDates: true });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    if (!sheet) throw new Error('The workbook does not contain a worksheet.');
-    assertWorksheetRowLimit(sheet, maximumCstSourceRows, file.name);
-    const rows = SheetJS.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
-    if (rows.length > maximumCstSourceRows) throw new Error(`${file.name} contains too many source rows.`);
-    if (rows.length === 0) throw new Error('The worksheet does not contain data.');
-
-    const grouped = new Map<string, { date: string; name: string; ge: number; fp: number; score: number; reviews: number }>();
-    rows.forEach((row) => {
-        const processor = String(valueFor(row, ['processor', 'processorname', 'name', 'nname', 'firstassembledby', 'assembledby']) ?? '').trim();
-        if (!processor) return;
-        const date = dateValue(valueFor(row, ['reportdate', 'date', 'assembleddate', 'firstassembledtime']));
-        const key = `${date}|${processor.toLowerCase()}`;
-        const current = grouped.get(key) ?? { date, name: processor, ge: 0, fp: 0, score: 0, reviews: 0 };
-        const summaryGe = valueFor(row, ['generalexterior', 'genexterior', 'genext', 'ge']);
-        const summaryFp = valueFor(row, ['4point', 'fourpoint', 'gen4point', 'fp']);
-        if (summaryGe !== undefined || summaryFp !== undefined) {
-            current.ge += integer(summaryGe);
-            current.fp += integer(summaryFp);
-        } else {
-            const inspection = String(valueFor(row, ['inspectiontype', 'reporttype', 'type']) ?? '').toLowerCase();
-            if (inspection.includes('exterior')) current.ge += 1;
-            if (inspection.includes('4-point') || inspection.includes('4 point') || inspection.includes('four point')) current.fp += 1;
-        }
-        const rawScore = valueFor(row, ['qcscore', 'accuracyscore', 'accuracy', 'qualityscore', 'score']);
-        if (rawScore !== undefined && String(rawScore).trim() !== '') {
-            let score = Number(String(rawScore).replace('%', '').trim());
-            if (Number.isFinite(score)) {
-                if (score <= 1) score *= 100;
-                current.score += Math.min(Math.max(score, 0), 100);
-                current.reviews += 1;
-            }
-        }
-        grouped.set(key, current);
-    });
-
-    const metrics = [...grouped.values()].map((item) => ({
-        report_date: item.date,
-        processor_name: item.name,
-        general_exterior: item.ge,
-        four_point: item.fp,
-        qc_score: item.reviews ? Number((item.score / item.reviews).toFixed(2)) : null,
-        qc_reviews: item.reviews,
-    }));
-    if (metrics.length === 0) throw new Error('No processor names were found. Add a Processor or Processor Name column.');
-    if (metrics.length > maximumCstMetrics) throw new Error(`The CST import cannot contain more than ${maximumCstMetrics.toLocaleString()} metrics.`);
-    return metrics;
-}
-
-function combineMetrics(metricGroups: ImportMetric[][]): ImportMetric[] {
-    const combined = new Map<string, ImportMetric>();
-
-    metricGroups.flat().forEach((metric) => {
-        const key = `${metric.report_date}|${normalize(metric.processor_name)}`;
-        const current = combined.get(key) ?? {
-            ...metric,
-            general_exterior: 0,
-            four_point: 0,
-            qc_score: null,
-            qc_reviews: 0,
-        };
-        const currentWeightedScore = (current.qc_score ?? 0) * current.qc_reviews;
-        const addedWeightedScore = (metric.qc_score ?? 0) * metric.qc_reviews;
-        const reviews = current.qc_reviews + metric.qc_reviews;
-
-        combined.set(key, {
-            ...current,
-            general_exterior: current.general_exterior + metric.general_exterior,
-            four_point: current.four_point + metric.four_point,
-            qc_score: reviews > 0 ? Number(((currentWeightedScore + addedWeightedScore) / reviews).toFixed(2)) : null,
-            qc_reviews: reviews,
-        });
-    });
-
-    return [...combined.values()];
-}
 
 async function qaFromWorkbook(file: File): Promise<QaAssessment[]> {
     const workbook = await readSpreadsheet(file, ['xlsx', 'xls', 'csv'], maximumQaWorksheetRows, { cellDates: true });
@@ -388,10 +297,6 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
     }>();
     const [timezone, setTimezone] = useState<Timezone>('ph');
     const [processor, setProcessor] = useState('');
-    const [cstFiles, setCstFiles] = useState<Record<CstFileKind, File | null>>({ active: null, closed: null, qa: null });
-    const [uploading, setUploading] = useState(false);
-    const [progress, setProgress] = useState(0);
-    const [error, setError] = useState<string | null>(null);
     const [successOpen, setSuccessOpen] = useState(Boolean(page.props.flash?.cstImportSummary));
     const qaFileRef = useRef<HTMLInputElement>(null);
     const [qaOpen, setQaOpen] = useState(false);
@@ -534,96 +439,6 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                 onFinish: () => setApplyingMonth(false),
             },
         );
-    };
-
-    const chooseCstFile = (kind: CstFileKind, candidate?: File) => {
-        if (!candidate) return;
-        const accepted = kind === 'qa' ? /\.(xlsx?|csv)$/ : /\.xlsx?$/;
-        if (!accepted.test(candidate.name.toLowerCase())) {
-            setError(kind === 'qa' ? 'Choose an Excel or CSV file for QA.' : 'Choose an Excel .xlsx or .xls file.');
-            return;
-        }
-        setCstFiles((files) => ({ ...files, [kind]: candidate }));
-        setError(null);
-    };
-    const uploadCstBundle = async () => {
-        const selectedFiles = Object.values(cstFiles).filter((file): file is File => file !== null);
-        if (selectedFiles.length === 0) return;
-
-        setUploading(true);
-        setError(null);
-        setProgress(15);
-
-        const clearCstFiles = () => setCstFiles({ active: null, closed: null, qa: null });
-        const failUpload = (message: string) => {
-            setError(message);
-            setProgress(0);
-            setUploading(false);
-        };
-
-        try {
-            const metricGroups = await Promise.all(
-                [cstFiles.active, cstFiles.closed].filter((file): file is File => file !== null).map(metricsFromWorkbook),
-            );
-            const metrics = combineMetrics(metricGroups);
-            const assessments = cstFiles.qa ? await qaFromWorkbook(cstFiles.qa) : [];
-            const sourceFile = selectedFiles
-                .map((file) => file.name)
-                .join(' + ')
-                .slice(0, 255);
-            setProgress(50);
-
-            const uploadQaAssessments = () => {
-                if (!cstFiles.qa || assessments.length === 0) {
-                    setProgress(100);
-                    clearCstFiles();
-                    setUploading(false);
-                    return;
-                }
-
-                router.post(
-                    '/operations/processors/qa-import',
-                    { source_file: cstFiles.qa.name, assessments },
-                    {
-                        preserveScroll: true,
-                        onProgress: (event) => setProgress(Math.max(80, event?.percentage ?? 80)),
-                        onError: (errors) => failUpload(Object.values(errors)[0] ?? 'The QA workbook could not be saved.'),
-                        onSuccess: () => {
-                            setProgress(100);
-                            clearCstFiles();
-                            setUploading(false);
-                        },
-                    },
-                );
-            };
-
-            if (metrics.length === 0) {
-                uploadQaAssessments();
-                return;
-            }
-
-            router.post(
-                '/operations/processors/cst-import',
-                { source_file: sourceFile, metrics },
-                {
-                    preserveScroll: true,
-                    onProgress: (event) => setProgress(Math.max(55, event?.percentage ?? 55)),
-                    onError: (errors) => failUpload(Object.values(errors)[0] ?? 'The CST workbooks could not be saved.'),
-                    onSuccess: () => {
-                        if (assessments.length > 0) {
-                            setProgress(78);
-                            uploadQaAssessments();
-                        } else {
-                            setProgress(100);
-                            clearCstFiles();
-                            setUploading(false);
-                        }
-                    },
-                },
-            );
-        } catch (exception) {
-            failUpload(exception instanceof Error ? exception.message : 'The CST files could not be read.');
-        }
     };
 
     const chooseQaFile = (candidate?: File) => {
@@ -1058,9 +873,9 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                     </div>
                 </section>
 
-                <section className={`grid gap-4 ${timezone === 'cst' ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
-                    <div className="w-full rounded-2xl border border-[#ead4ad] bg-gradient-to-r from-[#fffdf8] to-[#fff7e7] p-6 shadow-[0_8px_30px_rgba(88,57,18,0.06)]">
-                        <div className="grid gap-4 md:grid-cols-2">
+                <section className="w-full">
+                    <div className="w-full rounded-2xl border border-[#ead4ad] bg-gradient-to-r from-[#fffdf8] to-[#fff7e7] p-4 shadow-[0_8px_30px_rgba(88,57,18,0.06)] sm:p-5 lg:p-6">
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_minmax(260px,1fr)_auto] xl:items-end">
                             <div>
                                 <label htmlFor="performance-processor" className="mb-2 block text-sm font-bold text-[#594324]">
                                     Select processor name
@@ -1100,88 +915,16 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                     <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-[#b96c00]">▼</span>
                                 </span>
                             </label>
-                        </div>
-                        <p className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#947650]">
-                            <Clock3 className="size-3.5" />
-                            {timezone === 'ph' ? 'Philippine' : 'Central'} time · {periods[timezone]}
-                        </p>
-                    </div>
-                    {timezone === 'cst' && (
-                        <div className="rounded-2xl border border-[#ead4ad] bg-[#fffdf8] p-5 shadow-[0_8px_30px_rgba(88,57,18,0.06)]">
-                            <div className="flex items-start justify-between gap-3">
-                                <div>
-                                    <p className="font-extrabold text-[#3f2e18]">CST monthly import</p>
-                                    <p className="mt-1 text-xs leading-5 text-[#806f59]">
-                                        Add any one, two, or all three files. Active and Closed totals are combined; QA supplies monthly accuracy.
-                                    </p>
-                                </div>
-                                <span className="shrink-0 rounded-full bg-[#fff0c9] px-3 py-1 text-xs font-black text-[#9b5d00]">
-                                    {Object.values(cstFiles).filter(Boolean).length}/3 selected
+                            <div className="flex min-h-12 items-center gap-2 rounded-xl border border-[#ead4ad] bg-white/80 px-4 text-xs font-semibold text-[#947650] sm:col-span-2 xl:col-span-1">
+                                <Clock3 className="size-4 shrink-0 text-[#b96c00]" />
+                                <span className="leading-5">
+                                    {timezone === 'ph' ? 'Philippine' : 'Central'} time
+                                    <span className="mx-1 text-[#c99747]">·</span>
+                                    {periods[timezone]}
                                 </span>
                             </div>
-                            <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-                                {(
-                                    [
-                                        ['active', 'Active', 'CST active cases', '.xlsx,.xls'],
-                                        ['closed', 'Closed', 'CST completed cases', '.xlsx,.xls'],
-                                        ['qa', 'QA', 'Accuracy and feedback', '.xlsx,.xls,.csv'],
-                                    ] as const
-                                ).map(([kind, label, description, accept]) => {
-                                    const selectedFile = cstFiles[kind];
-
-                                    return (
-                                        <label
-                                            key={kind}
-                                            onDragOver={(event) => event.preventDefault()}
-                                            onDrop={(event) => {
-                                                event.preventDefault();
-                                                chooseCstFile(kind, event.dataTransfer.files[0]);
-                                            }}
-                                            className={`cursor-pointer rounded-xl border-2 border-dashed p-3 transition ${selectedFile ? 'border-[#7eb797] bg-[#eef8ef]' : 'border-[#dfc58f] bg-white hover:border-[#b96c00] hover:bg-[#fff8e9]'}`}
-                                        >
-                                            <input
-                                                type="file"
-                                                accept={accept}
-                                                disabled={uploading}
-                                                className="sr-only"
-                                                onChange={(event) => chooseCstFile(kind, event.target.files?.[0])}
-                                            />
-                                            <span
-                                                className={`grid size-9 place-items-center rounded-lg ${selectedFile ? 'bg-[#d9efdf] text-[#147a51]' : 'bg-[#fff0c9] text-[#a96300]'}`}
-                                            >
-                                                {selectedFile ? <CheckCircle2 className="size-5" /> : <UploadCloud className="size-5" />}
-                                            </span>
-                                            <p className="mt-3 text-sm font-extrabold text-[#3f2e18]">{label} file</p>
-                                            <p className="mt-1 truncate text-[11px] font-semibold text-[#806f59]">
-                                                {selectedFile?.name ?? description}
-                                            </p>
-                                        </label>
-                                    );
-                                })}
-                            </div>
-                            {(uploading || progress > 0) && (
-                                <div className="mt-3">
-                                    <div className="flex justify-between text-xs font-bold text-[#806f59]">
-                                        <span>Combining and saving CST monthly data</span>
-                                        <span>{progress}%</span>
-                                    </div>
-                                    <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[#f0e1c8]">
-                                        <div className="h-full rounded-full bg-[#d88a0c] transition-all" style={{ width: `${progress}%` }} />
-                                    </div>
-                                </div>
-                            )}
-                            {error && <p className="mt-2 text-sm font-semibold text-[#a04435]">{error}</p>}
-                            <Button
-                                type="button"
-                                disabled={!Object.values(cstFiles).some(Boolean) || uploading}
-                                onClick={() => void uploadCstBundle()}
-                                className="mt-3 h-11 w-full bg-[#b96c00] font-bold text-white hover:bg-[#925400]"
-                            >
-                                {uploading ? <LoaderCircle className="size-4 animate-spin" /> : <UploadCloud className="size-4" />}
-                                {uploading ? 'Saving selected files…' : 'Generate & save selected files'}
-                            </Button>
                         </div>
-                    )}
+                    </div>
                 </section>
 
                 {processor && !selected ? (
@@ -1191,7 +934,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                             <h2 className="mt-4 text-xl font-bold text-[#342615]">No {timezone.toUpperCase()} processor data yet</h2>
                             <p className="mt-2 text-sm text-[#806f59]">
                                 {timezone === 'cst'
-                                    ? 'Upload a CST workbook to begin tracking performance.'
+                                    ? 'No CST report data is available for this processor and reporting month.'
                                     : 'Import daily reports first to calculate PH performance.'}
                             </p>
                         </div>

@@ -1,5 +1,6 @@
-import { TrainingPage, button, secondary } from '@/components/training/training-ui';
-import { Bookmark, ChevronLeft, ChevronRight, Maximize, Minus, Pause, Play, Plus, Search, Sparkles, Volume2, X } from 'lucide-react';
+import { TrainingPage, button, defaultTrainingCover, secondary } from '@/components/training/training-ui';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Bookmark, ChevronLeft, ChevronRight, Maximize, Minus, Pause, Play, Plus, RotateCcw, Search, Sparkles, Volume2, X, ZoomIn } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 
 const csrf = () =>
@@ -580,32 +581,120 @@ function BookCover({
     fullscreen: boolean;
     turning: 'next' | 'previous' | null;
 }) {
-    const background = !back && material.cover_path ? `url('/training/materials/${material.id}/cover')` : undefined;
+    const coverSource = material.cover_path ? `/training/materials/${material.id}/cover` : defaultTrainingCover;
+    const background = !back ? `url('${coverSource}')` : undefined;
     const turnClass = turning === 'next' ? 'book-page-turn-forward' : turning === 'previous' ? 'book-page-turn-backward' : '';
+    const [coverZoomed, setCoverZoomed] = useState(false);
+    const [coverZoom, setCoverZoom] = useState(1);
 
     return (
-        <div
-            className={`relative aspect-[.707] overflow-hidden rounded-sm border border-[#8d5a18] bg-gradient-to-br from-[#2c1908] via-[#70430d] to-[#d08a18] bg-cover bg-center shadow-2xl ${fullscreen ? 'h-[96vh] max-w-[96vw]' : 'h-[70vh] max-h-[760px] max-w-[78vw]'} ${turnClass}`}
-            style={background ? { backgroundImage: background } : undefined}
-        >
-            {back ? (
-                <div className="absolute inset-0 grid place-items-center bg-[#3a220b] p-8 text-center text-[#fff2cf]">
-                    <div className="absolute inset-5 rounded-sm border border-[#d69325]/45" />
-                    <div className="relative">
-                        <div className="mx-auto mb-6 size-14 rounded-full border border-[#ffc83d]/60 bg-[#ffc83d]/10" />
-                        <p className="text-xs font-black tracking-[.3em] text-[#ffc83d] uppercase">Bees360 Learning</p>
+        <>
+            <div
+                className={`relative aspect-[.707] overflow-hidden rounded-sm border border-[#526784] bg-[#344155] bg-cover bg-center shadow-2xl ${fullscreen ? 'h-[96vh] max-w-[96vw]' : 'h-[70vh] max-h-[760px] max-w-[78vw]'} ${turnClass}`}
+                style={background ? { backgroundImage: background } : undefined}
+            >
+                {back ? (
+                    <div className="absolute inset-0 grid place-items-center bg-[#3a220b] p-8 text-center text-[#fff2cf]">
+                        <div className="absolute inset-5 rounded-sm border border-[#d69325]/45" />
+                        <div className="relative">
+                            <div className="mx-auto mb-6 size-14 rounded-full border border-[#ffc83d]/60 bg-[#ffc83d]/10" />
+                            <p className="text-xs font-black tracking-[.3em] text-[#ffc83d] uppercase">Bees360 Learning</p>
+                        </div>
                     </div>
-                </div>
-            ) : (
-                <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-b from-black/15 via-black/20 to-black/90 p-8 text-white sm:p-12">
-                    <p className="text-xs font-black tracking-[.24em] text-[#ffd36b] uppercase sm:text-sm">
-                        {material.subject?.name || 'Bees360 Learning'}
-                    </p>
-                    <h2 className="mt-3 max-w-lg text-3xl leading-tight font-black drop-shadow-lg sm:text-5xl">{material.title}</h2>
-                    <div className="mt-6 h-1 w-20 rounded-full bg-[#ffc83d]" />
-                </div>
-            )}
-        </div>
+                ) : (
+                    <>
+                        <button
+                            type="button"
+                            onClick={() => setCoverZoomed(true)}
+                            className="absolute inset-0 z-20 cursor-zoom-in focus-visible:outline-4 focus-visible:outline-offset-[-5px] focus-visible:outline-[#ffc83d]"
+                            aria-label={`Enlarge ${material.title} cover image`}
+                        />
+                        <div className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-b from-[#26354b]/35 via-transparent to-[#26354b]/20 p-4 sm:p-7">
+                            <div className="max-w-[92%] rounded-sm border-l-[6px] border-[#4bd3a0] bg-white/95 p-4 text-[#24334b] shadow-[0_12px_34px_rgba(20,31,48,0.24)] backdrop-blur-sm sm:max-w-[88%] sm:p-6">
+                                <div className="flex flex-wrap items-center gap-2 text-[10px] font-black tracking-[.18em] uppercase sm:text-xs">
+                                    <span className="text-[#24b982]">Bees360</span>
+                                    <span className="h-4 w-px bg-[#bed0dc]" />
+                                    <span className="text-[#728519]">{material.subject?.name || 'Learning Center'}</span>
+                                </div>
+                                <h2 className="mt-3 text-xl leading-tight font-black tracking-wide uppercase sm:text-3xl">{material.title}</h2>
+                                {material.description && <p className="mt-3 line-clamp-2 text-xs leading-5 font-semibold text-[#536174] sm:text-sm">{material.description}</p>}
+                                <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-bold text-[#536174] sm:text-xs">
+                                    {material.topic?.name && <span>{material.topic.name}</span>}
+                                    <span>{material.category}</span>
+                                    <span>{material.difficulty}</span>
+                                    <span>Version {material.version}</span>
+                                    <span>{material.estimated_reading_minutes} min</span>
+                                </div>
+                            </div>
+                        </div>
+                        <span className="pointer-events-none absolute right-4 bottom-4 z-30 inline-flex items-center gap-2 rounded-full bg-[#152238]/85 px-3 py-2 text-xs font-black text-white shadow-lg backdrop-blur-sm">
+                            <ZoomIn className="size-4" /> Click to enlarge
+                        </span>
+                    </>
+                )}
+            </div>
+
+            <Dialog
+                open={coverZoomed}
+                onOpenChange={(open) => {
+                    setCoverZoomed(open);
+                    if (!open) setCoverZoom(1);
+                }}
+            >
+                <DialogContent className="h-[92vh] w-[96vw] max-w-[96vw] border-[#7184a0] bg-[#202b3d] p-3 text-white shadow-[0_28px_90px_rgba(0,0,0,0.55)] sm:rounded-2xl">
+                    <DialogTitle className="sr-only">{material.title} enlarged cover image</DialogTitle>
+                    <div className="flex h-full min-h-0 flex-1 flex-col gap-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2 px-2 pr-10">
+                            <div className="flex items-center gap-2 text-sm font-bold text-[#dbe8f6]">
+                                <ZoomIn className="size-4 text-[#5ee0b0]" /> {material.title}
+                            </div>
+                            <div className="flex items-center gap-1 rounded-lg border border-white/15 bg-white/10 p-1">
+                                <button
+                                    type="button"
+                                    aria-label="Zoom cover out"
+                                    onClick={() => setCoverZoom((zoom) => Math.max(1, zoom - 0.25))}
+                                    disabled={coverZoom <= 1}
+                                    className="grid size-8 place-items-center rounded-md hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35"
+                                >
+                                    <Minus className="size-4" />
+                                </button>
+                                <span className="min-w-14 text-center text-xs font-black text-[#dbe8f6]">{Math.round(coverZoom * 100)}%</span>
+                                <button
+                                    type="button"
+                                    aria-label="Zoom cover in"
+                                    onClick={() => setCoverZoom((zoom) => Math.min(3, zoom + 0.25))}
+                                    disabled={coverZoom >= 3}
+                                    className="grid size-8 place-items-center rounded-md hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35"
+                                >
+                                    <Plus className="size-4" />
+                                </button>
+                                <button
+                                    type="button"
+                                    aria-label="Reset cover zoom"
+                                    title="Reset zoom"
+                                    onClick={() => setCoverZoom(1)}
+                                    className="grid size-8 place-items-center rounded-md text-[#5ee0b0] hover:bg-white/10"
+                                >
+                                    <RotateCcw className="size-4" />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-auto rounded-xl bg-[#152033] p-2 [scrollbar-color:#7184a0_#152033]">
+                            <img
+                                src={coverSource}
+                                alt={`${material.title} enlarged book cover`}
+                                className="mx-auto block max-w-none object-contain transition-[width] duration-200 ease-out"
+                                style={{ width: `${coverZoom * 100}%`, minHeight: '100%' }}
+                                onError={(event) => {
+                                    event.currentTarget.src = defaultTrainingCover;
+                                }}
+                            />
+                        </div>
+                        <p className="text-center text-xs text-[#b9c7d8]">Press Esc or use the close button to return to the book.</p>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        </>
     );
 }
 
@@ -629,11 +718,15 @@ function BookPage({
     const ref = useRef<HTMLCanvasElement>(null);
     const spotlightMaskId = `book-image-mask-${useId().replace(/:/g, '')}`;
     const [imageRegions, setImageRegions] = useState<ImageRegion[]>([]);
+    const [selectedImage, setSelectedImage] = useState<{ source: string; number: number } | null>(null);
+    const [imageZoom, setImageZoom] = useState(1);
     useEffect(() => {
         if (!pdf || !ref.current) return;
         let task: any;
         let cancelled = false;
         setImageRegions([]);
+        setSelectedImage(null);
+        setImageZoom(1);
         pdf.getPage(page).then(async (pdfPage: any) => {
             const viewport = pdfPage.getViewport({ scale });
             const canvas = ref.current!;
@@ -641,6 +734,7 @@ function BookPage({
             canvas.height = viewport.height;
             task = pdfPage.render({ canvasContext: canvas.getContext('2d')!, viewport });
             const regions = await findVisibleImageRegions(pdfPage, viewport);
+            await task.promise;
             if (!cancelled) {
                 setImageRegions(regions);
             }
@@ -657,61 +751,170 @@ function BookPage({
               ? 'book-page-turn-backward'
               : '';
 
+    function enlargeImage(region: ImageRegion, number: number) {
+        const canvas = ref.current;
+        if (!canvas) return;
+
+        const left = Math.max(0, Math.round((region.left / 100) * canvas.width));
+        const top = Math.max(0, Math.round((region.top / 100) * canvas.height));
+        const width = Math.min(canvas.width - left, Math.max(1, Math.round((region.width / 100) * canvas.width)));
+        const height = Math.min(canvas.height - top, Math.max(1, Math.round((region.height / 100) * canvas.height)));
+        const crop = document.createElement('canvas');
+        crop.width = width;
+        crop.height = height;
+        const context = crop.getContext('2d');
+        if (!context) return;
+
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = 'high';
+        context.drawImage(canvas, left, top, width, height, 0, 0, width, height);
+        setSelectedImage({ source: crop.toDataURL('image/png'), number });
+        setImageZoom(1);
+    }
+
     return (
-        <div
-            className={`relative overflow-hidden border border-black/60 bg-white transition-shadow duration-300 ${pageTurnClass} ${side === 'left' ? 'origin-right rounded-l-sm shadow-[-14px_16px_25px_rgba(0,0,0,.48)]' : side === 'right' ? 'origin-left rounded-r-sm shadow-[14px_16px_25px_rgba(0,0,0,.48)]' : 'rounded-sm shadow-2xl'}`}
-        >
-            <canvas
-                ref={ref}
-                className={`block bg-white ${fullscreen ? 'max-h-[98vh] max-w-[98vw] md:max-w-[49vw]' : 'max-h-[72vh] max-w-[76vw] md:max-w-[39vw]'}`}
-            />
-            {highlighted && imageRegions.length > 0 && (
-                <>
-                    <svg
-                        aria-hidden="true"
-                        className="pointer-events-none absolute inset-0 z-10 size-full"
-                        preserveAspectRatio="none"
-                        viewBox="0 0 100 100"
-                    >
-                        <defs>
-                            <mask id={spotlightMaskId}>
-                                <rect width="100" height="100" fill="white" />
-                                {imageRegions.map((region, index) => (
-                                    <rect
-                                        key={index}
-                                        x={region.left}
-                                        y={region.top}
-                                        width={region.width}
-                                        height={region.height}
-                                        rx="0.8"
-                                        fill="black"
-                                    />
-                                ))}
-                            </mask>
-                        </defs>
-                        <rect width="100" height="100" fill="rgba(0, 0, 0, .32)" mask={`url(#${spotlightMaskId})`} />
-                    </svg>
-                    {imageRegions.map((region, index) => (
-                        <div
-                            key={index}
-                            className="book-image-focus pointer-events-none absolute z-20 rounded-md border-[3px] border-[#ffc83d] shadow-[0_0_22px_5px_rgba(255,200,61,.7)]"
-                            style={{
-                                left: `${region.left}%`,
-                                top: `${region.top}%`,
-                                width: `${region.width}%`,
-                                height: `${region.height}%`,
-                            }}
-                        />
-                    ))}
-                </>
-            )}
-            <span className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded bg-white/80 px-2 text-[10px] font-bold text-black">{page}</span>
-            {side !== 'single' && (
-                <span
-                    className={`pointer-events-none absolute inset-y-0 w-10 ${side === 'left' ? 'right-0 bg-gradient-to-l' : 'left-0 bg-gradient-to-r'} from-black/20 to-transparent`}
+        <>
+            <div
+                className={`relative overflow-hidden border border-black/60 bg-white transition-shadow duration-300 ${pageTurnClass} ${side === 'left' ? 'origin-right rounded-l-sm shadow-[-14px_16px_25px_rgba(0,0,0,.48)]' : side === 'right' ? 'origin-left rounded-r-sm shadow-[14px_16px_25px_rgba(0,0,0,.48)]' : 'rounded-sm shadow-2xl'}`}
+            >
+                <canvas
+                    ref={ref}
+                    className={`block bg-white ${fullscreen ? 'max-h-[98vh] max-w-[98vw] md:max-w-[49vw]' : 'max-h-[72vh] max-w-[76vw] md:max-w-[39vw]'}`}
                 />
-            )}
-        </div>
+                {highlighted && imageRegions.length > 0 && (
+                    <>
+                        <svg
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-0 z-10 size-full"
+                            preserveAspectRatio="none"
+                            viewBox="0 0 100 100"
+                        >
+                            <defs>
+                                <mask id={spotlightMaskId}>
+                                    <rect width="100" height="100" fill="white" />
+                                    {imageRegions.map((region, index) => (
+                                        <rect
+                                            key={index}
+                                            x={region.left}
+                                            y={region.top}
+                                            width={region.width}
+                                            height={region.height}
+                                            rx="0.8"
+                                            fill="black"
+                                        />
+                                    ))}
+                                </mask>
+                            </defs>
+                            <rect width="100" height="100" fill="rgba(0, 0, 0, .32)" mask={`url(#${spotlightMaskId})`} />
+                        </svg>
+                        {imageRegions.map((region, index) => (
+                            <div
+                                key={index}
+                                className="book-image-focus pointer-events-none absolute z-20 rounded-md border-[3px] border-[#ffc83d] shadow-[0_0_22px_5px_rgba(255,200,61,.7)]"
+                                style={{
+                                    left: `${region.left}%`,
+                                    top: `${region.top}%`,
+                                    width: `${region.width}%`,
+                                    height: `${region.height}%`,
+                                }}
+                            />
+                        ))}
+                    </>
+                )}
+                {imageRegions.map((region, index) => (
+                    <button
+                        key={`zoom-${index}`}
+                        type="button"
+                        aria-label={`Enlarge image ${index + 1} on page ${page}`}
+                        title="Click to enlarge this image"
+                        onClick={() => enlargeImage(region, index + 1)}
+                        className="group absolute z-30 cursor-zoom-in rounded-md border-2 border-transparent transition-colors hover:border-[#ffc83d] hover:bg-[#ffc83d]/10 focus-visible:border-[#ffc83d] focus-visible:bg-[#ffc83d]/10 focus-visible:outline-none"
+                        style={{
+                            left: `${region.left}%`,
+                            top: `${region.top}%`,
+                            width: `${region.width}%`,
+                            height: `${region.height}%`,
+                        }}
+                    >
+                        <span className="absolute top-2 right-2 grid size-8 place-items-center rounded-full bg-[#152238]/90 text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                            <ZoomIn className="size-4" />
+                        </span>
+                    </button>
+                ))}
+                <span className="pointer-events-none absolute bottom-2 left-1/2 z-40 -translate-x-1/2 rounded bg-white/80 px-2 text-[10px] font-bold text-black">
+                    {page}
+                </span>
+                {side !== 'single' && (
+                    <span
+                        className={`pointer-events-none absolute inset-y-0 z-40 w-10 ${side === 'left' ? 'right-0 bg-gradient-to-l' : 'left-0 bg-gradient-to-r'} from-black/20 to-transparent`}
+                    />
+                )}
+            </div>
+
+            <Dialog
+                open={Boolean(selectedImage)}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setSelectedImage(null);
+                        setImageZoom(1);
+                    }
+                }}
+            >
+                <DialogContent className="h-[92vh] w-[96vw] max-w-[96vw] border-[#7184a0] bg-[#202b3d] p-3 text-white shadow-[0_28px_90px_rgba(0,0,0,0.55)] sm:rounded-2xl">
+                    <DialogTitle className="sr-only">
+                        Enlarged image {selectedImage?.number} from page {page}
+                    </DialogTitle>
+                    <div className="flex h-full min-h-0 flex-col gap-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2 px-2 pr-10">
+                            <div className="flex items-center gap-2 text-sm font-bold text-[#dbe8f6]">
+                                <ZoomIn className="size-4 text-[#5ee0b0]" /> Page {page} · Image {selectedImage?.number}
+                            </div>
+                            <div className="flex items-center gap-1 rounded-lg border border-white/15 bg-white/10 p-1">
+                                <button
+                                    type="button"
+                                    aria-label="Zoom image out"
+                                    onClick={() => setImageZoom((zoom) => Math.max(1, zoom - 0.25))}
+                                    disabled={imageZoom <= 1}
+                                    className="grid size-8 place-items-center rounded-md hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35"
+                                >
+                                    <Minus className="size-4" />
+                                </button>
+                                <span className="min-w-14 text-center text-xs font-black text-[#dbe8f6]">{Math.round(imageZoom * 100)}%</span>
+                                <button
+                                    type="button"
+                                    aria-label="Zoom image in"
+                                    onClick={() => setImageZoom((zoom) => Math.min(4, zoom + 0.25))}
+                                    disabled={imageZoom >= 4}
+                                    className="grid size-8 place-items-center rounded-md hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35"
+                                >
+                                    <Plus className="size-4" />
+                                </button>
+                                <button
+                                    type="button"
+                                    aria-label="Reset image zoom"
+                                    title="Reset zoom"
+                                    onClick={() => setImageZoom(1)}
+                                    className="grid size-8 place-items-center rounded-md text-[#5ee0b0] hover:bg-white/10"
+                                >
+                                    <RotateCcw className="size-4" />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="grid min-h-0 flex-1 place-items-center overflow-auto rounded-xl bg-[#152033] p-3 [scrollbar-color:#7184a0_#152033]">
+                            {selectedImage && (
+                                <img
+                                    src={selectedImage.source}
+                                    alt={`Enlarged image ${selectedImage.number} from PDF page ${page}`}
+                                    className="block max-w-none object-contain shadow-[0_18px_55px_rgba(0,0,0,0.4)] transition-[width] duration-200 ease-out"
+                                    style={{ width: `${imageZoom * 100}%`, maxHeight: imageZoom === 1 ? '100%' : 'none' }}
+                                />
+                            )}
+                        </div>
+                        <p className="text-center text-xs text-[#b9c7d8]">Use the zoom controls for details. Press Esc or close to return to the same book page.</p>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        </>
     );
 }
 

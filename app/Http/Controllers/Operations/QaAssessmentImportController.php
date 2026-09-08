@@ -78,7 +78,7 @@ class QaAssessmentImportController extends Controller
 
         $previousUrl = url()->previous();
         $redirectUrl = parse_url($previousUrl, PHP_URL_HOST) === $request->getHost()
-            && parse_url($previousUrl, PHP_URL_PATH) === '/operations/processors'
+            && in_array(parse_url($previousUrl, PHP_URL_PATH), ['/operations/processors', '/operations/quality-assurance'], true)
                 ? $previousUrl
                 : route('operations.processors');
 

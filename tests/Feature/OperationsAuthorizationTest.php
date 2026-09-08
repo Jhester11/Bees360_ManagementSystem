@@ -5,6 +5,7 @@ use App\Models\User;
 
 $processorReadRequests = [
     'month-to-date reports' => '/operations/mtd',
+    'CST reports' => '/operations/cst-reports',
     'report comparison' => '/operations/report-comparison',
     'report imports' => '/operations/reports',
     'platform pulls' => '/operations/reports/platform-pulls',

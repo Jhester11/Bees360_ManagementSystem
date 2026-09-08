@@ -17,6 +17,7 @@ import {
     BarChart3,
     BookOpenCheck,
     CalendarDays,
+    Clock3,
     FileText,
     GitCompareArrows,
     LayoutGrid,
@@ -49,6 +50,12 @@ const mainNavItems: NavItem[] = [
         url: '/operations/mtd',
         icon: CalendarDays,
         tourId: 'nav-mtd-reports',
+    },
+    {
+        title: 'CST Reports',
+        url: '/operations/cst-reports',
+        icon: Clock3,
+        tourId: 'nav-cst-reports',
     },
     {
         title: 'Compare Reports',

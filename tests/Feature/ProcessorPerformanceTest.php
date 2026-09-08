@@ -55,6 +55,100 @@ test('processor page calculates weighted credits tiers and incentives for the cu
         ->where('phPerformance.0.tiers.1.needed', 100));
 });
 
+test('CST reports require a processor selection and show stored daily metrics', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-08 09:00:00', 'Asia/Manila'));
+    $user = User::factory()->create(['role' => UserRole::Operations]);
+    CstProcessorMetric::query()->create([
+        'report_date' => '2026-09-05',
+        'processor_name' => 'Allan Layug',
+        'general_exterior' => 12,
+        'four_point' => 4,
+        'qc_score' => 96,
+        'qc_reviews' => 2,
+        'source_file' => 'CST September.xlsx',
+        'uploaded_by' => $user->id,
+    ]);
+
+    $this->actingAs($user)->get('/operations/cst-reports')->assertInertia(fn (Assert $page) => $page
+        ->component('operations/cst-reports')
+        ->has('rows', 0)
+        ->where('filters.startDate', '2026-09-01')
+        ->where('filters.endDate', '2026-09-08')
+        ->where('canImport', true));
+
+    $this->get('/operations/cst-reports?start_date=2026-09-01&end_date=2026-09-08&processor=Allan%20Layug')
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('operations/cst-reports')
+            ->has('rows', 1)
+            ->where('rows.0.processor', 'Allan Layug')
+            ->where('rows.0.generalExterior', 12)
+            ->where('rows.0.fourPoint', 4)
+            ->where('summary.total', 16));
+});
+
+test('CST processor filters always serialize rows as a list for React', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-08 09:00:00', 'Asia/Manila'));
+    $user = User::factory()->create(['role' => UserRole::Operations]);
+
+    foreach ([['Allan Layug', 12, 4], ['Emma Alegre', 7, 2]] as [$processor, $generalExterior, $fourPoint]) {
+        CstProcessorMetric::query()->create([
+            'report_date' => '2026-09-05',
+            'processor_name' => $processor,
+            'general_exterior' => $generalExterior,
+            'four_point' => $fourPoint,
+            'qc_reviews' => 0,
+            'source_file' => 'CST September.xlsx',
+            'uploaded_by' => $user->id,
+        ]);
+    }
+
+    $response = $this->actingAs($user)
+        ->get('/operations/cst-reports?start_date=2026-09-01&end_date=2026-09-08&processor=Emma%20Alegre');
+
+    $response->assertOk();
+
+    $serializedPage = json_decode(json_encode($response->viewData('page'), JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR);
+    $rows = data_get($serializedPage, 'props.rows');
+
+    expect($rows)->toBeArray()
+        ->and(array_is_list($rows))->toBeTrue()
+        ->and($rows)->toHaveCount(1)
+        ->and($rows[0]['processor'])->toBe('Emma Alegre')
+        ->and($rows[0]['total'])->toBe(9);
+});
+
+test('QA and Scores shows all assessments and filters them by processor', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-08 09:00:00', 'Asia/Manila'));
+    $user = User::factory()->create(['role' => UserRole::Qa]);
+
+    foreach ([['Allan Layug', 'QA-1', 98], ['Emma Alegre', 'QA-2', 88]] as [$processor, $project, $score]) {
+        QaAssessment::query()->create([
+            'record_key' => hash('sha256', $project.'|2026-09-06'),
+            'assessment_date' => '2026-09-06',
+            'processor_name' => $processor,
+            'project_id' => $project,
+            'qc_name' => 'QA Reviewer',
+            'score' => $score,
+            'feedback' => ['Sample feedback'],
+            'source_file' => 'QA September.xlsx',
+            'uploaded_by' => $user->id,
+        ]);
+    }
+
+    $this->actingAs($user)->get('/operations/quality-assurance')->assertInertia(fn (Assert $page) => $page
+        ->component('operations/qa-scores')
+        ->has('rows', 2)
+        ->where('summary.assessments', 2)
+        ->where('summary.averageScore', 93)
+        ->where('canImport', true));
+
+    $this->get('/operations/quality-assurance?start_date=2026-09-01&end_date=2026-09-08&processor=Allan%20Layug')
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('rows', 1)
+            ->where('rows.0.processor', 'Allan Layug')
+            ->where('rows.0.projectId', 'QA-1'));
+});
+
 test('processor page includes every active approved processor even without performance data', function () {
     $viewer = User::factory()->create(['role' => UserRole::Operations]);
     User::factory()->create([
@@ -165,6 +259,37 @@ test('operations users can upload CST processor metrics and weighted QC scores a
         ->where('cstPerformance.0.credits', 187.5)
         ->where('cstPerformance.0.qcScore', 90)
         ->where('cstPerformance.0.qcReviews', 3));
+});
+
+test('CST report imports reopen on the imported date range with the saved count', function () {
+    $user = User::factory()->create(['role' => UserRole::Operations]);
+
+    $response = $this->actingAs($user)
+        ->from('/operations/cst-reports?start_date=2026-09-01&end_date=2026-09-08')
+        ->post('/operations/processors/cst-import', [
+            'source_file' => 'CST Active August.xlsx + CST Archived August.xlsx',
+            'metrics' => [
+                ['report_date' => '2026-08-12', 'processor_name' => 'Desh Completado', 'general_exterior' => 8, 'four_point' => 2, 'qc_score' => null, 'qc_reviews' => 0],
+                ['report_date' => '2026-08-13', 'processor_name' => 'Lourdes M. Completado', 'general_exterior' => 10, 'four_point' => 3, 'qc_score' => null, 'qc_reviews' => 0],
+            ],
+        ]);
+
+    $response->assertRedirect(route('operations.cst-reports', [
+        'start_date' => '2026-08-12',
+        'end_date' => '2026-08-13',
+        'processor' => 'all',
+    ]));
+    $response->assertSessionHas('cstImportSummary', [
+        'saved' => 2,
+        'file' => 'CST Active August.xlsx + CST Archived August.xlsx',
+    ]);
+
+    $this->get('/operations/cst-reports?start_date=2026-08-12&end_date=2026-08-13&processor=Lourdes%20M.%20Completado')
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('rows', 2)
+            ->where('summary.total', 23)
+            ->where('rows.0.processor', 'Lourdes M. Completado')
+            ->where('rows.1.processor', 'Lourdes M. Completado'));
 });
 
 test('CST import combines approved aliases and calculates tiers for the selected month', function () {

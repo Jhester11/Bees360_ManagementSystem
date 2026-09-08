@@ -2,10 +2,12 @@
 
 use App\Http\Controllers\Auth\AccountStatusController;
 use App\Http\Controllers\OnboardingController;
+use App\Http\Controllers\Operations\CstReportController;
 use App\Http\Controllers\Operations\DashboardController;
 use App\Http\Controllers\Operations\PlatformPullController;
 use App\Http\Controllers\Operations\ProcessorPerformanceController;
 use App\Http\Controllers\Operations\QaAssessmentImportController;
+use App\Http\Controllers\Operations\QaScoreController;
 use App\Http\Controllers\Operations\QueueSnapshotController;
 use App\Http\Controllers\Operations\ReportImportController;
 use App\Http\Controllers\Operations\UserController;
@@ -74,6 +76,7 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::middleware(EnsureOperationsRole::class.':operations,trainer,qa,reviewer')->group(function () {
         Route::redirect('operations/training', '/training')->name('operations.training');
         Route::get('operations/mtd', [DashboardController::class, 'mtd'])->name('operations.mtd');
+        Route::get('operations/cst-reports', CstReportController::class)->name('operations.cst-reports');
 
         Route::get('operations/report-comparison', [DashboardController::class, 'comparison'])->name('operations.report-comparison');
 
@@ -81,6 +84,7 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::get('operations/reports/platform-pulls', [PlatformPullController::class, 'index'])->name('operations.platform-pulls');
 
         Route::get('operations/processors', [ProcessorPerformanceController::class, 'index'])->name('operations.processors');
+        Route::get('operations/quality-assurance', QaScoreController::class)->name('operations.quality-assurance');
         Route::post('operations/processors/qa-import', QaAssessmentImportController::class)
             ->middleware(EnsureOperationsRole::class.':operations,qa')
             ->name('operations.processors.qa-import');
@@ -109,7 +113,6 @@ Route::middleware(['auth', 'active'])->group(function () {
             $sections = [
                 'processors' => ['title' => 'Processors', 'description' => 'Monitor processor performance and workloads.'],
                 'users' => ['title' => 'Users', 'description' => 'Manage team accounts and access.'],
-                'quality-assurance' => ['title' => 'QA & Scores', 'description' => 'Review quality checks and scoring results.'],
                 'settings' => ['title' => 'Operations Settings', 'description' => 'Configure your Bees360 workspace.'],
             ];
 

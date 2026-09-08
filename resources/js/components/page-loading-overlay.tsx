@@ -1,21 +1,18 @@
 import { router } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 
-const skeletonRows = Array.from({ length: 9 }, (_, index) => index);
+const skeletonRows = Array.from({ length: 7 }, (_, index) => index);
 const skeletonColumns = Array.from({ length: 5 }, (_, index) => index);
-const SLOW_NAVIGATION_DELAY = 450;
+const SLOW_NAVIGATION_DELAY = 200;
+const LOADER_FAILSAFE_DELAY = 5_000;
 
 export function PageLoadingOverlay() {
     const [isLoading, setIsLoading] = useState(false);
-    const activeVisitRef = useRef<object | null>(null);
-    const startedAtRef = useRef(0);
+    const activeDestinationRef = useRef<string | null>(null);
 
     useEffect(() => {
-        let hideTimer: number | undefined;
         let showTimer: number | undefined;
         let failsafeTimer: number | undefined;
-        let firstFrame: number | undefined;
-        let secondFrame: number | undefined;
 
         const markPageReady = () => {
             delete document.documentElement.dataset.pageLoading;
@@ -24,68 +21,52 @@ export function PageLoadingOverlay() {
 
         const hideLoader = () => {
             window.clearTimeout(showTimer);
-            window.clearTimeout(hideTimer);
             window.clearTimeout(failsafeTimer);
-            firstFrame = window.requestAnimationFrame(() => {
-                secondFrame = window.requestAnimationFrame(() => {
-                    setIsLoading(false);
-                    markPageReady();
-                });
-            });
+            setIsLoading(false);
+            markPageReady();
         };
 
-        const showLoader = (visit: object) => {
-            window.clearTimeout(hideTimer);
+        const showLoader = (destination: string) => {
+            window.clearTimeout(showTimer);
             window.clearTimeout(failsafeTimer);
-            window.cancelAnimationFrame(firstFrame ?? 0);
-            window.cancelAnimationFrame(secondFrame ?? 0);
-            activeVisitRef.current = visit;
-            startedAtRef.current = window.performance.now();
+            activeDestinationRef.current = destination;
             document.documentElement.dataset.pageLoading = 'true';
             showTimer = window.setTimeout(() => setIsLoading(true), SLOW_NAVIGATION_DELAY);
             failsafeTimer = window.setTimeout(() => {
-                activeVisitRef.current = null;
-                setIsLoading(false);
-                markPageReady();
-            }, 10_000);
+                activeDestinationRef.current = null;
+                hideLoader();
+            }, LOADER_FAILSAFE_DELAY);
         };
 
         const stopBeforeListener = router.on('before', (event) => {
             if (event.detail.visit.prefetch) return;
 
             const destination = new URL(String(event.detail.visit.url), window.location.href);
-            const isDifferentPage = destination.pathname !== window.location.pathname || destination.search !== window.location.search;
+            const isDifferentPage = destination.pathname !== window.location.pathname;
             const isAuthenticationTransition =
                 event.detail.visit.method === 'post' && (destination.pathname === '/login' || destination.pathname === '/logout');
 
             if ((event.detail.visit.method !== 'get' || !isDifferentPage) && !isAuthenticationTransition) return;
 
-            showLoader(event.detail.visit);
+            showLoader(destination.pathname);
         });
 
         const stopFinishListener = router.on('finish', (event) => {
             if (event.detail.visit.prefetch) return;
-            if (activeVisitRef.current !== event.detail.visit) return;
+            if (!activeDestinationRef.current) return;
 
-            activeVisitRef.current = null;
-            const visibleFor = window.performance.now() - startedAtRef.current;
-            if (visibleFor < SLOW_NAVIGATION_DELAY) {
-                window.clearTimeout(showTimer);
-                setIsLoading(false);
-                markPageReady();
-                return;
-            }
+            const destination = new URL(String(event.detail.visit.url), window.location.href);
+            if (activeDestinationRef.current !== destination.pathname) return;
+
+            activeDestinationRef.current = null;
             hideLoader();
         });
 
         return () => {
             stopBeforeListener();
             stopFinishListener();
-            window.clearTimeout(hideTimer);
             window.clearTimeout(showTimer);
             window.clearTimeout(failsafeTimer);
-            window.cancelAnimationFrame(firstFrame ?? 0);
-            window.cancelAnimationFrame(secondFrame ?? 0);
             delete document.documentElement.dataset.pageLoading;
         };
     }, []);

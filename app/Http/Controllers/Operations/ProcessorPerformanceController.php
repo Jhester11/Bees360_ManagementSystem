@@ -2,71 +2,27 @@
 
 namespace App\Http\Controllers\Operations;
 
-use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreCstProcessorMetricsRequest;
 use App\Models\CstProcessorMetric;
 use App\Models\QaAssessment;
 use App\Models\ReportEntry;
-use App\Models\User;
+use App\Services\ActiveProcessorRoster;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class ProcessorPerformanceController extends Controller
 {
-    private const APPROVED_PROCESSORS = [
-        'Christer John C. Gozon',
-        'Lourdes M. Completado',
-        'Elacio M. Santos Jr.',
-        'Jhun Cervantes',
-        'Reginald King Palo',
-        'Allan Layug',
-        'Arianne Joy Lopez',
-        'Emma Alegre',
-        'Marie Anthonette Moog',
-        'Mc Oliver Noble',
-        'Rheven Violet Aladin',
-        'Wengmir A. Africa',
-        'Chrismer Flores',
-        'Denn Charles Zafe',
-        'Ivan Mendoza',
-        'Jerica Matic',
-        'Kristine Jewel Espiritu',
-        'Mac Evens T. Payongayong',
-        'Nikko Adrian Dungca',
-        'Rainier Sta Ana',
-        'Tracy John Josafat',
-    ];
-
-    private const PROCESSOR_ALIASES = [
-        'arianne lopez' => 'Arianne Joy Lopez',
-        'chris gozon' => 'Christer John C. Gozon',
-        'christer gozon' => 'Christer John C. Gozon',
-        'christer john gozon' => 'Christer John C. Gozon',
-        'denn zafe' => 'Denn Charles Zafe',
-        'desh completado' => 'Lourdes M. Completado',
-        'don santos' => 'Elacio M. Santos Jr.',
-        'jhun lester cervantes' => 'Jhun Cervantes',
-        'king palo' => 'Reginald King Palo',
-        'kristine espiritu' => 'Kristine Jewel Espiritu',
-        'mac payongayong' => 'Mac Evens T. Payongayong',
-        'marie moog' => 'Marie Anthonette Moog',
-        'nikko dungca' => 'Nikko Adrian Dungca',
-        'oliver noble' => 'Mc Oliver Noble',
-        'rainier ana' => 'Rainier Sta Ana',
-        'rheven aladin' => 'Rheven Violet Aladin',
-        'tracy josafat' => 'Tracy John Josafat',
-        'wengmir africa' => 'Wengmir A. Africa',
-    ];
+    public function __construct(private readonly ActiveProcessorRoster $roster) {}
 
     public function index(Request $request): Response
     {
+        $processors = $this->roster->all();
         $phNow = CarbonImmutable::now('Asia/Manila');
         $latestQaDate = QaAssessment::query()->max('assessment_date');
         $qaMonth = $latestQaDate ? CarbonImmutable::parse($latestQaDate, 'Asia/Manila') : $phNow;
@@ -83,11 +39,14 @@ class ProcessorPerformanceController extends Controller
         $qaAssessments = QaAssessment::query()
             ->with('processor:id,name,n_name,avatar_path')
             ->whereBetween('assessment_date', [$qaStartDate->toDateString(), $qaEndDate->toDateString()])
+            ->orderByDesc('assessment_date')
+            ->orderByDesc('id')
             ->get();
 
         $ph = ReportEntry::query()
             ->whereBetween('report_date', [$startDate->toDateString(), $endDate->toDateString()])
             ->get(['report_date', 'processor_name', 'project_id', 'inspection_type', 'report_category', 'source'])
+            ->filter(fn (ReportEntry $entry): bool => $this->roster->match($entry->processor_name, $processors) !== null)
             ->unique(fn (ReportEntry $entry) => implode('|', [
                 $entry->report_date->format('Y-m-d'), $this->canonicalProcessorName($entry->processor_name), $entry->project_id, $entry->inspection_type,
             ]))
@@ -110,6 +69,7 @@ class ProcessorPerformanceController extends Controller
             ->whereBetween('report_date', [$startDate->toDateString(), $endDate->toDateString()])
             ->orderByDesc('updated_at')
             ->get()
+            ->filter(fn (CstProcessorMetric $metric): bool => $this->roster->match($metric->processor_name, $processors) !== null)
             ->groupBy(fn (CstProcessorMetric $metric): string => implode('|', [
                 $metric->report_date->format('Y-m-d'),
                 $this->canonicalProcessorName($metric->processor_name),
@@ -143,37 +103,15 @@ class ProcessorPerformanceController extends Controller
             ->sortBy('processor')
             ->values();
 
-        $processorAccounts = User::query()
-            ->where('role', UserRole::Processor->value)
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get(['name', 'n_name'])
-            ->keyBy('name');
-        $approvedProcessors = collect(self::APPROVED_PROCESSORS)
-            ->merge($processorAccounts->keys())
-            ->unique()
-            ->sort()
-            ->values()
-            ->map(function (string $name) use ($processorAccounts): array {
-                /** @var User|null $account */
-                $account = $processorAccounts->get($name);
-
-                return [
-                    'name' => $name,
-                    'nickname' => $account?->n_name,
-                ];
-            });
+        $approvedProcessors = $this->roster->forFrontend($processors)
+            ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values();
 
         return Inertia::render('operations/processors', [
             'phPerformance' => $ph,
             'cstPerformance' => $cst,
             'approvedProcessors' => $approvedProcessors,
-            'qaHistory' => QaAssessment::query()
-                ->with('processor:id,name,n_name')
-                ->orderByDesc('assessment_date')
-                ->orderByDesc('id')
-                ->limit(5000)
-                ->get()
+            'qaHistory' => $qaAssessments
                 ->map(function (QaAssessment $assessment): array {
                     $processor = $this->canonicalProcessorName($assessment->processor?->name ?? $assessment->processor_name);
 
@@ -189,7 +127,7 @@ class ProcessorPerformanceController extends Controller
                         'feedback' => $assessment->feedback ?? [],
                     ];
                 })
-                ->filter(fn (array $assessment): bool => in_array($assessment['processor'], self::APPROVED_PROCESSORS, true))
+                ->filter(fn (array $assessment): bool => $this->roster->match($assessment['processor'], $processors) !== null)
                 ->values(),
             'periods' => [
                 'ph' => $this->periodLabel($startDate, $endDate),
@@ -210,11 +148,12 @@ class ProcessorPerformanceController extends Controller
     {
         $validated = $request->validated();
         $now = now();
+        $processors = $this->roster->all();
         $rows = collect($validated['metrics'])
-            ->map(function (array $metric): ?array {
-                $processorName = $this->canonicalProcessorName($metric['processor_name']);
+            ->map(function (array $metric) use ($processors): ?array {
+                $processorName = $this->roster->canonicalName($metric['processor_name'], $processors);
 
-                if (! in_array($processorName, self::APPROVED_PROCESSORS, true)) {
+                if ($processorName === null) {
                     return null;
                 }
 
@@ -322,50 +261,27 @@ class ProcessorPerformanceController extends Controller
 
     private function batchForProcessor(string $processorName): ?int
     {
-        $position = array_search($this->canonicalProcessorName($processorName), self::APPROVED_PROCESSORS, true);
-
-        if ($position === false) {
-            return null;
-        }
-
-        return $position < 5 ? 1 : ($position < 12 ? 2 : 3);
+        return $this->roster->match($processorName)?->batch;
     }
 
     private function qaScoresFor(string $processorName, Collection $assessments): Collection
     {
         $canonicalProcessor = $this->canonicalProcessorName($processorName);
-        $expectedWords = collect(explode(' ', $this->normalizeName($canonicalProcessor)))->filter(fn (string $word) => mb_strlen($word) > 1);
 
-        return $assessments->filter(function (QaAssessment $assessment) use ($canonicalProcessor, $expectedWords): bool {
+        return $assessments->filter(function (QaAssessment $assessment) use ($canonicalProcessor): bool {
             $names = collect([
                 $assessment->processor_name,
                 $assessment->processor?->name,
                 $assessment->processor?->n_name,
-            ])->filter()->map(fn (string $name) => $this->normalizeName($this->canonicalProcessorName($name)));
+            ])->filter();
 
-            return $names->contains($this->normalizeName($canonicalProcessor))
-                || $names->contains(fn (string $name) => collect(explode(' ', $name))
-                    ->filter(fn (string $word) => mb_strlen($word) > 1)
-                    ->every(fn (string $word) => $expectedWords->contains($word)));
+            return $names->contains(fn (string $name): bool => $this->canonicalProcessorName($name) === $canonicalProcessor);
         });
     }
 
     private function canonicalProcessorName(string $name): string
     {
-        $normalized = $this->normalizeName($name);
-
-        foreach (self::APPROVED_PROCESSORS as $processor) {
-            if ($normalized === $this->normalizeName($processor)) {
-                return $processor;
-            }
-        }
-
-        return self::PROCESSOR_ALIASES[$normalized] ?? trim($name);
-    }
-
-    private function normalizeName(string $value): string
-    {
-        return Str::of($value)->lower()->replaceMatches('/[^a-z0-9]+/', ' ')->squish()->value();
+        return $this->roster->canonicalName($name) ?? trim($name);
     }
 
     private function dateOrDefault(string $value, CarbonImmutable $default): CarbonImmutable

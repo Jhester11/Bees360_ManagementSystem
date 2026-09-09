@@ -33,6 +33,8 @@ class UserController extends Controller
                 'n_name' => $user->n_name,
                 'email' => $user->email,
                 'role' => $user->role->value,
+                'batch' => $user->batch,
+                'tracks_production' => $user->tracks_production,
                 'is_active' => $user->is_active,
                 'avatar' => $user->avatar,
                 'created_at' => $user->created_at->toDateString(),
@@ -52,7 +54,9 @@ class UserController extends Controller
 
     public function store(StoreUserRequest $request): RedirectResponse
     {
-        $data = $request->safe()->only(['name', 'n_name', 'email', 'password', 'role']);
+        $data = $request->safe()->only(['name', 'n_name', 'email', 'password', 'role', 'batch']);
+        $data['batch'] = $data['role'] === UserRole::Processor->value ? (int) $data['batch'] : null;
+        $data['tracks_production'] = $data['role'] === UserRole::Processor->value;
         $newAvatarPath = null;
 
         if ($request->hasFile('avatar')) {
@@ -100,7 +104,10 @@ class UserController extends Controller
 
     public function update(UpdateUserRequest $request, User $user): RedirectResponse
     {
-        $data = $request->safe()->only(['name', 'n_name', 'email', 'role']);
+        $data = $request->safe()->only(['name', 'n_name', 'email', 'role', 'batch']);
+        $data['batch'] = $data['role'] === UserRole::Processor->value
+            ? (int) $data['batch']
+            : ($user->tracks_production ? (int) $user->batch : null);
 
         if ($request->filled('password')) {
             $data['password'] = $request->validated('password');
@@ -126,7 +133,7 @@ class UserController extends Controller
                 }
 
                 $lockedUser->fill($data);
-                $shouldRevokeSessions = $lockedUser->isDirty(['name', 'n_name', 'email', 'password', 'role']);
+                $shouldRevokeSessions = $lockedUser->isDirty(['name', 'n_name', 'email', 'password', 'role', 'batch']);
                 $passwordChanged = $lockedUser->isDirty('password');
                 $lockedUser->save();
 

@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreQaAssessmentsRequest;
 use App\Models\QaAssessment;
+use App\Models\QaImport;
 use App\Models\User;
 use App\Notifications\NewQaAssessment;
 use App\Services\PerformanceAnnouncementService;
@@ -58,12 +59,30 @@ class QaAssessmentImportController extends Controller
         $existingCount = $existingKeys->count();
         $newKeys = $rows->pluck('record_key')->diff($existingKeys)->values();
 
-        DB::transaction(function () use ($rows): void {
+        $summary = [
+            'saved' => $rows->count(),
+            'created' => $rows->count() - $existingCount,
+            'updated' => $existingCount,
+            'matched' => $matched,
+            'unmatched' => $rows->count() - $matched,
+        ];
+
+        DB::transaction(function () use ($rows, $summary, $validated, $request): void {
             $rows->chunk(self::UPSERT_CHUNK_SIZE)->each(fn (Collection $chunk) => QaAssessment::upsert(
                 $chunk->all(),
                 ['record_key'],
                 ['processor_id', 'processor_name', 'project_id', 'qc_name', 'report_url', 'score', 'feedback', 'source_file', 'uploaded_by', 'updated_at'],
             ));
+
+            QaImport::query()->create([
+                'source_file' => $validated['source_file'],
+                'processed_count' => $summary['saved'],
+                'created_count' => $summary['created'],
+                'updated_count' => $summary['updated'],
+                'matched_count' => $summary['matched'],
+                'unmatched_count' => $summary['unmatched'],
+                'uploaded_by' => $request->user()->id,
+            ]);
         });
 
         QaAssessment::query()
@@ -82,13 +101,7 @@ class QaAssessmentImportController extends Controller
                 ? $previousUrl
                 : route('operations.processors');
 
-        return redirect()->to($redirectUrl)->with('qaImportSummary', [
-            'saved' => $rows->count(),
-            'created' => $rows->count() - $existingCount,
-            'updated' => $existingCount,
-            'matched' => $matched,
-            'unmatched' => $rows->count() - $matched,
-        ]);
+        return redirect()->to($redirectUrl)->with('qaImportSummary', $summary);
     }
 
     private function matchProcessor(string $name, Collection $users): ?User

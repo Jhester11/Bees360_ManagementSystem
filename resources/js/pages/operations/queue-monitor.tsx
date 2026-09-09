@@ -15,6 +15,7 @@ import {
     FileCheck2,
     FileSpreadsheet,
     Gauge,
+    History,
     Inbox,
     Minus,
     ShieldCheck,
@@ -26,7 +27,6 @@ import {
     UsersRound,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import * as SheetJS from 'xlsx';
 
 type CheckpointId = 'start' | '11am' | '2pm' | '4pm';
 type QueueDetailMetric = 'waiting' | 'aging' | 'completion';
@@ -44,36 +44,22 @@ type WorkbookResult = {
     reportDate: string;
     checkpoint: CheckpointId;
 };
+type QueueHistoryEntry = {
+    reportDate: string;
+    checkpoint: CheckpointId;
+    name: string;
+    batch: number;
+    generalExterior: number;
+    fourPoint: number;
+    other: number;
+    total: number;
+};
 
 const checkpoints: Array<{ id: CheckpointId; label: string; time: string | null; minutes: number }> = [
     { id: 'start', label: 'Start of Day', time: '8:00 AM', minutes: 8 * 60 },
     { id: '11am', label: 'Morning Check', time: '11:00 AM', minutes: 11 * 60 },
     { id: '2pm', label: 'Afternoon Check', time: '2:00 PM', minutes: 14 * 60 },
     { id: '4pm', label: 'Final Check', time: '4:00 PM', minutes: 16 * 60 },
-];
-
-const processorRoster: ProcessorDefinition[] = [
-    { name: 'Christer John C. Gozon', batch: 1, aliases: ['Chris Gozon', 'Christer Gozon'] },
-    { name: 'Lourdes M. Completado', batch: 1, aliases: ['Desh Completado', 'Lourdes Completado'] },
-    { name: 'Elacio M. Santos Jr.', batch: 1, aliases: ['Don Santos', 'Elacio Santos'] },
-    { name: 'Jhun Cervantes', batch: 1, aliases: ['Jhun Lester Cervantes'] },
-    { name: 'Reginald King Palo', batch: 1, aliases: ['King Palo', 'Reginald Palo'] },
-    { name: 'Allan Layug', batch: 2, aliases: [] },
-    { name: 'Arianne Joy Lopez', batch: 2, aliases: ['Arianne Lopez'] },
-    { name: 'Emma Alegre', batch: 2, aliases: [] },
-    { name: 'Marie Anthonette Moog', batch: 2, aliases: ['Marie Moog'] },
-    { name: 'Mc Oliver Noble', batch: 2, aliases: ['Oliver Noble', 'Mc Noble'] },
-    { name: 'Rheven Violet Aladin', batch: 2, aliases: ['Rheven Aladin', 'Violet Aladin'] },
-    { name: 'Wengmir A. Africa', batch: 2, aliases: ['Wengmir Africa', 'Weng Africa'] },
-    { name: 'Chrismer Flores', batch: 3, aliases: [] },
-    { name: 'Denn Charles Zafe', batch: 3, aliases: [] },
-    { name: 'Ivan Mendoza', batch: 3, aliases: [] },
-    { name: 'Jerica Matic', batch: 3, aliases: [] },
-    { name: 'Kristine Jewel Espiritu', batch: 3, aliases: [] },
-    { name: 'Mac Evens T. Payongayong', batch: 3, aliases: [] },
-    { name: 'Nikko Adrian Dungca', batch: 3, aliases: [] },
-    { name: 'Rainier Sta Ana', batch: 3, aliases: [] },
-    { name: 'Tracy John Josafat', batch: 3, aliases: [] },
 ];
 
 const queueSnapshots: Record<CheckpointId, QueueSnapshot> = {
@@ -134,10 +120,21 @@ function normalizeName(value: unknown): string {
         .replace(/\s+/g, ' ');
 }
 
-const processorLookup = new Map<string, ProcessorDefinition>();
-processorRoster.forEach((processor) => {
-    [processor.name, ...processor.aliases].forEach((name) => processorLookup.set(normalizeName(name), processor));
-});
+function findProcessor(value: unknown, processorRoster: ProcessorDefinition[]): ProcessorDefinition | undefined {
+    const needle = normalizeName(value);
+    if (!needle) return undefined;
+
+    const needleWords = needle.split(' ');
+
+    return processorRoster.find((processor) => {
+        const identities = [processor.name, ...processor.aliases].map(normalizeName);
+        if (identities.includes(needle)) return true;
+        if (needleWords.length < 2) return false;
+
+        const identityWords = new Set(identities.flatMap((identity) => identity.split(' ')));
+        return needleWords.every((word) => identityWords.has(word));
+    });
+}
 
 function philippinesMinutesNow(): number {
     const parts = new Intl.DateTimeFormat('en-US', {
@@ -203,7 +200,12 @@ function percentage(processed: number, waiting: number): number {
     return total === 0 ? 0 : Math.round((processed / total) * 100);
 }
 
-async function inspectWorkbook(file: File, checkpoint: CheckpointId): Promise<WorkbookResult> {
+async function inspectWorkbook(file: File, checkpoint: CheckpointId, processorRoster: ProcessorDefinition[]): Promise<WorkbookResult> {
+    if (processorRoster.length === 0) {
+        throw new Error('No active Batch 1–3 processor accounts are configured. Assign a batch to a processor account before uploading.');
+    }
+
+    const SheetJS = await import('xlsx');
     const workbook = await readSpreadsheet(file, ['xlsx', 'xls'], maximumQueueRows, { cellDates: false });
     const worksheet = workbook.Sheets[workbook.SheetNames[0]];
     if (!worksheet) throw new Error(`${file.name} does not contain a worksheet.`);
@@ -219,7 +221,7 @@ async function inspectWorkbook(file: File, checkpoint: CheckpointId): Promise<Wo
     let matchedRows = 0;
 
     rows.forEach((row, index) => {
-        const processor = processorLookup.get(normalizeName(row['Processor Name']));
+        const processor = findProcessor(row['Processor Name'], processorRoster);
         if (!processor) return;
 
         const projectId = String(row['Project ID'] ?? '').trim();
@@ -237,22 +239,38 @@ async function inspectWorkbook(file: File, checkpoint: CheckpointId): Promise<Wo
         matchedRows += 1;
     });
 
+    if (matchedRows === 0) {
+        throw new Error('No queue rows matched the active Batch 1–3 processor accounts. Check the spreadsheet names or processor account N-names.');
+    }
+
     return {
         fileName: file.name,
         totalRows: rows.length,
         matchedRows,
         ignoredRows: rows.length - matchedRows,
-        processorRows: processorRoster.map((processor) => ({
-            ...processor,
-            ...(counts.get(processor.name) ?? { generalExterior: 0, fourPoint: 0, other: 0, total: 0 }),
-        })),
+        processorRows: processorRoster
+            .filter((processor) => counts.has(processor.name))
+            .map((processor) => ({
+                ...processor,
+                ...(counts.get(processor.name) ?? { generalExterior: 0, fourPoint: 0, other: 0, total: 0 }),
+            })),
         checkedAt: new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date()),
         reportDate: philippinesDate(),
         checkpoint,
     };
 }
 
-export default function QueueMonitor({ savedSnapshots = [] }: { savedSnapshots?: WorkbookResult[] }) {
+export default function QueueMonitor({
+    savedSnapshots = [],
+    processorRoster,
+    historyVisible,
+    historyEntries,
+}: {
+    savedSnapshots?: WorkbookResult[];
+    processorRoster: ProcessorDefinition[];
+    historyVisible: boolean;
+    historyEntries: QueueHistoryEntry[];
+}) {
     const page = usePage();
     const requestedCheckpoint = new URLSearchParams(page.url.split('?')[1] ?? '').get('checkpoint');
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -330,7 +348,7 @@ export default function QueueMonitor({ savedSnapshots = [] }: { savedSnapshots?:
         setUploadError(null);
         setIsChecking(true);
         try {
-            const result = await inspectWorkbook(selectedFile, selectedId);
+            const result = await inspectWorkbook(selectedFile, selectedId, processorRoster);
 
             router.post(
                 '/operations/queue-monitor',
@@ -590,6 +608,15 @@ export default function QueueMonitor({ savedSnapshots = [] }: { savedSnapshots?:
         XLSX.writeFile(workbook, `Bees360_Daily_Queue_Monitor_${currentReportDate}.xlsx`, { compression: true });
     }
 
+    function toggleHistory() {
+        router.get('/operations/queue-monitor', historyVisible ? {} : { history: 1 }, {
+            only: ['historyEntries', 'historyVisible'],
+            preserveScroll: true,
+            preserveState: true,
+            replace: true,
+        });
+    }
+
     const hasAnySavedCheckpoint = Object.values(currentDayQueues).some(Boolean);
 
     return (
@@ -624,14 +651,23 @@ export default function QueueMonitor({ savedSnapshots = [] }: { savedSnapshots?:
                                     Upload and save each daily Operations queue checkpoint using Philippine reporting time.
                                 </p>
                             </div>
-                            <div className="flex items-center gap-3 self-start rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur-sm lg:self-auto">
-                                <div className="grid size-10 place-items-center rounded-xl bg-[#ffc83d] text-[#3a2817]">
-                                    <Clock3 className="size-5" />
-                                </div>
-                                <div>
-                                    <p className="text-[11px] font-bold tracking-widest text-[#ffd567] uppercase">Live Philippine time</p>
-                                    <p className="mt-0.5 text-sm font-extrabold tabular-nums">{philippinesTimeLabel(philippinesNow)} PHT</p>
-                                    <p className="mt-0.5 text-[11px] text-[#f3e5ce]">{philippinesDateLabel(philippinesNow)}</p>
+                            <div className="flex flex-col items-stretch gap-3 self-start sm:flex-row lg:self-auto">
+                                <Button
+                                    type="button"
+                                    onClick={toggleHistory}
+                                    className={`h-auto min-h-12 gap-2 border font-extrabold ${historyVisible ? 'border-[#ffc83d] bg-[#ffc83d] text-[#3a2817] hover:bg-[#ffd568]' : 'border-white/20 bg-white/10 text-white hover:bg-white/20'}`}
+                                >
+                                    <History className="size-4" /> {historyVisible ? 'Hide history' : 'Show history'}
+                                </Button>
+                                <div className="flex items-center gap-3 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur-sm">
+                                    <div className="grid size-10 place-items-center rounded-xl bg-[#ffc83d] text-[#3a2817]">
+                                        <Clock3 className="size-5" />
+                                    </div>
+                                    <div>
+                                        <p className="text-[11px] font-bold tracking-widest text-[#ffd567] uppercase">Live Philippine time</p>
+                                        <p className="mt-0.5 text-sm font-extrabold tabular-nums">{philippinesTimeLabel(philippinesNow)} PHT</p>
+                                        <p className="mt-0.5 text-[11px] text-[#f3e5ce]">{philippinesDateLabel(philippinesNow)}</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -891,6 +927,60 @@ export default function QueueMonitor({ savedSnapshots = [] }: { savedSnapshots?:
                         />
                     </div>
                 </section>
+                {historyVisible && (
+                    <section className="mt-6 overflow-hidden rounded-3xl border border-[#d8bd8c] bg-[#fffdf8] shadow-[0_18px_50px_rgba(83,55,22,0.08)]">
+                        <div className="flex flex-col gap-2 border-b border-[#eadbc6] bg-[#fff5dc] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+                            <div>
+                                <p className="text-xs font-extrabold tracking-[0.16em] text-[#a96500] uppercase">Historical records</p>
+                                <h2 className="mt-1 text-lg font-black text-[#352515]">Former processor queue history</h2>
+                            </div>
+                            <span className="w-fit rounded-full bg-[#3a2817] px-3 py-1.5 text-xs font-extrabold text-[#ffd567]">
+                                {historyEntries.length} record{historyEntries.length === 1 ? '' : 's'}
+                            </span>
+                        </div>
+                        {historyEntries.length > 0 ? (
+                            <div className="max-h-[32rem] overflow-auto">
+                                <table className="w-full min-w-[900px] text-left text-sm">
+                                    <thead className="sticky top-0 bg-[#3a2817] text-xs tracking-wide text-[#fff8e7] uppercase">
+                                        <tr>
+                                            <th className="px-5 py-4">Date</th>
+                                            <th className="px-5 py-4">Checkpoint</th>
+                                            <th className="px-5 py-4">Processor</th>
+                                            <th className="px-5 py-4">Batch</th>
+                                            <th className="px-5 py-4 text-center">Gen Ext</th>
+                                            <th className="px-5 py-4 text-center">4-Point</th>
+                                            <th className="px-5 py-4 text-center">To Do</th>
+                                            <th className="px-5 py-4 text-center">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-[#f1e7d8]">
+                                        {historyEntries.map((entry, index) => (
+                                            <tr
+                                                key={`${entry.reportDate}-${entry.checkpoint}-${entry.name}-${index}`}
+                                                className="odd:bg-[#fffdf8] even:bg-[#fff8e8]"
+                                            >
+                                                <td className="px-5 py-4 text-[#5f4b32]">{formatReportDate(entry.reportDate)}</td>
+                                                <td className="px-5 py-4 font-semibold text-[#5f4b32]">
+                                                    {checkpoints.find((checkpoint) => checkpoint.id === entry.checkpoint)?.time ?? entry.checkpoint}
+                                                </td>
+                                                <td className="px-5 py-4 font-black text-[#342615]">{entry.name}</td>
+                                                <td className="px-5 py-4 text-[#806f59]">Batch {entry.batch}</td>
+                                                <td className="px-5 py-4 text-center font-semibold text-[#4a3821]">{entry.generalExterior}</td>
+                                                <td className="px-5 py-4 text-center font-semibold text-[#4a3821]">{entry.fourPoint}</td>
+                                                <td className="px-5 py-4 text-center font-semibold text-[#4a3821]">{entry.other}</td>
+                                                <td className="bg-[#fff1cc] px-5 py-4 text-center font-black text-[#694400]">{entry.total}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <div className="grid min-h-40 place-items-center px-6 py-10 text-center text-sm text-[#806f59]">
+                                No former processor queue history is available.
+                            </div>
+                        )}
+                    </section>
+                )}
             </div>
         </AppLayout>
     );

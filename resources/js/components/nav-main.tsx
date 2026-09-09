@@ -53,7 +53,7 @@ export function NavMain({ items = [], label = 'Platform' }: { items: NavItem[]; 
                 {items.map((item) => (
                     <SidebarMenuItem key={item.title}>
                         <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                            <Link href={item.url} prefetch="hover" cacheFor="30s" data-tour={item.tourId}>
+                            <Link href={item.url} prefetch="hover" cacheFor="5m" data-tour={item.tourId}>
                                 {item.icon && <item.icon />}
                                 <span>{item.title}</span>
                             </Link>

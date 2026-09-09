@@ -154,7 +154,7 @@ export function AppSidebar() {
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild>
-                            <Link href="/dashboard" prefetch="hover" cacheFor="30s">
+                            <Link href="/dashboard" prefetch="hover" cacheFor="5m">
                                 <AppLogo />
                             </Link>
                         </SidebarMenuButton>
@@ -176,7 +176,7 @@ export function AppSidebar() {
                                 <Link
                                     href={isProcessor ? '/settings/profile' : '/operations/settings'}
                                     prefetch="hover"
-                                    cacheFor="30s"
+                                    cacheFor="5m"
                                     data-tour="nav-settings"
                                 >
                                     <Settings />

@@ -32,6 +32,7 @@ class User extends Authenticatable
         'password',
         'role',
         'batch',
+        'tracks_production',
         'avatar_path',
         'is_active',
     ];
@@ -60,6 +61,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'role' => UserRole::class,
             'is_active' => 'boolean',
+            'tracks_production' => 'boolean',
             'onboarding_completed_at' => 'datetime',
         ];
     }

@@ -1,4 +1,4 @@
-import * as SheetJS from 'xlsx';
+import type { ParsingOptions, WorkBook, WorkSheet } from 'xlsx';
 
 export type SpreadsheetFileType = 'csv' | 'xls' | 'xlsx';
 
@@ -65,9 +65,10 @@ export async function readSpreadsheet(
     file: File,
     allowedTypes: readonly SpreadsheetFileType[],
     maximumRows: number,
-    options: SheetJS.ParsingOptions = {},
-): Promise<SheetJS.WorkBook> {
+    options: ParsingOptions = {},
+): Promise<WorkBook> {
     await assertSpreadsheetFile(file, allowedTypes);
+    const SheetJS = await import('xlsx');
 
     return SheetJS.read(await file.arrayBuffer(), {
         ...options,
@@ -80,13 +81,15 @@ export async function readSpreadsheet(
     });
 }
 
-export function assertWorksheetRowLimit(worksheet: SheetJS.WorkSheet, maximumRows: number, fileName: string): void {
-    const reference = (worksheet as SheetJS.WorkSheet & { '!fullref'?: string })['!fullref'] ?? worksheet['!ref'];
+export function assertWorksheetRowLimit(worksheet: WorkSheet, maximumRows: number, fileName: string): void {
+    const reference = (worksheet as WorkSheet & { '!fullref'?: string })['!fullref'] ?? worksheet['!ref'];
 
     if (!reference) return;
 
-    const range = SheetJS.utils.decode_range(reference);
-    const rows = range.e.r - range.s.r + 1;
+    const [startReference, endReference = startReference] = reference.split(':');
+    const startRow = Number(startReference.match(/\d+$/)?.[0] ?? 1);
+    const endRow = Number(endReference.match(/\d+$/)?.[0] ?? startRow);
+    const rows = endRow - startRow + 1;
 
     if (rows > maximumRows + 1) {
         throw new Error(`${fileName} contains more than ${maximumRows.toLocaleString()} data rows.`);

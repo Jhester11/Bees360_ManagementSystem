@@ -49,6 +49,12 @@ class StoreUserRequest extends FormRequest
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', Rule::unique('users', 'email')],
             'password' => ['required', 'confirmed', Password::defaults()],
             'role' => ['required', Rule::enum(UserRole::class)],
+            'batch' => [
+                Rule::requiredIf(fn (): bool => $this->input('role') === UserRole::Processor->value),
+                'nullable',
+                'integer',
+                'between:1,3',
+            ],
             'avatar' => [
                 'nullable',
                 'image',

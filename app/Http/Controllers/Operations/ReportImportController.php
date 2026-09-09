@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Operations;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreReportImportRequest;
 use App\Models\ReportEntry;
+use App\Services\ActiveProcessorRoster;
 use App\Services\PerformanceAnnouncementService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
@@ -17,51 +18,47 @@ class ReportImportController extends Controller
 {
     private const UPSERT_CHUNK_SIZE = 1000;
 
-    private const PROCESSORS = [
-        1 => ['Christer John C. Gozon', 'Lourdes M. Completado', 'Elacio M. Santos Jr.', 'Jhun Cervantes', 'Reginald King Palo'],
-        2 => ['Allan Layug', 'Arianne Joy Lopez', 'Emma Alegre', 'Marie Anthonette Moog', 'Mc Oliver Noble', 'Rheven Violet Aladin', 'Wengmir A. Africa'],
-        3 => ['Chrismer Flores', 'Denn Charles Zafe', 'Ivan Mendoza', 'Jerica Matic', 'Kristine Jewel Espiritu', 'Mac Evens T. Payongayong', 'Nikko Adrian Dungca', 'Rainier Sta Ana', 'Tracy John Josafat'],
-    ];
-
-    private const ALIASES = [
-        'chris gozon' => 'Christer John C. Gozon',
-        'christer gozon' => 'Christer John C. Gozon',
-        'desh completado' => 'Lourdes M. Completado',
-        'don santos' => 'Elacio M. Santos Jr.',
-        'elacio santos' => 'Elacio M. Santos Jr.',
-        'jhun lester cervantes' => 'Jhun Cervantes',
-        'king palo' => 'Reginald King Palo',
-        'marie moog' => 'Marie Anthonette Moog',
-        'wengmir africa' => 'Wengmir A. Africa',
-        'weng africa' => 'Wengmir A. Africa',
-        'rheven aladin' => 'Rheven Violet Aladin',
-        'violet aladin' => 'Rheven Violet Aladin',
-        'arianne lopez' => 'Arianne Joy Lopez',
-        'mc noble' => 'Mc Oliver Noble',
-        'oliver noble' => 'Mc Oliver Noble',
-    ];
-
-    public function __construct(private readonly PerformanceAnnouncementService $announcements) {}
+    public function __construct(
+        private readonly PerformanceAnnouncementService $announcements,
+        private readonly ActiveProcessorRoster $processorRoster,
+    ) {}
 
     public function index(): Response
     {
+        $processors = $this->processorRoster->all();
+        $activeProcessorNames = $processors->pluck('name');
+        $historyVisible = request()->boolean('history');
         $entries = ReportEntry::query()
+            ->whereIn('processor_name', $activeProcessorNames)
             ->orderByDesc('report_date')
             ->orderByDesc('assembled_at')
             ->limit(5000)
             ->get(['report_date', 'source', 'batch', 'processor_name', 'project_id', 'inspection_type', 'report_category', 'assembled_at']);
 
+        $historyEntries = $historyVisible
+            ? ReportEntry::query()
+                ->whereNotIn('processor_name', $activeProcessorNames)
+                ->orderByDesc('report_date')
+                ->orderByDesc('assembled_at')
+                ->limit(1000)
+                ->get(['report_date', 'source', 'batch', 'processor_name', 'project_id', 'inspection_type', 'report_category', 'assembled_at'])
+            : collect();
+
         return Inertia::render('operations/reports', [
             'reportEntries' => $entries,
+            'processorRoster' => $this->processorRoster->forFrontend($processors),
             'latestReportDate' => $entries->first()?->report_date?->format('Y-m-d'),
+            'historyVisible' => $historyVisible,
+            'historyEntries' => $historyEntries,
         ]);
     }
 
     public function store(StoreReportImportRequest $request): RedirectResponse
     {
+        $processors = $this->processorRoster->all();
         $records = collect($request->validated('entries'))
-            ->map(function (array $entry): ?array {
-                $processor = $this->processor($entry['assembled_by']);
+            ->map(function (array $entry) use ($processors): ?array {
+                $processor = $this->processorRoster->match($entry['assembled_by'], $processors);
                 $category = $this->category($entry['inspection_type']);
 
                 if ($processor === null || $category === null) {
@@ -81,8 +78,8 @@ class ReportImportController extends Controller
                 return [
                     'report_date' => $assembledAt->toDateString(),
                     'source' => $entry['source'],
-                    'batch' => $processor['batch'],
-                    'processor_name' => $processor['name'],
+                    'batch' => $processor->batch,
+                    'processor_name' => $processor->name,
                     'project_id' => trim($entry['project_id']),
                     'insured_by' => filled($entry['insured_by']) ? trim($entry['insured_by']) : null,
                     'inspection_type' => trim($entry['inspection_type']),
@@ -95,6 +92,12 @@ class ReportImportController extends Controller
             ->filter()
             ->unique(fn (array $entry) => implode('|', [$entry['source'], $entry['project_id'], $entry['report_date'], $entry['processor_name'], $entry['inspection_type']]))
             ->values();
+
+        if ($records->isEmpty()) {
+            return back()->withErrors([
+                'entries' => 'No report rows matched an active Batch 1–3 processor and an Exterior or 4-Point inspection.',
+            ]);
+        }
 
         DB::transaction(function () use ($records): void {
             $records->chunk(self::UPSERT_CHUNK_SIZE)->each(function ($chunk): void {
@@ -114,22 +117,6 @@ class ReportImportController extends Controller
         ]);
     }
 
-    private function processor(string $name): ?array
-    {
-        $normalized = $this->normalize($name);
-        $canonical = self::ALIASES[$normalized] ?? null;
-
-        foreach (self::PROCESSORS as $batch => $names) {
-            foreach ($names as $candidate) {
-                if ($this->normalize($candidate) === $normalized || $candidate === $canonical) {
-                    return ['batch' => $batch, 'name' => $candidate];
-                }
-            }
-        }
-
-        return null;
-    }
-
     private function category(string $inspectionType): ?string
     {
         $value = Str::lower($inspectionType);
@@ -143,10 +130,5 @@ class ReportImportController extends Controller
         }
 
         return null;
-    }
-
-    private function normalize(string $value): string
-    {
-        return Str::of($value)->lower()->replaceMatches('/[^a-z0-9]+/', ' ')->squish()->value();
     }
 }

@@ -3,14 +3,27 @@
 use App\Enums\UserRole;
 use App\Models\CstProcessorMetric;
 use App\Models\QaAssessment;
+use App\Models\QaImport;
 use App\Models\ReportEntry;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Inertia\Testing\AssertableInertia as Assert;
 
+function createPerformanceProcessor(string $name, int $batch, ?string $nickname = null): User
+{
+    return User::factory()->create([
+        'name' => $name,
+        'n_name' => $nickname,
+        'role' => UserRole::Processor,
+        'batch' => $batch,
+        'is_active' => true,
+    ]);
+}
+
 test('processor page calculates weighted credits tiers and incentives for the current PH month', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-04 10:00:00', 'Asia/Manila'));
     $this->actingAs(User::factory()->create(['role' => UserRole::Operations]));
+    createPerformanceProcessor('Allan Layug', 2);
 
     foreach (range(1, 500) as $index) {
         ReportEntry::query()->create([
@@ -58,6 +71,7 @@ test('processor page calculates weighted credits tiers and incentives for the cu
 test('CST reports require a processor selection and show stored daily metrics', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-08 09:00:00', 'Asia/Manila'));
     $user = User::factory()->create(['role' => UserRole::Operations]);
+    createPerformanceProcessor('Allan Layug', 2);
     CstProcessorMetric::query()->create([
         'report_date' => '2026-09-05',
         'processor_name' => 'Allan Layug',
@@ -90,7 +104,10 @@ test('CST processor filters always serialize rows as a list for React', function
     $this->travelTo(CarbonImmutable::parse('2026-09-08 09:00:00', 'Asia/Manila'));
     $user = User::factory()->create(['role' => UserRole::Operations]);
 
-    foreach ([['Allan Layug', 12, 4], ['Emma Alegre', 7, 2]] as [$processor, $generalExterior, $fourPoint]) {
+    createPerformanceProcessor('Allan Layug', 2);
+    createPerformanceProcessor('Marie Anthonette Moog', 2, 'Marie Moog');
+
+    foreach ([['Allan Layug', 12, 4], ['Marie Moog', 7, 2]] as [$processor, $generalExterior, $fourPoint]) {
         CstProcessorMetric::query()->create([
             'report_date' => '2026-09-05',
             'processor_name' => $processor,
@@ -103,7 +120,7 @@ test('CST processor filters always serialize rows as a list for React', function
     }
 
     $response = $this->actingAs($user)
-        ->get('/operations/cst-reports?start_date=2026-09-01&end_date=2026-09-08&processor=Emma%20Alegre');
+        ->get('/operations/cst-reports?start_date=2026-09-01&end_date=2026-09-08&processor=Marie%20Anthonette%20Moog');
 
     $response->assertOk();
 
@@ -113,7 +130,7 @@ test('CST processor filters always serialize rows as a list for React', function
     expect($rows)->toBeArray()
         ->and(array_is_list($rows))->toBeTrue()
         ->and($rows)->toHaveCount(1)
-        ->and($rows[0]['processor'])->toBe('Emma Alegre')
+        ->and($rows[0]['processor'])->toBe('Marie Anthonette Moog')
         ->and($rows[0]['total'])->toBe(9);
 });
 
@@ -155,6 +172,7 @@ test('processor page includes every active approved processor even without perfo
         'name' => 'Approved Processor',
         'n_name' => 'Approved',
         'role' => UserRole::Processor,
+        'batch' => 3,
         'is_active' => true,
     ]);
     User::factory()->create([
@@ -169,14 +187,15 @@ test('processor page includes every active approved processor even without perfo
     ]);
 
     $this->actingAs($viewer)->get('/operations/processors')->assertInertia(fn (Assert $page) => $page
-        ->has('approvedProcessors', 22)
-        ->where('approvedProcessors.1.name', 'Approved Processor')
-        ->where('approvedProcessors.1.nickname', 'Approved'));
+        ->has('approvedProcessors', 1)
+        ->where('approvedProcessors.0.name', 'Approved Processor')
+        ->where('approvedProcessors.0.nickname', 'Approved'));
 });
 
 test('processor page displays performance from the selected month', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-04 10:00:00', 'Asia/Manila'));
     $user = User::factory()->create(['role' => UserRole::Operations]);
+    createPerformanceProcessor('Allan Layug', 2);
 
     foreach ([['2026-08-20', 'AUGUST'], ['2026-09-03', 'SEPTEMBER']] as [$date, $projectId]) {
         ReportEntry::query()->create([
@@ -206,6 +225,7 @@ test('processor page displays performance from the selected month', function () 
 
 test('processor page displays July QA scores under approved processor names', function () {
     $user = User::factory()->create(['role' => UserRole::Operations]);
+    createPerformanceProcessor('Lourdes M. Completado', 1, 'Desh Completado');
     ReportEntry::query()->create([
         'report_date' => '2026-07-31',
         'source' => 'closed',
@@ -242,6 +262,7 @@ test('processor page displays July QA scores under approved processor names', fu
 test('operations users can upload CST processor metrics and weighted QC scores are displayed', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-04 10:00:00', 'America/Chicago'));
     $user = User::factory()->create(['role' => UserRole::Operations]);
+    createPerformanceProcessor('Allan Layug', 2);
 
     $response = $this->actingAs($user)->post('/operations/processors/cst-import', [
         'source_file' => 'CST September.xlsx',
@@ -261,8 +282,48 @@ test('operations users can upload CST processor metrics and weighted QC scores a
         ->where('cstPerformance.0.qcReviews', 3));
 });
 
+test('a newly created processor account immediately matches CST spreadsheet names', function () {
+    $operations = User::factory()->create(['role' => UserRole::Operations]);
+
+    $this->actingAs($operations)->post(route('operations.users.store'), [
+        'name' => 'Taylor New Processor',
+        'n_name' => 'Taylor',
+        'email' => 'taylor.processor@bees360.com',
+        'password' => 'SecurePass123!',
+        'password_confirmation' => 'SecurePass123!',
+        'role' => UserRole::Processor->value,
+        'batch' => 3,
+    ])->assertRedirect(route('operations.users.index'));
+
+    $this->post('/operations/processors/cst-import', [
+        'source_file' => 'CST September.xlsx',
+        'metrics' => [[
+            'report_date' => '2026-09-03',
+            'processor_name' => 'Taylor',
+            'general_exterior' => 9,
+            'four_point' => 4,
+            'qc_score' => null,
+            'qc_reviews' => 0,
+        ]],
+    ])->assertRedirect(route('operations.processors'));
+
+    $this->assertDatabaseHas('cst_processor_metrics', [
+        'processor_name' => 'Taylor New Processor',
+        'report_date' => '2026-09-03',
+        'general_exterior' => 9,
+        'four_point' => 4,
+    ]);
+
+    $this->get('/operations/cst-reports?start_date=2026-09-01&end_date=2026-09-30&processor=Taylor%20New%20Processor')
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('rows', 1)
+            ->where('rows.0.processor', 'Taylor New Processor')
+            ->where('rows.0.total', 13));
+});
+
 test('CST report imports reopen on the imported date range with the saved count', function () {
     $user = User::factory()->create(['role' => UserRole::Operations]);
+    createPerformanceProcessor('Lourdes M. Completado', 1, 'Desh Completado');
 
     $response = $this->actingAs($user)
         ->from('/operations/cst-reports?start_date=2026-09-01&end_date=2026-09-08')
@@ -294,6 +355,7 @@ test('CST report imports reopen on the imported date range with the saved count'
 
 test('CST import combines approved aliases and calculates tiers for the selected month', function () {
     $user = User::factory()->create(['role' => UserRole::Operations]);
+    createPerformanceProcessor('Lourdes M. Completado', 1, 'Desh Completado');
 
     CstProcessorMetric::query()->create([
         'report_date' => '2026-08-15',
@@ -339,6 +401,7 @@ test('CST import combines approved aliases and calculates tiers for the selected
 
 test('processor reports group stored aliases under one canonical processor name', function () {
     $user = User::factory()->create(['role' => UserRole::Operations]);
+    createPerformanceProcessor('Lourdes M. Completado', 1, 'Desh Completado');
 
     foreach (['Desh Completado', 'Lourdes M. Completado'] as $processorName) {
         ReportEntry::query()->create([
@@ -387,6 +450,7 @@ test('processor reports group stored aliases under one canonical processor name'
 
 test('CST imports require valid bounded metrics', function () {
     $user = User::factory()->create(['role' => UserRole::Operations]);
+    createPerformanceProcessor('Allan Layug', 2);
 
     $this->actingAs($user)->post('/operations/processors/cst-import', [
         'source_file' => 'invalid.xlsx',
@@ -454,6 +518,7 @@ test('guests cannot open or import processor performance data', function () {
 test('current processor month does not carry forward QA accuracy from an older month', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-04 10:00:00', 'Asia/Manila'));
     $user = User::factory()->create(['role' => UserRole::Operations]);
+    createPerformanceProcessor('Allan Layug', 2);
 
     ReportEntry::query()->create([
         'report_date' => '2026-09-03', 'source' => 'closed', 'batch' => 2, 'processor_name' => 'Allan Layug',
@@ -480,6 +545,7 @@ test('current processor month does not carry forward QA accuracy from an older m
 test('manual processor date range filters production and QA calculations together', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-04 10:00:00', 'Asia/Manila'));
     $user = User::factory()->create(['role' => UserRole::Operations]);
+    createPerformanceProcessor('Allan Layug', 2);
 
     foreach ([['2026-08-03', 'AUG', 80], ['2026-09-03', 'SEP', 100]] as [$date, $project, $score]) {
         ReportEntry::query()->create([
@@ -507,7 +573,7 @@ test('manual processor date range filters production and QA calculations togethe
 test('QA score imports calculate an average and update repeated report uploads without duplicates', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-04 10:00:00', 'Asia/Manila'));
     $uploader = User::factory()->create(['role' => UserRole::Qa]);
-    $processor = User::factory()->create(['name' => 'Christer John Gozon', 'n_name' => 'Chris']);
+    $processor = createPerformanceProcessor('Christer John Gozon', 1, 'Chris');
 
     $upload = function (string $name, string $projectId, int $score) use ($uploader): array {
         $this->actingAs($uploader)->post('/operations/processors/qa-import', [
@@ -531,6 +597,18 @@ test('QA score imports calculate an average and update repeated report uploads w
     expect($upload('Chris', '677617', 86))->toMatchArray(['created' => 1, 'updated' => 0, 'matched' => 1]);
 
     expect(QaAssessment::query()->count())->toBe(2);
+    expect(QaImport::query()->count())->toBe(3);
+    expect(QaImport::query()->orderBy('id')->get()->map->only([
+        'processed_count',
+        'created_count',
+        'updated_count',
+        'matched_count',
+        'unmatched_count',
+    ])->all())->toBe([
+        ['processed_count' => 1, 'created_count' => 1, 'updated_count' => 0, 'matched_count' => 1, 'unmatched_count' => 0],
+        ['processed_count' => 1, 'created_count' => 0, 'updated_count' => 1, 'matched_count' => 1, 'unmatched_count' => 0],
+        ['processed_count' => 1, 'created_count' => 1, 'updated_count' => 0, 'matched_count' => 1, 'unmatched_count' => 0],
+    ]);
     expect($processor->notifications()->where('data->type', 'latest_qa')->count())->toBe(2);
     expect($processor->unreadNotifications()->where('data->type', 'latest_qa')->count())->toBe(2);
     expect($processor->notifications->pluck('data.project_id')->all())->toContain('677616', '677617');
@@ -558,9 +636,18 @@ test('QA score imports calculate an average and update repeated report uploads w
         ->where('phPerformance.0.qcScore', 90)
         ->where('phPerformance.0.qcReviews', 2)
         ->has('qaHistory', 2)
-        ->where('qaHistory.0.processor', 'Christer John C. Gozon')
+        ->where('qaHistory.0.processor', 'Christer John Gozon')
         ->where('qaHistory.0.nickname', 'Chris')
         ->where('qaHistory.0.projectId', '677617')
         ->where('qaHistory.0.score', 86)
         ->has('qaHistory.0.feedback', 2));
+
+    $this->get('/operations/quality-assurance')->assertInertia(fn (Assert $page) => $page
+        ->has('importHistory', 3)
+        ->where('importHistory.0.sourceFile', 'QA September.xlsx')
+        ->where('importHistory.0.processed', 1)
+        ->where('importHistory.0.created', 1)
+        ->where('importHistory.0.updated', 0)
+        ->where('importHistory.0.matched', 1)
+        ->where('importHistory.0.uploadedBy', $uploader->name));
 });

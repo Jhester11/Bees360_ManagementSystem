@@ -2,7 +2,7 @@ import { ProcessorSelect } from '@/components/processor-select';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import AppLayout from '@/layouts/app-layout';
-import { assertWorksheetRowLimit, readSpreadsheet } from '@/lib/spreadsheet-upload';
+import { qaAssessmentsFromWorkbook } from '@/lib/processor-workbook';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, usePage, usePoll } from '@inertiajs/react';
 import {
@@ -23,7 +23,6 @@ import {
     X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import * as SheetJS from 'xlsx';
 import type { WorkSheet } from 'xlsx-js-style';
 
 type Tier = { name: string; target: number; incentive: number; achieved: boolean; needed: number; percentage: number };
@@ -59,23 +58,10 @@ type Props = {
     filters: { manual: boolean; startDate: string; endDate: string; latestQaStart: string | null; latestQaEnd: string | null };
 };
 type Timezone = 'ph' | 'cst';
-type QaAssessment = {
-    assessment_date: string;
-    processor_name: string;
-    score: number;
-    project_id: string;
-    qc_name: string;
-    report_url: string;
-    feedback: string[];
-};
-
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Operations dashboard', href: '/dashboard' },
     { title: 'Processors', href: '/operations/processors' },
 ];
-const maximumQaWorksheetRows = 10_050;
-const maximumQaAssessments = 10_000;
-
 const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
 const philippinesMonth = (date = new Date()) => {
     const parts = new Intl.DateTimeFormat('en-CA', {
@@ -102,57 +88,6 @@ const formatPhilippinesDateTime = (date: Date) =>
         timeZone: 'Asia/Manila',
         timeZoneName: 'short',
     }).format(date);
-const valueFor = (row: Record<string, unknown>, aliases: string[]) => {
-    const keys = Object.keys(row);
-    const key = keys.find((candidate) => aliases.includes(normalize(candidate)));
-    return key ? row[key] : undefined;
-};
-const dateValue = (value: unknown) => {
-    if (value instanceof Date && !Number.isNaN(value.valueOf())) return value.toISOString().slice(0, 10);
-    const parsed = new Date(String(value ?? ''));
-    return Number.isNaN(parsed.valueOf()) ? '' : parsed.toISOString().slice(0, 10);
-};
-
-async function qaFromWorkbook(file: File): Promise<QaAssessment[]> {
-    const workbook = await readSpreadsheet(file, ['xlsx', 'xls', 'csv'], maximumQaWorksheetRows, { cellDates: true });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    if (!sheet) throw new Error('The QA workbook does not contain a worksheet.');
-    assertWorksheetRowLimit(sheet, maximumQaWorksheetRows, file.name);
-    const rawRows = SheetJS.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
-    const headerIndex = rawRows.findIndex((row) => row.some((cell) => normalize(String(cell)) === 'totalscore'));
-    if (headerIndex < 0) throw new Error('The QA file must contain a Total Score column.');
-    const headers = rawRows[headerIndex].map((cell) => String(cell));
-    const rows = rawRows.slice(headerIndex + 1).map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ''])));
-    const assessments = rows.flatMap((row) => {
-        const processorName = String(valueFor(row, ['processor', 'processorname', 'name', 'nname', 'nickname']) ?? '').trim();
-        const scoreValue = valueFor(row, ['totalscore', 'qcscore', 'qascore', 'accuracyscore', 'accuracy', 'qualityscore', 'score']);
-        if (!processorName || scoreValue === undefined || String(scoreValue).trim() === '') return [];
-        let score = Number(String(scoreValue).replace('%', '').trim());
-        if (!Number.isFinite(score)) return [];
-        if (score <= 1) score *= 100;
-        if (score < 0 || score > 100) return [];
-        const feedback = Object.entries(row)
-            .filter(([header, value]) => /^error\d*$/.test(normalize(header)) && String(value).trim() !== '')
-            .map(([, value]) => String(value).trim());
-        return [
-            {
-                assessment_date: dateValue(valueFor(row, ['submissiondate', 'subdate', 'assessmentdate', 'reportdate', 'qadate', 'date'])),
-                processor_name: processorName,
-                score: Number(score.toFixed(2)),
-                project_id: String(valueFor(row, ['projectid']) ?? '').trim(),
-                qc_name: String(valueFor(row, ['qcname', 'reviewer']) ?? '').trim(),
-                report_url: String(valueFor(row, ['reporturl', 'url']) ?? '').trim(),
-                feedback,
-            },
-        ];
-    });
-    if (assessments.length === 0) throw new Error('Add Processor Name and QA Score columns with valid data.');
-    if (assessments.length > maximumQaAssessments) {
-        throw new Error(`The QA import cannot contain more than ${maximumQaAssessments.toLocaleString()} assessments.`);
-    }
-    return assessments;
-}
-
 function QaAccuracyGauge({ score, reviews, period }: { score: number | null; reviews: number; period: string | null }) {
     const [progress, setProgress] = useState(0);
 
@@ -456,7 +391,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
         setQaError(null);
         setQaProgress(15);
         try {
-            const assessments = await qaFromWorkbook(qaFile);
+            const assessments = await qaAssessmentsFromWorkbook(qaFile);
             setQaProgress(55);
             router.post(
                 '/operations/processors/qa-import',
@@ -705,7 +640,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                 </span>
                                 <p className="mt-4 font-extrabold text-[#342615]">{qaFile?.name ?? 'Drop QA Excel file here'}</p>
                                 <p className="mt-1 text-sm text-[#806f59]">
-                                    Reads Total Score, Submission Date and Error through Error20 from your QA file.
+                                    Reads QC Score or Total Score, Approval or Submission Date, and Error through Error20 from your QA file.
                                 </p>
                             </div>
                         </div>

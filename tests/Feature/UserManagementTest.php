@@ -2,6 +2,7 @@
 
 use App\Enums\UserRole;
 use App\Models\User;
+use App\Services\ActiveProcessorRoster;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -67,6 +68,74 @@ test('account creation validates the profile image and account fields', function
         ->assertSessionHasErrors(['name', 'n_name', 'email', 'password', 'role']);
 });
 
+test('processor accounts require a production batch', function () {
+    $administrator = User::factory()->create(['role' => UserRole::Operations]);
+
+    $this->actingAs($administrator)
+        ->post(route('operations.users.store'), [
+            'name' => 'New Processor',
+            'n_name' => 'Newbie',
+            'email' => 'new.processor@bees360.com',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
+            'role' => UserRole::Processor->value,
+        ])
+        ->assertSessionHasErrors('batch');
+});
+
+test('legacy spreadsheet names match the active processor account identity', function () {
+    $processor = User::factory()->create([
+        'name' => 'Chris Gozon',
+        'n_name' => 'Chris',
+        'role' => UserRole::Processor,
+        'batch' => 1,
+        'is_active' => true,
+    ]);
+
+    $matched = app(ActiveProcessorRoster::class)->match('Christer John C. Gozon');
+
+    expect($matched?->is($processor))->toBeTrue();
+});
+
+test('an Operations account marked for production appears in the processor roster', function () {
+    $jhun = User::factory()->create([
+        'name' => 'Jhun Cervantes',
+        'n_name' => 'Jhun',
+        'email' => 'aitest7@bees360.com',
+        'role' => UserRole::Operations,
+        'batch' => 1,
+        'tracks_production' => true,
+    ]);
+
+    $matched = app(ActiveProcessorRoster::class)->match('Jhun Lester Cervantes');
+
+    expect($matched?->is($jhun))->toBeTrue();
+});
+
+test('updating a production Operations account preserves its report batch', function () {
+    $administrator = User::factory()->create(['role' => UserRole::Operations]);
+    $jhun = User::factory()->create([
+        'name' => 'Jhun Cervantes',
+        'n_name' => 'Jhun',
+        'role' => UserRole::Operations,
+        'batch' => 1,
+        'tracks_production' => true,
+    ]);
+
+    $this->actingAs($administrator)->patch(route('operations.users.update', $jhun), [
+        'name' => 'Jhun Cervantes',
+        'n_name' => 'Jhun',
+        'email' => 'jhun.updated@bees360.com',
+        'password' => '',
+        'password_confirmation' => '',
+        'role' => UserRole::Operations->value,
+        'batch' => '',
+    ])->assertRedirect();
+
+    expect($jhun->fresh()->batch)->toBe(1)
+        ->and($jhun->fresh()->tracks_production)->toBeTrue();
+});
+
 test('account creation rejects duplicate processor identities', function () {
     $administrator = User::factory()->create(['role' => UserRole::Operations]);
     User::factory()->create(['name' => 'Existing Processor', 'n_name' => 'Existing']);
@@ -112,6 +181,7 @@ test('operations administrators can create an account without a profile image', 
         'password' => 'SecurePass123!',
         'password_confirmation' => 'SecurePass123!',
         'role' => UserRole::Processor->value,
+        'batch' => 1,
     ])->assertRedirect(route('operations.users.index'));
 
     $user = User::query()->where('email', 'christer@bees360.com')->firstOrFail();
@@ -119,7 +189,8 @@ test('operations administrators can create an account without a profile image', 
     expect($user->name)->toBe('Christer John Gozon')
         ->and($user->avatar)->toBeNull()
         ->and($user->onboarding_completed_at)->toBeNull()
-        ->and($user->role)->toBe(UserRole::Processor);
+        ->and($user->role)->toBe(UserRole::Processor)
+        ->and($user->batch)->toBe(1);
 });
 
 test('creating an account announces the new teammate to every active account', function () {
@@ -134,6 +205,7 @@ test('creating an account announces the new teammate to every active account', f
         'password' => 'SecurePass123!',
         'password_confirmation' => 'SecurePass123!',
         'role' => UserRole::Processor->value,
+        'batch' => 3,
     ])->assertRedirect(route('operations.users.index'));
 
     $newUser = User::query()->where('email', 'new.user@bees360.com')->firstOrFail();
@@ -322,6 +394,7 @@ test('the only active Operations account cannot demote itself', function () {
             'password' => '',
             'password_confirmation' => '',
             'role' => UserRole::Processor->value,
+            'batch' => 1,
         ])
         ->assertUnprocessable();
 

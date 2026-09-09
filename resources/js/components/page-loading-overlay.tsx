@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 
 const skeletonRows = Array.from({ length: 7 }, (_, index) => index);
 const skeletonColumns = Array.from({ length: 5 }, (_, index) => index);
-const SLOW_NAVIGATION_DELAY = 200;
+// Cached visits should feel instant; reserve the full skeleton for genuinely
+// slow responses so it does not flash during normal sidebar navigation.
+const SLOW_NAVIGATION_DELAY = 350;
 const LOADER_FAILSAFE_DELAY = 5_000;
 
 export function PageLoadingOverlay() {

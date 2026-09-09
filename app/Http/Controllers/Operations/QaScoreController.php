@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Operations;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\QaAssessment;
+use App\Models\QaImport;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -68,6 +69,23 @@ class QaScoreController extends Controller
                 'processors' => $rows->pluck('processor')->unique()->count(),
                 'feedbackItems' => $rows->sum(fn (array $row): int => count($row['feedback'])),
             ],
+            'importHistory' => QaImport::query()
+                ->with('uploader:id,name')
+                ->latest()
+                ->orderByDesc('id')
+                ->limit(20)
+                ->get()
+                ->map(fn (QaImport $import): array => [
+                    'id' => $import->id,
+                    'sourceFile' => $import->source_file,
+                    'processed' => $import->processed_count,
+                    'created' => $import->created_count,
+                    'updated' => $import->updated_count,
+                    'matched' => $import->matched_count,
+                    'unmatched' => $import->unmatched_count,
+                    'uploadedBy' => $import->uploader?->name ?? 'Deleted user',
+                    'uploadedAt' => $import->created_at->toIso8601String(),
+                ]),
             'canImport' => in_array($request->user()?->role, [UserRole::Operations, UserRole::Qa], true),
             'phToday' => $phToday->toDateString(),
         ]);

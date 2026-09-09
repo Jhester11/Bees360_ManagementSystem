@@ -1,5 +1,4 @@
 import { assertWorksheetRowLimit, readSpreadsheet } from '@/lib/spreadsheet-upload';
-import * as SheetJS from 'xlsx';
 
 export type CstImportMetric = {
     report_date: string;
@@ -24,6 +23,9 @@ const maximumCstSourceRows = 50_000;
 const maximumCstMetrics = 5_000;
 const maximumQaWorksheetRows = 10_050;
 const maximumQaAssessments = 10_000;
+const qaScoreAliases = ['totalscore', 'qcscore', 'qascore', 'accuracyscore', 'accuracy', 'qualityscore', 'score'];
+const qaDateAliases = ['submissiondate', 'subdate', 'approvaldate', 'assessmentdate', 'reportdate', 'qadate', 'date', 'qcscorereleasedate'];
+const qaProcessorAliases = ['processor', 'processorname', 'name', 'nname', 'nickname'];
 
 const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
 const valueFor = (row: Record<string, unknown>, aliases: string[]) => {
@@ -32,14 +34,33 @@ const valueFor = (row: Record<string, unknown>, aliases: string[]) => {
     return key ? row[key] : undefined;
 };
 const integer = (value: unknown) => Math.max(0, Math.round(Number(String(value ?? 0).replace(/,/g, '')) || 0));
+const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const dateValue = (value: unknown) => {
-    if (value instanceof Date && !Number.isNaN(value.valueOf())) return value.toISOString().slice(0, 10);
-    const parsed = new Date(String(value ?? ''));
+    if (value instanceof Date && !Number.isNaN(value.valueOf())) return localDate(value);
+    const raw = String(value ?? '').trim();
+    const isoDate = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\D|$)/);
+    if (isoDate) return `${isoDate[1]}-${isoDate[2].padStart(2, '0')}-${isoDate[3].padStart(2, '0')}`;
+    const usDate = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\D|$)/);
+    if (usDate) return `${usDate[3]}-${usDate[1].padStart(2, '0')}-${usDate[2].padStart(2, '0')}`;
+    const parsed = new Date(raw);
 
-    return Number.isNaN(parsed.valueOf()) ? '' : parsed.toISOString().slice(0, 10);
+    return Number.isNaN(parsed.valueOf()) ? '' : localDate(parsed);
+};
+const webUrlValue = (value: unknown) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '';
+
+    try {
+        const url = new URL(raw);
+
+        return url.protocol === 'http:' || url.protocol === 'https:' ? raw : '';
+    } catch {
+        return '';
+    }
 };
 
 export async function cstMetricsFromWorkbook(file: File): Promise<CstImportMetric[]> {
+    const SheetJS = await import('xlsx');
     const workbook = await readSpreadsheet(file, ['xlsx', 'xls'], maximumCstSourceRows, { cellDates: true });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     if (!sheet) throw new Error('The workbook does not contain a worksheet.');
@@ -114,23 +135,32 @@ export function combineCstMetrics(groups: CstImportMetric[][]): CstImportMetric[
 }
 
 export async function qaAssessmentsFromWorkbook(file: File): Promise<QaImportAssessment[]> {
+    const SheetJS = await import('xlsx');
     const workbook = await readSpreadsheet(file, ['xlsx', 'xls', 'csv'], maximumQaWorksheetRows, { cellDates: true });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     if (!sheet) throw new Error('The QA workbook does not contain a worksheet.');
     assertWorksheetRowLimit(sheet, maximumQaWorksheetRows, file.name);
     const rawRows = SheetJS.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
-    const headerIndex = rawRows.findIndex((row) => row.some((cell) => normalize(String(cell)) === 'totalscore'));
-    if (headerIndex < 0) throw new Error('The QA file must contain a Total Score column.');
+    const headerIndex = rawRows.findIndex((row) => {
+        const normalizedHeaders = row.map((cell) => normalize(String(cell)));
+
+        return (
+            normalizedHeaders.some((header) => qaScoreAliases.includes(header)) &&
+            normalizedHeaders.some((header) => qaProcessorAliases.includes(header)) &&
+            normalizedHeaders.includes('projectid')
+        );
+    });
+    if (headerIndex < 0) throw new Error('The QA file must contain a QC Score or Total Score column, Processor Name, and Project ID.');
     const headers = rawRows[headerIndex].map(String);
     const rows = rawRows.slice(headerIndex + 1).map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ''])));
     const assessments = rows.flatMap((row): QaImportAssessment[] => {
-        const processorName = String(valueFor(row, ['processor', 'processorname', 'name', 'nname', 'nickname']) ?? '').trim();
-        const scoreValue = valueFor(row, ['totalscore', 'qcscore', 'qascore', 'accuracyscore', 'accuracy', 'qualityscore', 'score']);
+        const processorName = String(valueFor(row, qaProcessorAliases) ?? '').trim();
+        const scoreValue = valueFor(row, qaScoreAliases);
         if (!processorName || scoreValue === undefined || String(scoreValue).trim() === '') return [];
         let score = Number(String(scoreValue).replace('%', '').trim());
         if (!Number.isFinite(score)) return [];
         if (score <= 1) score *= 100;
-        const assessmentDate = dateValue(valueFor(row, ['submissiondate', 'subdate', 'assessmentdate', 'reportdate', 'qadate', 'date']));
+        const assessmentDate = dateValue(valueFor(row, qaDateAliases));
         const projectId = String(valueFor(row, ['projectid']) ?? '').trim();
         if (!assessmentDate || !projectId || score < 0 || score > 100) return [];
 
@@ -141,7 +171,7 @@ export async function qaAssessmentsFromWorkbook(file: File): Promise<QaImportAss
                 score: Number(score.toFixed(2)),
                 project_id: projectId,
                 qc_name: String(valueFor(row, ['qcname', 'reviewer']) ?? '').trim(),
-                report_url: String(valueFor(row, ['reporturl', 'url']) ?? '').trim(),
+                report_url: webUrlValue(valueFor(row, ['reporturl', 'url'])),
                 feedback: Object.entries(row)
                     .filter(([header, value]) => /^error\d*$/.test(normalize(header)) && String(value).trim() !== '')
                     .map(([, value]) => String(value).trim()),
@@ -150,7 +180,9 @@ export async function qaAssessmentsFromWorkbook(file: File): Promise<QaImportAss
     });
 
     if (assessments.length === 0)
-        throw new Error('No valid QA assessment rows were found. Check Total Score, Submission Date, Project ID, and Processor Name.');
+        throw new Error(
+            'No valid QA assessment rows were found. Check QC Score or Total Score, Approval or Submission Date, Project ID, and Processor Name.',
+        );
     if (assessments.length > maximumQaAssessments)
         throw new Error(`The QA import cannot contain more than ${maximumQaAssessments.toLocaleString()} assessments.`);
 

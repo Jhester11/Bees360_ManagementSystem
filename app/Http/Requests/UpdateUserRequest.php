@@ -56,6 +56,12 @@ class UpdateUserRequest extends FormRequest
             ],
             'password' => ['nullable', 'confirmed', Password::defaults()],
             'role' => ['required', Rule::enum(UserRole::class)],
+            'batch' => [
+                Rule::requiredIf(fn (): bool => $this->input('role') === UserRole::Processor->value),
+                'nullable',
+                'integer',
+                'between:1,3',
+            ],
             'avatar' => [
                 'nullable',
                 'image',

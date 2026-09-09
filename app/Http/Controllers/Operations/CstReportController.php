@@ -5,35 +5,16 @@ namespace App\Http\Controllers\Operations;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\CstProcessorMetric;
-use App\Models\User;
+use App\Services\ActiveProcessorRoster;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class CstReportController extends Controller
 {
-    private const PROCESSOR_ALIASES = [
-        'arianne lopez' => 'Arianne Joy Lopez',
-        'chris gozon' => 'Christer John C. Gozon',
-        'christer gozon' => 'Christer John C. Gozon',
-        'christer john gozon' => 'Christer John C. Gozon',
-        'denn zafe' => 'Denn Charles Zafe',
-        'desh completado' => 'Lourdes M. Completado',
-        'don santos' => 'Elacio M. Santos Jr.',
-        'jhun lester cervantes' => 'Jhun Cervantes',
-        'king palo' => 'Reginald King Palo',
-        'kristine espiritu' => 'Kristine Jewel Espiritu',
-        'mac payongayong' => 'Mac Evens T. Payongayong',
-        'marie moog' => 'Marie Anthonette Moog',
-        'oliver noble' => 'Mc Oliver Noble',
-        'rainier ana' => 'Rainier Sta Ana',
-        'rheven aladin' => 'Rheven Violet Aladin',
-        'tracy josafat' => 'Tracy John Josafat',
-        'wengmir africa' => 'Wengmir A. Africa',
-    ];
+    public function __construct(private readonly ActiveProcessorRoster $roster) {}
 
     public function __invoke(Request $request): Response
     {
@@ -46,21 +27,39 @@ class CstReportController extends Controller
         }
 
         $processor = trim($request->string('processor')->toString());
+        $processors = $this->roster->all();
+        $selectedProcessor = $processor === 'all' ? 'all' : $this->roster->canonicalName($processor, $processors);
         $query = CstProcessorMetric::query()
             ->whereBetween('report_date', [$startDate->toDateString(), $endDate->toDateString()]);
 
-        $rows = $processor === ''
+        $rows = $processor === '' || $selectedProcessor === null
             ? collect()
             : $query
                 ->orderByDesc('report_date')
+                ->orderByDesc('updated_at')
                 ->orderBy('processor_name')
-                ->get(['id', 'report_date', 'processor_name', 'general_exterior', 'four_point'])
-                ->filter(fn (CstProcessorMetric $metric): bool => $processor === 'all'
-                    || $this->canonicalProcessorName($metric->processor_name) === $this->canonicalProcessorName($processor))
+                ->get(['id', 'report_date', 'processor_name', 'general_exterior', 'four_point', 'updated_at'])
+                ->filter(fn (CstProcessorMetric $metric): bool => $this->roster->canonicalName($metric->processor_name, $processors) !== null)
+                ->groupBy(fn (CstProcessorMetric $metric): string => implode('|', [
+                    $metric->report_date->format('Y-m-d'),
+                    $this->roster->canonicalName($metric->processor_name, $processors),
+                ]))
+                ->map(function (Collection $duplicates) use ($processors): CstProcessorMetric {
+                    $canonicalName = $this->roster->canonicalName($duplicates->first()->processor_name, $processors);
+
+                    return $duplicates->first(
+                        fn (CstProcessorMetric $metric): bool => $metric->processor_name === $canonicalName,
+                    ) ?? $duplicates->first();
+                })
+                ->filter(function (CstProcessorMetric $metric) use ($processors, $selectedProcessor): bool {
+                    $canonicalName = $this->roster->canonicalName($metric->processor_name, $processors);
+
+                    return $selectedProcessor === 'all' || $canonicalName === $selectedProcessor;
+                })
                 ->map(fn (CstProcessorMetric $metric): array => [
                     'id' => $metric->id,
                     'date' => $metric->report_date->format('Y-m-d'),
-                    'processor' => $this->canonicalProcessorName($metric->processor_name),
+                    'processor' => $this->roster->canonicalName($metric->processor_name, $processors),
                     'generalExterior' => $metric->general_exterior,
                     'fourPoint' => $metric->four_point,
                     'total' => $metric->general_exterior + $metric->four_point,
@@ -72,11 +71,11 @@ class CstReportController extends Controller
 
         return Inertia::render('operations/cst-reports', [
             'rows' => $rows,
-            'processorNames' => $this->processorNames(),
+            'processorNames' => $processors->pluck('name')->values(),
             'filters' => [
                 'startDate' => $startDate->toDateString(),
                 'endDate' => $endDate->toDateString(),
-                'processor' => $processor,
+                'processor' => $selectedProcessor ?? '',
             ],
             'summary' => [
                 'generalExterior' => $rows->sum('generalExterior'),
@@ -86,32 +85,6 @@ class CstReportController extends Controller
             'canImport' => $request->user()?->role === UserRole::Operations,
             'phToday' => $phToday->toDateString(),
         ]);
-    }
-
-    /** @return Collection<int, string> */
-    private function processorNames(): Collection
-    {
-        return CstProcessorMetric::query()
-            ->distinct()
-            ->orderBy('processor_name')
-            ->pluck('processor_name')
-            ->merge(User::query()
-                ->where('role', UserRole::Processor->value)
-                ->where('is_active', true)
-                ->orderBy('name')
-                ->pluck('name'))
-            ->filter()
-            ->map(fn (string $name): string => $this->canonicalProcessorName($name))
-            ->unique()
-            ->sort()
-            ->values();
-    }
-
-    private function canonicalProcessorName(string $name): string
-    {
-        $normalized = Str::of($name)->lower()->replaceMatches('/[^a-z0-9]+/', ' ')->squish()->value();
-
-        return self::PROCESSOR_ALIASES[$normalized] ?? trim($name);
     }
 
     private function dateOrDefault(string $date, CarbonImmutable $default): CarbonImmutable

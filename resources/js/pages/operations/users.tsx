@@ -17,6 +17,8 @@ type ManagedUser = {
     n_name: string | null;
     email: string;
     role: string;
+    batch: number | null;
+    tracks_production: boolean;
     is_active: boolean;
     avatar: string | null;
     created_at: string;
@@ -72,6 +74,7 @@ export default function Users({ users, roles }: UsersProps) {
         password: '',
         password_confirmation: '',
         role: '',
+        batch: '',
         avatar: null as File | null,
     });
 
@@ -156,6 +159,7 @@ export default function Users({ users, roles }: UsersProps) {
             password: '',
             password_confirmation: '',
             role: '',
+            batch: '',
             avatar: null,
         });
         setShowCreate(true);
@@ -172,6 +176,7 @@ export default function Users({ users, roles }: UsersProps) {
             password: '',
             password_confirmation: '',
             role: user.role,
+            batch: user.batch ? String(user.batch) : '',
             avatar: null,
         });
         setShowCreate(true);
@@ -499,7 +504,13 @@ export default function Users({ users, roles }: UsersProps) {
                                 </div>
                                 <div className="grid gap-2">
                                     <Label htmlFor="user-role">Permission / role</Label>
-                                    <Select value={form.data.role} onValueChange={(value) => form.setData('role', value)}>
+                                    <Select
+                                        value={form.data.role}
+                                        onValueChange={(value) => {
+                                            form.setData('role', value);
+                                            if (value !== 'processor') form.setData('batch', '');
+                                        }}
+                                    >
                                         <SelectTrigger
                                             id="user-role"
                                             className="h-12 rounded-xl border-[#decba9] bg-white text-[#342615] focus:ring-[#d78b13] data-[placeholder]:text-[#9a8669]"
@@ -524,6 +535,35 @@ export default function Users({ users, roles }: UsersProps) {
                                     </p>
                                     <InputError message={form.errors.role} />
                                 </div>
+                                {form.data.role === 'processor' && (
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="user-batch">Production batch</Label>
+                                        <Select value={form.data.batch} onValueChange={(value) => form.setData('batch', value)}>
+                                            <SelectTrigger
+                                                id="user-batch"
+                                                className="h-12 rounded-xl border-[#decba9] bg-white text-[#342615] focus:ring-[#d78b13] data-[placeholder]:text-[#9a8669]"
+                                            >
+                                                <UsersRound className="mr-2 size-4 text-[#a96300]" />
+                                                <SelectValue placeholder="Select Batch 1, 2, or 3" />
+                                            </SelectTrigger>
+                                            <SelectContent className="border-[#e3c78f] bg-[#fffdf8] text-[#342615] shadow-[0_12px_30px_rgba(88,57,18,0.16)]">
+                                                {[1, 2, 3].map((batch) => (
+                                                    <SelectItem
+                                                        key={batch}
+                                                        value={String(batch)}
+                                                        className="cursor-pointer text-[#342615] focus:bg-[#fff0c9] focus:text-[#342615] data-[state=checked]:bg-[#ffe3a0] data-[state=checked]:font-bold data-[state=checked]:text-[#5b3900]"
+                                                    >
+                                                        Batch {batch}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <p className="rounded-lg bg-[#fff5dc] px-3 py-2 text-xs leading-5 text-[#80602b]">
+                                            The full name and N-name will be matched automatically in Reports and Queue Monitor spreadsheets.
+                                        </p>
+                                        <InputError message={form.errors.batch} />
+                                    </div>
+                                )}
                                 <DialogFooter className="border-t border-[#efdfc8] pt-5">
                                     <Button
                                         type="button"
@@ -609,6 +649,7 @@ export default function Users({ users, roles }: UsersProps) {
                                     <p className="truncate text-sm font-semibold text-[#4a3821]">{user.email}</p>
                                     <p className="mt-1 text-xs font-bold tracking-wide text-[#9a6a1a] uppercase">
                                         {roles.find((role) => role.value === user.role)?.label ?? user.role}
+                                        {user.tracks_production && user.batch ? ` · Processes reports · Batch ${user.batch}` : ''}
                                     </p>
                                 </div>
                                 <div className="flex flex-wrap items-center justify-between gap-2 md:justify-end">

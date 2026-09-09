@@ -12,6 +12,7 @@ import {
     Database,
     Download,
     FileSpreadsheet,
+    History,
     Layers3,
     Moon,
     PackageCheck,
@@ -19,7 +20,6 @@ import {
     Upload,
 } from 'lucide-react';
 import { DragEvent, useEffect, useMemo, useState } from 'react';
-import * as SheetJS from 'xlsx';
 import type { WorkSheet } from 'xlsx-js-style';
 
 type ReportType = 'midday' | 'endOfDay';
@@ -37,41 +37,26 @@ type ReportEntry = {
     assembled_at: string | null;
 };
 type ReportRow = { name: string; nickname: string; batch: number; generalExtensions: number; fourPoint: number };
-type ReportsProps = { reportEntries: ReportEntry[]; latestReportDate?: string | null };
+type ProcessorDefinition = Omit<ReportRow, 'generalExtensions' | 'fourPoint'> & { aliases: string[] };
+type ReportsProps = {
+    reportEntries: ReportEntry[];
+    processorRoster: ProcessorDefinition[];
+    latestReportDate?: string | null;
+    historyVisible: boolean;
+    historyEntries: ReportEntry[];
+};
 type ImportEntry = { source: Source; project_id: string; insured_by: string; inspection_type: string; assembled_by: string; assembled_at: string };
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Operations dashboard', href: '/dashboard' },
     { title: 'Reports', href: '/operations/reports' },
 ];
-const processorRoster: Omit<ReportRow, 'generalExtensions' | 'fourPoint'>[] = [
-    { name: 'Chrismer Flores', nickname: 'Chrismer', batch: 3 },
-    { name: 'Denn Charles Zafe', nickname: 'Denn', batch: 3 },
-    { name: 'Ivan Mendoza', nickname: 'Ivan', batch: 3 },
-    { name: 'Jerica Matic', nickname: 'Jerica', batch: 3 },
-    { name: 'Kristine Jewel Espiritu', nickname: 'Kristine', batch: 3 },
-    { name: 'Mac Evens T. Payongayong', nickname: 'Mac', batch: 3 },
-    { name: 'Nikko Adrian Dungca', nickname: 'Nikko', batch: 3 },
-    { name: 'Rainier Sta Ana', nickname: 'Rainier', batch: 3 },
-    { name: 'Tracy John Josafat', nickname: 'Tracy', batch: 3 },
-    { name: 'Allan Layug', nickname: 'Allan', batch: 2 },
-    { name: 'Arianne Joy Lopez', nickname: 'Arianne', batch: 2 },
-    { name: 'Emma Alegre', nickname: 'Emma', batch: 2 },
-    { name: 'Marie Anthonette Moog', nickname: 'Tonette', batch: 2 },
-    { name: 'Mc Oliver Noble', nickname: 'Oliver', batch: 2 },
-    { name: 'Rheven Violet Aladin', nickname: 'Violet', batch: 2 },
-    { name: 'Wengmir A. Africa', nickname: 'Wengmir', batch: 2 },
-    { name: 'Christer John C. Gozon', nickname: 'Chris', batch: 1 },
-    { name: 'Lourdes M. Completado', nickname: 'Lourdes', batch: 1 },
-    { name: 'Elacio M. Santos Jr.', nickname: 'Elacio', batch: 1 },
-    { name: 'Jhun Cervantes', nickname: 'Jhun', batch: 1 },
-    { name: 'Reginald King Palo', nickname: 'King', batch: 1 },
-];
 const requiredColumns = ['Project ID', 'Insured by', 'Inspection Type', 'First Assembled by', 'First Assembled Time'];
 const maximumImportRows = 10_000;
 const dateKey = (value: string) => value.slice(0, 10);
 
 async function rowsFromWorkbook(file: File, source: Source): Promise<ImportEntry[]> {
+    const SheetJS = await import('xlsx');
     const workbook = await readSpreadsheet(file, ['xlsx'], maximumImportRows, { cellDates: false });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     if (!sheet) throw new Error(`${file.name} does not contain a worksheet.`);
@@ -90,7 +75,7 @@ async function rowsFromWorkbook(file: File, source: Source): Promise<ImportEntry
     }));
 }
 
-export default function Reports({ reportEntries, latestReportDate }: ReportsProps) {
+export default function Reports({ reportEntries, processorRoster, latestReportDate, historyVisible, historyEntries }: ReportsProps) {
     const page = usePage<{ flash?: { importSummary?: { saved: number; ignored: number } } }>();
     const { flash } = page.props;
     const initialParameters = new URLSearchParams(page.url.split('?')[1] ?? '');
@@ -154,7 +139,7 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
                 fourPoint: entries.filter((entry) => entry.report_category === 'four_point').length,
             };
         });
-    }, [hasReportData, selectedReportEntries]);
+    }, [hasReportData, processorRoster, selectedReportEntries]);
     const rows = useMemo(() => (batch === 'overall' ? allRows : allRows.filter((row) => row.batch === Number(batch.at(-1)))), [allRows, batch]);
     const totals = rows.reduce(
         (total, row) => ({ generalExtensions: total.generalExtensions + row.generalExtensions, fourPoint: total.fourPoint + row.fourPoint }),
@@ -343,6 +328,15 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
         setUploadError(null);
     }
 
+    function toggleHistory() {
+        router.get('/operations/reports', historyVisible ? {} : { history: 1 }, {
+            only: ['historyEntries', 'historyVisible'],
+            preserveScroll: true,
+            preserveState: true,
+            replace: true,
+        });
+    }
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Reports" />
@@ -432,12 +426,21 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
                         <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#342615]">Daily reports</h1>
                         <p className="mt-2 text-sm text-[#776a57]">Review batch production or import the latest Active and Closed workbooks.</p>
                     </div>
-                    <span
-                        className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${hasReportData ? 'border-[#b9dfbd] bg-[#edfaeb] text-[#28703c]' : 'border-[#eed8a9] bg-[#fff5dc] text-[#936000]'}`}
-                    >
-                        <span className={`size-2 rounded-full ${hasReportData ? 'bg-[#36934b]' : 'bg-[#e29a17]'}`} />
-                        {hasReportData ? 'Database report data' : 'No saved report data'}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-3">
+                        <span
+                            className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${hasReportData ? 'border-[#b9dfbd] bg-[#edfaeb] text-[#28703c]' : 'border-[#eed8a9] bg-[#fff5dc] text-[#936000]'}`}
+                        >
+                            <span className={`size-2 rounded-full ${hasReportData ? 'bg-[#36934b]' : 'bg-[#e29a17]'}`} />
+                            {hasReportData ? 'Database report data' : 'No saved report data'}
+                        </span>
+                        <Button
+                            type="button"
+                            onClick={toggleHistory}
+                            className={`h-10 gap-2 border font-bold ${historyVisible ? 'border-[#4a351d] bg-[#4a351d] text-white hover:bg-[#2f2112]' : 'border-[#d8bd8c] bg-white text-[#75552d] hover:bg-[#fff4dc]'}`}
+                        >
+                            <History className="size-4" /> {historyVisible ? 'Hide history' : 'Show history'}
+                        </Button>
+                    </div>
                 </section>
                 {flash?.importSummary && (
                     <div className="flex items-start gap-3 rounded-2xl border border-[#b9dfbd] bg-[#edfaeb] px-5 py-4 text-sm text-[#286a39]">
@@ -571,7 +574,8 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
                             <h2 className="mt-3 text-xl font-bold">Focused reporting, ready for review.</h2>
                             <ul className="mt-5 grid gap-4 text-sm leading-6 text-[#f8e9c7]">
                                 <li>
-                                    <strong className="text-white">21 approved processors</strong> are assigned automatically to Batch 1, 2, or 3.
+                                    <strong className="text-white">{processorRoster.length} active processors</strong> are assigned automatically to
+                                    Batch 1, 2, or 3.
                                 </li>
                                 <li>
                                     Only <strong className="text-white">Exterior</strong> and <strong className="text-white">4-Point</strong>{' '}
@@ -749,6 +753,58 @@ export default function Reports({ reportEntries, latestReportDate }: ReportsProp
                             )}
                         </section>
                     </>
+                )}
+                {historyVisible && (
+                    <section className="overflow-hidden rounded-2xl border border-[#d8bd8c] bg-[#fffdf8] shadow-[0_8px_30px_rgb(88,57,18,0.08)]">
+                        <div className="flex flex-col gap-2 border-b border-[#eadbc6] bg-[#fff5dc] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                            <div>
+                                <p className="text-xs font-bold tracking-[0.16em] text-[#a96300] uppercase">Historical records</p>
+                                <h2 className="mt-1 font-extrabold text-[#342615]">Former processor report history</h2>
+                            </div>
+                            <span className="w-fit rounded-full bg-[#4a351d] px-3 py-1.5 text-xs font-bold text-[#ffd567]">
+                                {historyEntries.length} record{historyEntries.length === 1 ? '' : 's'}
+                            </span>
+                        </div>
+                        {historyEntries.length > 0 ? (
+                            <div className="max-h-[32rem] overflow-auto">
+                                <table className="w-full min-w-[850px] text-left text-sm">
+                                    <thead className="sticky top-0 bg-[#3b2915] text-xs tracking-wide text-[#fff8e7] uppercase">
+                                        <tr>
+                                            <th className="px-5 py-4">Date</th>
+                                            <th className="px-5 py-4">Processor</th>
+                                            <th className="px-5 py-4">Batch</th>
+                                            <th className="px-5 py-4">Source</th>
+                                            <th className="px-5 py-4">Inspection type</th>
+                                            <th className="px-5 py-4">Project ID</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-[#f1e7d8]">
+                                        {historyEntries.map((entry, index) => (
+                                            <tr
+                                                key={`${entry.report_date}-${entry.processor_name}-${entry.project_id}-${entry.source}-${index}`}
+                                                className="odd:bg-[#fffdf8] even:bg-[#fff8e8]"
+                                            >
+                                                <td className="px-5 py-4 text-[#5f4b32]">{formatDate(dateKey(entry.report_date))}</td>
+                                                <td className="px-5 py-4 font-bold text-[#342615]">{entry.processor_name}</td>
+                                                <td className="px-5 py-4 text-[#806f59]">Batch {entry.batch}</td>
+                                                <td className="px-5 py-4">
+                                                    <span className="rounded-full bg-[#fff0c9] px-2.5 py-1 text-xs font-bold text-[#8b5b11] uppercase">
+                                                        {entry.source}
+                                                    </span>
+                                                </td>
+                                                <td className="px-5 py-4 text-[#5f4b32]">{entry.inspection_type}</td>
+                                                <td className="px-5 py-4 font-semibold text-[#5f4b32]">{entry.project_id}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <div className="grid min-h-40 place-items-center px-6 py-10 text-center text-sm text-[#806f59]">
+                                No former processor report history is available.
+                            </div>
+                        )}
+                    </section>
                 )}
             </div>
         </AppLayout>

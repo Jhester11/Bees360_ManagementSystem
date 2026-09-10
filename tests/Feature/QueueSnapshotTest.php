@@ -156,6 +156,33 @@ test('queue monitor matches new processor accounts and excludes reviewers', func
         ->missing('savedSnapshots.0.processorRows.1'));
 });
 
+test('queue monitor matches Dhes and Elacio spreadsheet names', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-10 11:00:00', 'Asia/Manila'));
+    $user = User::factory()->create(['role' => UserRole::Operations]);
+    User::factory()->create(['name' => 'Lourdes M. Completado', 'n_name' => 'Dhes', 'role' => UserRole::Processor, 'batch' => 1]);
+    User::factory()->create(['name' => 'Elacio M. Santos Jr.', 'n_name' => 'Elacio', 'role' => UserRole::Processor, 'batch' => 1]);
+
+    $this->actingAs($user)->post('/operations/queue-monitor', [
+        'report_date' => '2026-09-10',
+        'checkpoint' => '11am',
+        'file_name' => 'monitor.xlsx',
+        'total_rows' => 5,
+        'entries' => [
+            ['name' => 'Desh Completado', 'batch' => 1, 'general_exterior' => 2, 'four_point' => 1, 'other' => 0, 'total' => 3],
+            ['name' => 'Don Santos', 'batch' => 1, 'general_exterior' => 1, 'four_point' => 1, 'other' => 0, 'total' => 2],
+        ],
+    ])->assertRedirect(route('operations.queue-monitor'));
+
+    $this->assertDatabaseHas('queue_processor_entries', ['processor_name' => 'Lourdes M. Completado', 'total' => 3]);
+    $this->assertDatabaseHas('queue_processor_entries', ['processor_name' => 'Elacio M. Santos Jr.', 'total' => 2]);
+
+    $this->actingAs($user)->get(route('operations.queue-monitor'))->assertInertia(fn (Assert $page) => $page
+        ->where('processorRoster.0.name', 'Elacio M. Santos Jr.')
+        ->where('processorRoster.0.aliases', fn ($aliases) => collect($aliases)->contains('don santos'))
+        ->where('processorRoster.1.name', 'Lourdes M. Completado')
+        ->where('processorRoster.1.aliases', fn ($aliases) => collect($aliases)->contains('dhes')));
+});
+
 test('queue history is returned only when it is requested', function () {
     $user = User::factory()->create(['role' => UserRole::Operations]);
     $snapshot = QueueSnapshot::query()->create([

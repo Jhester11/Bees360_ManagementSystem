@@ -404,9 +404,9 @@ export function ReportingReminderBell() {
             <DropdownMenuContent
                 align="end"
                 sideOffset={10}
-                className="w-[calc(100vw-2rem)] overflow-visible rounded-2xl border-[#e6d1ae] bg-[#fffdf8] p-0 shadow-[0_20px_60px_rgba(74,53,29,0.22)] sm:w-[410px]"
+                className="flex max-h-[calc(100dvh-5rem)] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border-[#e6d1ae] bg-[#fffdf8] p-0 shadow-[0_20px_60px_rgba(74,53,29,0.22)] sm:w-[410px]"
             >
-                <div className="bg-[#4a351d] px-5 py-4 text-[#fff8e7]">
+                <div className="shrink-0 bg-[#4a351d] px-5 py-4 text-[#fff8e7]">
                     <div className="flex items-start justify-between gap-4">
                         <div>
                             <DropdownMenuLabel className="p-0 text-base font-black">Operations notifications</DropdownMenuLabel>
@@ -416,7 +416,7 @@ export function ReportingReminderBell() {
                             <button
                                 type="button"
                                 onClick={markEverythingAsRead}
-                                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#80613c] px-2.5 py-1.5 text-[11px] font-bold text-[#ffe7ad] transition hover:bg-[#604522]"
+                                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#f0c96c] bg-[#fff3cf] px-2.5 py-1.5 text-[11px] font-bold text-[#633b00] shadow-sm transition hover:border-[#ffc83d] hover:bg-[#ffe39a] hover:text-[#422800]"
                             >
                                 <CheckCheck className="size-3.5" /> Mark all read
                             </button>
@@ -424,171 +424,175 @@ export function ReportingReminderBell() {
                     </div>
                 </div>
 
-                {notifications.length > 0 && (
-                    <div className="border-b border-[#eadfcf] bg-[#fffaf1] px-3 py-3">
-                        <div className="flex items-center justify-between px-1 pb-2">
-                            <p className="text-[10px] font-black tracking-[0.16em] text-[#9b6210] uppercase">Announcements & achievements</p>
-                            <span className="rounded-full bg-[#4a351d] px-2 py-0.5 text-[10px] font-black text-white">
-                                {notifications.length} new
-                            </span>
+                <div className="min-h-0 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
+                    {notifications.length > 0 && (
+                        <div className="border-b border-[#eadfcf] bg-[#fffaf1] px-3 py-3">
+                            <div className="flex items-center justify-between px-1 pb-2">
+                                <p className="text-[10px] font-black tracking-[0.16em] text-[#9b6210] uppercase">Announcements & achievements</p>
+                                <span className="rounded-full bg-[#4a351d] px-2 py-0.5 text-[10px] font-black text-white">
+                                    {notifications.length} new
+                                </span>
+                            </div>
+                            <div className="max-h-52 space-y-2 overflow-y-auto">
+                                {notifications.map((notification) => {
+                                    const Icon =
+                                        notification.type === 'latest_qa'
+                                            ? ShieldCheck
+                                            : notification.type === 'new_account'
+                                              ? Sparkles
+                                              : notification.type.includes('top') || notification.type.includes('highest')
+                                                ? Trophy
+                                                : Megaphone;
+
+                                    return (
+                                        <button
+                                            key={notification.id}
+                                            type="button"
+                                            onClick={() => openProcessorNotification(notification)}
+                                            className="flex w-full items-start gap-3 rounded-xl border border-[#ead8b7] bg-white p-3 text-left transition hover:border-[#d8aa4e] hover:bg-[#fff4dc]"
+                                        >
+                                            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#fff0c9] text-[#a96300]">
+                                                <Icon className="size-4.5" />
+                                            </span>
+                                            <span className="min-w-0 flex-1">
+                                                <span className="block text-xs font-black text-[#3d2c19]">{notification.title}</span>
+                                                <span className="mt-1 block text-[11px] leading-4 text-[#78684f]">{notification.message}</span>
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         </div>
-                        <div className="max-h-52 space-y-2 overflow-y-auto">
-                            {notifications.map((notification) => {
-                                const Icon =
-                                    notification.type === 'latest_qa'
-                                        ? ShieldCheck
-                                        : notification.type === 'new_account'
-                                          ? Sparkles
-                                          : notification.type.includes('top') || notification.type.includes('highest')
-                                            ? Trophy
-                                            : Megaphone;
+                    )}
+
+                    <div className="grid gap-3 border-b border-[#eadfcf] bg-white px-4 py-4">
+                        <BeesMultiDateCalendar
+                            id="reporting-notification-dates"
+                            initialDate={clock.dateKey}
+                            isSelected={(date) => remindersEnabledFor(date, scheduleOverrides)}
+                            onToggle={toggleScheduleDate}
+                            onReset={resetSchedule}
+                        />
+                        <div className="flex items-center justify-between gap-3 rounded-xl bg-[#fff8e8] px-3 py-2.5">
+                            <div className="min-w-0">
+                                <p className="text-xs font-extrabold text-[#4a351d]">Multi-date weekday schedule</p>
+                                <p className="mt-0.5 text-[11px] leading-4 text-[#806f59]">
+                                    Select several dates before pressing Done. Weekdays start scheduled automatically.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={toggleRing}
+                                className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-extrabold transition ${
+                                    ringEnabled
+                                        ? 'border border-[#b96c00] bg-[#c97900] text-white hover:bg-[#a96000] hover:text-white'
+                                        : 'border border-[#d9c7a9] bg-white text-[#705b3d] hover:bg-[#fff0d1] hover:text-[#4a351d]'
+                                }`}
+                            >
+                                {ringEnabled ? <Volume2 className="size-4 text-[#f2cf72]" /> : <VolumeX className="size-4" />}
+                                Ring {ringEnabled ? 'on' : 'off'}
+                            </button>
+                        </div>
+                        <div className="grid gap-1.5">
+                            <p className="px-1 text-xs font-bold text-[#6d5735]">Notification sound</p>
+                            <div className="grid grid-cols-3 gap-1.5 rounded-xl bg-[#f7eddd] p-1.5">
+                                {reminderSounds.map((sound) => (
+                                    <button
+                                        key={sound.id}
+                                        type="button"
+                                        onClick={() => selectSound(sound.id)}
+                                        className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg px-2 py-2 text-[10px] font-extrabold transition ${
+                                            ringSound === sound.id
+                                                ? 'bg-[#c97900] text-white shadow-sm hover:bg-[#a96000] hover:text-white'
+                                                : 'bg-transparent text-[#725737] hover:bg-[#fff7e8] hover:text-[#4a351d]'
+                                        }`}
+                                    >
+                                        <Volume2 className={`size-3.5 ${ringSound === sound.id ? 'text-[#f2cf72]' : 'text-[#b96c00]'}`} />
+                                        <span>{sound.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                            <p className="px-1 text-[10px] text-[#8a7a62]">Select a sound to hear its preview.</p>
+                        </div>
+                    </div>
+
+                    {unreadReminders.length > 0 ? (
+                        <div className="max-h-[330px] overflow-y-auto p-2">
+                            {[...unreadReminders].reverse().map((reminder) => {
+                                const Icon = reminderIcon(reminder.kind);
 
                                 return (
-                                    <button
-                                        key={notification.id}
-                                        type="button"
-                                        onClick={() => openProcessorNotification(notification)}
-                                        className="flex w-full items-start gap-3 rounded-xl border border-[#ead8b7] bg-white p-3 text-left transition hover:border-[#d8aa4e] hover:bg-[#fff4dc]"
+                                    <div
+                                        key={reminder.id}
+                                        className="mb-1 flex items-center overflow-hidden rounded-xl border border-[#f0e2ca] bg-[#fff8e8] transition last:mb-0 hover:border-[#e2c58d]"
                                     >
-                                        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#fff0c9] text-[#a96300]">
-                                            <Icon className="size-4.5" />
-                                        </span>
-                                        <span className="min-w-0 flex-1">
-                                            <span className="block text-xs font-black text-[#3d2c19]">{notification.title}</span>
-                                            <span className="mt-1 block text-[11px] leading-4 text-[#78684f]">{notification.message}</span>
-                                        </span>
-                                    </button>
+                                        <Link
+                                            href={reminder.href}
+                                            prefetch
+                                            className="flex min-w-0 flex-1 items-start gap-3 px-3 py-3 outline-none hover:bg-[#fff4dc] focus-visible:bg-[#fff4dc]"
+                                        >
+                                            <span
+                                                className={`mt-0.5 grid size-10 shrink-0 place-items-center rounded-xl ${
+                                                    reminder.kind === 'queue'
+                                                        ? 'bg-[#e8f4e7] text-[#34743f]'
+                                                        : reminder.kind === 'platform'
+                                                          ? 'bg-[#fff0c9] text-[#a96300]'
+                                                          : 'bg-[#f8e5d9] text-[#a94d20]'
+                                                }`}
+                                            >
+                                                <Icon className="size-5" />
+                                            </span>
+                                            <span className="min-w-0 flex-1">
+                                                <span className="flex items-center justify-between gap-3">
+                                                    <span className="font-extrabold text-[#3d2c19]">{reminder.title}</span>
+                                                    <span className="size-2 shrink-0 rounded-full bg-[#c36f00]" />
+                                                </span>
+                                                <span className="mt-1 block text-xs leading-5 text-[#78684f]">{reminder.description}</span>
+                                                <span className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-bold text-[#a26000]">
+                                                    <Clock3 className="size-3" /> Due {reminder.timeLabel} PH
+                                                </span>
+                                            </span>
+                                        </Link>
+                                        <button
+                                            type="button"
+                                            onClick={() => markAsRead(reminder.id)}
+                                            title={`Mark ${reminder.title} as done`}
+                                            className="mr-2 inline-flex shrink-0 flex-col items-center gap-1 rounded-lg border border-[#b9dfbd] bg-[#edfaeb] px-2 py-2 text-[10px] font-extrabold text-[#28703c] transition hover:bg-[#d9f1d9]"
+                                        >
+                                            <CheckCheck className="size-4" />
+                                            Done
+                                        </button>
+                                    </div>
                                 );
                             })}
                         </div>
-                    </div>
-                )}
-
-                <div className="grid gap-3 border-b border-[#eadfcf] bg-white px-4 py-4">
-                    <BeesMultiDateCalendar
-                        id="reporting-notification-dates"
-                        initialDate={clock.dateKey}
-                        isSelected={(date) => remindersEnabledFor(date, scheduleOverrides)}
-                        onToggle={toggleScheduleDate}
-                        onReset={resetSchedule}
-                    />
-                    <div className="flex items-center justify-between gap-3 rounded-xl bg-[#fff8e8] px-3 py-2.5">
-                        <div className="min-w-0">
-                            <p className="text-xs font-extrabold text-[#4a351d]">Multi-date weekday schedule</p>
-                            <p className="mt-0.5 text-[11px] leading-4 text-[#806f59]">
-                                Select several dates before pressing Done. Weekdays start scheduled automatically.
+                    ) : (
+                        <div className="flex flex-col items-center px-6 py-9 text-center">
+                            <div className="grid size-12 place-items-center rounded-2xl bg-[#fff1cc] text-[#a96300]">
+                                <Bell className="size-6" />
+                            </div>
+                            <p className="mt-3 font-extrabold text-[#3d2c19]">
+                                {dueReminders.length > 0 ? 'All due reminders are done' : 'No reminders are due yet'}
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-[#806f59]">
+                                {!todayIsScheduled
+                                    ? 'Reporting alerts are paused for today. Enable this date in the notification calendar if the team is working.'
+                                    : dueReminders.length > 0
+                                      ? nextReminder
+                                          ? `Completed reminders are removed. Next: ${nextReminder.title} at ${nextReminder.timeLabel} PH Time.`
+                                          : 'Completed reminders are removed for today. There are no more scheduled checkpoints.'
+                                      : nextReminder
+                                        ? `Next: ${nextReminder.title} at ${nextReminder.timeLabel} PH Time.`
+                                        : 'All reporting checkpoints are complete for today.'}
                             </p>
                         </div>
-                        <button
-                            type="button"
-                            onClick={toggleRing}
-                            className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-extrabold transition ${
-                                ringEnabled
-                                    ? 'bg-[#4a351d] text-white hover:bg-[#2f2112]'
-                                    : 'border border-[#d9c7a9] bg-white text-[#705b3d] hover:bg-[#fff0d1]'
-                            }`}
-                        >
-                            {ringEnabled ? <Volume2 className="size-4 text-[#f2cf72]" /> : <VolumeX className="size-4" />}
-                            Ring {ringEnabled ? 'on' : 'off'}
-                        </button>
-                    </div>
-                    <div className="grid gap-1.5">
-                        <p className="px-1 text-xs font-bold text-[#6d5735]">Notification sound</p>
-                        <div className="grid grid-cols-3 gap-1.5 rounded-xl border border-[#ead8b7] bg-[#fffaf1] p-1.5">
-                            {reminderSounds.map((sound) => (
-                                <button
-                                    key={sound.id}
-                                    type="button"
-                                    onClick={() => selectSound(sound.id)}
-                                    className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg px-2 py-2 text-[10px] font-extrabold transition ${
-                                        ringSound === sound.id ? 'bg-[#4a351d] text-white shadow-sm' : 'bg-white text-[#725737] hover:bg-[#fff0cb]'
-                                    }`}
-                                >
-                                    <Volume2 className={`size-3.5 ${ringSound === sound.id ? 'text-[#f2cf72]' : 'text-[#b96c00]'}`} />
-                                    <span>{sound.label}</span>
-                                </button>
-                            ))}
-                        </div>
-                        <p className="px-1 text-[10px] text-[#8a7a62]">Select a sound to hear its preview.</p>
-                    </div>
-                </div>
+                    )}
 
-                {unreadReminders.length > 0 ? (
-                    <div className="max-h-[330px] overflow-y-auto p-2">
-                        {[...unreadReminders].reverse().map((reminder) => {
-                            const Icon = reminderIcon(reminder.kind);
-
-                            return (
-                                <div
-                                    key={reminder.id}
-                                    className="mb-1 flex items-center overflow-hidden rounded-xl border border-[#f0e2ca] bg-[#fff8e8] transition last:mb-0 hover:border-[#e2c58d]"
-                                >
-                                    <Link
-                                        href={reminder.href}
-                                        prefetch
-                                        className="flex min-w-0 flex-1 items-start gap-3 px-3 py-3 outline-none hover:bg-[#fff4dc] focus-visible:bg-[#fff4dc]"
-                                    >
-                                        <span
-                                            className={`mt-0.5 grid size-10 shrink-0 place-items-center rounded-xl ${
-                                                reminder.kind === 'queue'
-                                                    ? 'bg-[#e8f4e7] text-[#34743f]'
-                                                    : reminder.kind === 'platform'
-                                                      ? 'bg-[#fff0c9] text-[#a96300]'
-                                                      : 'bg-[#f8e5d9] text-[#a94d20]'
-                                            }`}
-                                        >
-                                            <Icon className="size-5" />
-                                        </span>
-                                        <span className="min-w-0 flex-1">
-                                            <span className="flex items-center justify-between gap-3">
-                                                <span className="font-extrabold text-[#3d2c19]">{reminder.title}</span>
-                                                <span className="size-2 shrink-0 rounded-full bg-[#c36f00]" />
-                                            </span>
-                                            <span className="mt-1 block text-xs leading-5 text-[#78684f]">{reminder.description}</span>
-                                            <span className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-bold text-[#a26000]">
-                                                <Clock3 className="size-3" /> Due {reminder.timeLabel} PH
-                                            </span>
-                                        </span>
-                                    </Link>
-                                    <button
-                                        type="button"
-                                        onClick={() => markAsRead(reminder.id)}
-                                        title={`Mark ${reminder.title} as done`}
-                                        className="mr-2 inline-flex shrink-0 flex-col items-center gap-1 rounded-lg border border-[#b9dfbd] bg-[#edfaeb] px-2 py-2 text-[10px] font-extrabold text-[#28703c] transition hover:bg-[#d9f1d9]"
-                                    >
-                                        <CheckCheck className="size-4" />
-                                        Done
-                                    </button>
-                                </div>
-                            );
-                        })}
+                    <DropdownMenuSeparator className="m-0 bg-[#eadfcf]" />
+                    <div className="flex items-center justify-between gap-3 bg-white px-4 py-3 text-[11px] text-[#806f59]">
+                        <span>Announcements, reports, Platform Pulls, and Queue Monitor.</span>
+                        <span className="font-bold text-[#94600b]">{combinedUnreadCount} unread</span>
                     </div>
-                ) : (
-                    <div className="flex flex-col items-center px-6 py-9 text-center">
-                        <div className="grid size-12 place-items-center rounded-2xl bg-[#fff1cc] text-[#a96300]">
-                            <Bell className="size-6" />
-                        </div>
-                        <p className="mt-3 font-extrabold text-[#3d2c19]">
-                            {dueReminders.length > 0 ? 'All due reminders are done' : 'No reminders are due yet'}
-                        </p>
-                        <p className="mt-1 text-xs leading-5 text-[#806f59]">
-                            {!todayIsScheduled
-                                ? 'Reporting alerts are paused for today. Enable this date in the notification calendar if the team is working.'
-                                : dueReminders.length > 0
-                                  ? nextReminder
-                                      ? `Completed reminders are removed. Next: ${nextReminder.title} at ${nextReminder.timeLabel} PH Time.`
-                                      : 'Completed reminders are removed for today. There are no more scheduled checkpoints.'
-                                  : nextReminder
-                                    ? `Next: ${nextReminder.title} at ${nextReminder.timeLabel} PH Time.`
-                                    : 'All reporting checkpoints are complete for today.'}
-                        </p>
-                    </div>
-                )}
-
-                <DropdownMenuSeparator className="m-0 bg-[#eadfcf]" />
-                <div className="flex items-center justify-between gap-3 bg-white px-4 py-3 text-[11px] text-[#806f59]">
-                    <span>Announcements, reports, Platform Pulls, and Queue Monitor.</span>
-                    <span className="font-bold text-[#94600b]">{combinedUnreadCount} unread</span>
                 </div>
             </DropdownMenuContent>
         </DropdownMenu>

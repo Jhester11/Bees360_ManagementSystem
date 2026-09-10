@@ -270,7 +270,7 @@ export default function QaScores({ rows, processorNames, filters, summary, impor
                                 href={selectedRow.reportUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex h-10 items-center gap-2 self-start rounded-xl bg-[#4a351d] px-4 text-sm font-bold text-white hover:bg-[#342615]"
+                                className="inline-flex h-10 items-center gap-2 self-start rounded-xl border border-[#b96c00] bg-[#c97900] px-4 text-sm font-bold text-white shadow-sm hover:border-[#945600] hover:bg-[#a96000] hover:text-white"
                             >
                                 Open QA report <ExternalLink className="size-4" />
                             </a>
@@ -446,7 +446,11 @@ export default function QaScores({ rows, processorNames, filters, summary, impor
                                 onValueChange={setProcessor}
                             />
                         </label>
-                        <Button onClick={applyFilters} disabled={applying} className="h-12 bg-[#4a351d] px-5 font-bold text-white hover:bg-[#342615]">
+                        <Button
+                            onClick={applyFilters}
+                            disabled={applying}
+                            className="h-12 bg-[#c97900] px-5 font-bold text-white hover:bg-[#a96000] hover:text-white"
+                        >
                             <Search className="size-4" />
                             {applying ? 'Loading…' : 'Apply filters'}
                         </Button>

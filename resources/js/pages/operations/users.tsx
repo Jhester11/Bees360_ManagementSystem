@@ -293,8 +293,8 @@ export default function Users({ users, roles }: UsersProps) {
                                 disabled={statusProcessing}
                                 className={
                                     statusTarget?.is_active
-                                        ? 'bg-[#a33b2d] text-white hover:bg-[#812d22]'
-                                        : 'bg-[#39844a] text-white hover:bg-[#2b6939]'
+                                        ? 'bg-[#a33b2d] text-white hover:bg-[#812d22] hover:text-white'
+                                        : 'bg-[#39844a] text-white hover:bg-[#2b6939] hover:text-white'
                                 }
                             >
                                 {statusProcessing && <LoaderCircle className="size-4 animate-spin" />}

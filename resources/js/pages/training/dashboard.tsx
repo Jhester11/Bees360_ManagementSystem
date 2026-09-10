@@ -24,7 +24,11 @@ export default function Dashboard({ stats }: { stats: Record<string, number> }) 
                     ['Assignments', '/training/assignments'],
                     ['Reports', '/training/reports'],
                 ].map(([x, u]) => (
-                    <Link href={u} className="rounded-2xl bg-[#4b2b0d] p-6 text-xl font-bold text-white transition hover:bg-[#6a3d0d]" key={x}>
+                    <Link
+                        href={u}
+                        className="rounded-2xl border border-[#dca33c] bg-[#fff5d8] p-6 text-xl font-bold text-[#5b3700] shadow-sm transition hover:border-[#b96c00] hover:bg-[#ffe6a3] hover:text-[#3f2600]"
+                        key={x}
+                    >
                         {x} →
                     </Link>
                 ))}

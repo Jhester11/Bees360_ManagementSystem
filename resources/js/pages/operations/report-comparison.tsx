@@ -302,7 +302,7 @@ export default function ReportComparison({
                             type="button"
                             disabled={!appliedProcessor}
                             onClick={exportComparison}
-                            className="h-10 gap-2 rounded-xl bg-[#4a351d] px-4 font-bold text-white hover:bg-[#2f2112] disabled:bg-[#c7bba9]"
+                            className="h-10 gap-2 rounded-xl bg-[#c97900] px-4 font-bold text-white hover:bg-[#a96000] hover:text-white"
                         >
                             <Download className="size-4" />
                             Export Excel

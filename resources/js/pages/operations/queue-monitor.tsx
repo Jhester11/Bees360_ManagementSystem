@@ -754,7 +754,7 @@ export default function QueueMonitor({
                                         ? 'Export all saved checkpoints for this PH reporting day.'
                                         : 'Save at least one checkpoint before exporting.'
                                 }
-                                className="bg-[#3a2817] font-bold text-[#ffd15a] hover:bg-[#563c22] disabled:cursor-not-allowed disabled:opacity-45"
+                                className="border border-[#b96c00] bg-[#c97900] font-bold text-white hover:border-[#945600] hover:bg-[#a96000] hover:text-white disabled:cursor-not-allowed"
                             >
                                 <Download className="size-4" /> Export Daily Excel
                             </Button>
@@ -1240,8 +1240,8 @@ function ProcessorBreakdown({ processors, baseline }: { processors: ProcessorQue
                                 onClick={() => setBatchFilter(value)}
                                 className={`rounded-lg border px-4 py-2 text-xs font-extrabold transition-colors focus-visible:ring-2 focus-visible:ring-[#c77a00] focus-visible:ring-offset-2 focus-visible:outline-none ${
                                     isActive
-                                        ? 'border-[#4a351d] bg-[#4a351d] text-white shadow-sm'
-                                        : 'border-[#dfc89f] bg-[#fffdf8] text-[#77542b] hover:border-[#c88a29] hover:bg-[#fff3d4]'
+                                        ? 'border-[#b96c00] bg-[#c97900] text-white shadow-sm hover:bg-[#a96000] hover:text-white'
+                                        : 'border-[#dfc89f] bg-[#fffdf8] text-[#77542b] hover:border-[#c88a29] hover:bg-[#fff3d4] hover:text-[#4a351d]'
                                 }`}
                             >
                                 {label}
@@ -1364,7 +1364,7 @@ function BatchBreakdown({
                     <button
                         type="button"
                         onClick={() => setShowBalancingTips(true)}
-                        className="inline-flex items-center gap-2 rounded-xl bg-[#3a2817] px-4 py-2.5 text-xs font-extrabold text-white shadow-sm transition hover:bg-[#5b3c1d] focus-visible:ring-2 focus-visible:ring-[#d78b16]/50 focus-visible:outline-none"
+                        className="inline-flex items-center gap-2 rounded-xl border border-[#b96c00] bg-[#c97900] px-4 py-2.5 text-xs font-extrabold text-white shadow-sm transition hover:border-[#945600] hover:bg-[#a96000] hover:text-white focus-visible:ring-2 focus-visible:ring-[#d78b16]/50 focus-visible:outline-none"
                     >
                         <Sparkles className="size-4 text-[#ffd15a]" />
                         Balance queue

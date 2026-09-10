@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 class ProcessorRosterSeeder extends Seeder
 {
     private const PROCESSORS = [
-        ['name' => 'Lourdes M. Completado', 'n_name' => 'Lourdes', 'batch' => 1],
+        ['name' => 'Lourdes M. Completado', 'n_name' => 'Dhes', 'batch' => 1],
         ['name' => 'Elacio M. Santos Jr.', 'n_name' => 'Elacio', 'batch' => 1],
         ['name' => 'Allan Layug', 'n_name' => 'Allan', 'batch' => 2],
         ['name' => 'Marie Anthonette Moog', 'n_name' => 'Marie', 'batch' => 2],
@@ -46,6 +46,7 @@ class ProcessorRosterSeeder extends Seeder
             if ($existing !== null) {
                 DB::table('users')->where('id', $existing->id)->update([
                     'name' => $processor['name'],
+                    'n_name' => $processor['n_name'],
                     'batch' => $processor['batch'],
                     'tracks_production' => true,
                     'updated_at' => $now,

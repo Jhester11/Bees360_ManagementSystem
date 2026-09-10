@@ -672,7 +672,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                 type="button"
                                 disabled={!qaFile || qaUploading}
                                 onClick={() => void uploadQa()}
-                                className="h-12 bg-[#147a51] px-8 font-bold text-white hover:bg-[#0d5e3d]"
+                                className="h-12 bg-[#147a51] px-8 font-bold text-white hover:bg-[#0d5e3d] hover:text-white"
                             >
                                 <UploadCloud className="size-4" />
                                 Upload QA scores
@@ -770,7 +770,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                             <Button
                                 type="button"
                                 onClick={() => setFeedbackScope(null)}
-                                className="h-11 bg-[#4d2f12] px-7 font-bold text-white hover:bg-[#34200d]"
+                                className="h-11 bg-[#c97900] px-7 font-bold text-white hover:bg-[#a96000] hover:text-white"
                             >
                                 Close feedback view
                             </Button>
@@ -788,12 +788,12 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                         <Button
                             type="button"
                             onClick={() => setQaOpen(true)}
-                            className="h-12 bg-[#147a51] px-4 font-bold text-white hover:bg-[#0d5e3d]"
+                            className="h-12 bg-[#147a51] px-4 font-bold text-white hover:bg-[#0d5e3d] hover:text-white"
                         >
                             <ShieldCheck className="size-4" />
                             Upload QA
                         </Button>
-                        <div className="inline-flex rounded-xl border border-[#e2c88f] bg-white p-1 shadow-sm">
+                        <div className="inline-flex gap-1 rounded-xl bg-[#f7eddd] p-1">
                             {(['ph', 'cst'] as Timezone[]).map((zone) => (
                                 <button
                                     key={zone}
@@ -935,18 +935,18 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                 </p>
                             </div>
                             <div className="flex flex-wrap items-center gap-2 self-start">
-                                <div className="inline-flex rounded-xl border border-[#dfc58f] bg-white p-1">
+                                <div className="inline-flex gap-1 rounded-xl bg-[#f7eddd] p-1">
                                     <button
                                         type="button"
                                         onClick={() => setIncentiveView('overall')}
-                                        className={`h-10 rounded-lg px-4 text-sm font-extrabold transition ${incentiveView === 'overall' ? 'bg-[#4d2f12] text-white' : 'text-[#765b35] hover:bg-[#fff2d2]'}`}
+                                        className={`h-10 rounded-lg px-4 text-sm font-extrabold transition ${incentiveView === 'overall' ? 'bg-[#c97900] text-white shadow-sm hover:bg-[#a96000] hover:text-white' : 'text-[#765b35] hover:bg-[#fff2d2] hover:text-[#4a351d]'}`}
                                     >
                                         Overall
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => setIncentiveView('tier3')}
-                                        className={`h-10 rounded-lg px-4 text-sm font-extrabold transition ${incentiveView === 'tier3' ? 'bg-[#d99000] text-white' : 'text-[#936000] hover:bg-[#fff2d2]'}`}
+                                        className={`h-10 rounded-lg px-4 text-sm font-extrabold transition ${incentiveView === 'tier3' ? 'bg-[#c97900] text-white shadow-sm hover:bg-[#a96000] hover:text-white' : 'text-[#936000] hover:bg-[#fff2d2] hover:text-[#4a351d]'}`}
                                     >
                                         $300 Earners
                                     </button>
@@ -1056,7 +1056,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                 </p>
                             </div>
                             <div className="flex flex-wrap items-end gap-2 self-start">
-                                <div className="inline-flex rounded-xl border border-[#bed8ca] bg-white p-1">
+                                <div className="inline-flex gap-1 rounded-xl bg-[#edf5ed] p-1">
                                     <button
                                         type="button"
                                         onClick={() => setQaRange('month')}
@@ -1078,7 +1078,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                     type="button"
                                     disabled={visibleQaHistory.length === 0}
                                     onClick={() => setFeedbackScope('all')}
-                                    className="h-11 bg-[#4d2f12] px-4 font-bold text-white hover:bg-[#34200d] disabled:bg-[#c9c0b5]"
+                                    className="h-11 bg-[#c97900] px-4 font-bold text-white hover:bg-[#a96000] hover:text-white"
                                 >
                                     <Eye className="size-4" />
                                     View all feedback

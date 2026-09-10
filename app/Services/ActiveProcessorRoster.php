@@ -15,8 +15,14 @@ class ActiveProcessorRoster
         'christer gozon' => 'Christer John C. Gozon',
         'christer john gozon' => 'Christer John C. Gozon',
         'denn zafe' => 'Denn Charles Zafe',
+        'desh' => 'Lourdes M. Completado',
         'desh completado' => 'Lourdes M. Completado',
+        'dhes' => 'Lourdes M. Completado',
+        'dhes completado' => 'Lourdes M. Completado',
+        'don' => 'Elacio M. Santos Jr.',
         'don santos' => 'Elacio M. Santos Jr.',
+        'elacio' => 'Elacio M. Santos Jr.',
+        'elacio santos' => 'Elacio M. Santos Jr.',
         'jhun lester cervantes' => 'Jhun Cervantes',
         'king palo' => 'Reginald King Palo',
         'kristine espiritu' => 'Kristine Jewel Espiritu',
@@ -96,7 +102,14 @@ class ActiveProcessorRoster
             'name' => $processor->name,
             'nickname' => $processor->n_name ?: Str::before($processor->name, ' '),
             'batch' => (int) $processor->batch,
-            'aliases' => array_values(array_filter([$processor->n_name])),
+            'aliases' => collect(self::LEGACY_ALIASES)
+                ->filter(fn (string $canonicalName): bool => $this->normalize($canonicalName) === $this->normalize($processor->name))
+                ->keys()
+                ->prepend($processor->n_name)
+                ->filter()
+                ->unique()
+                ->values()
+                ->all(),
         ])->values();
     }
 

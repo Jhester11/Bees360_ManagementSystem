@@ -175,7 +175,7 @@ export default function Profile({ mustVerifyEmail, status }: { mustVerifyEmail: 
                                     <KeyRound className="size-4" /> Change password
                                 </Link>
                             </Button>
-                            <Button disabled={processing} className="bg-[#4a2d10] text-white hover:bg-[#67401a]">
+                            <Button disabled={processing} className="bg-[#c97900] text-white hover:bg-[#a96000] hover:text-white">
                                 {processing ? 'Saving…' : 'Save profile'}
                             </Button>
                         </div>
@@ -199,7 +199,11 @@ export default function Profile({ mustVerifyEmail, status }: { mustVerifyEmail: 
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter className="sm:justify-center">
-                        <Button type="button" onClick={() => setShowSuccess(false)} className="min-w-32 bg-[#4a2d10] text-white hover:bg-[#67401a]">
+                        <Button
+                            type="button"
+                            onClick={() => setShowSuccess(false)}
+                            className="min-w-32 bg-[#c97900] text-white hover:bg-[#a96000] hover:text-white"
+                        >
                             Close
                         </Button>
                     </DialogFooter>

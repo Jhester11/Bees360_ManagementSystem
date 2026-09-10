@@ -62,9 +62,9 @@ export function ProcessorQaNotificationBell() {
             <DropdownMenuContent
                 align="end"
                 sideOffset={10}
-                className="w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border-[#e4c98f] bg-[#fffaf1] p-0 text-[#342615] shadow-[0_20px_60px_rgba(74,45,16,0.22)] sm:w-[410px]"
+                className="flex max-h-[calc(100dvh-5rem)] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border-[#e4c98f] bg-[#fffaf1] p-0 text-[#342615] shadow-[0_20px_60px_rgba(74,45,16,0.22)] sm:w-[410px]"
             >
-                <div className="relative overflow-hidden bg-[#4a2d10] px-5 py-4 text-white">
+                <div className="relative shrink-0 overflow-hidden bg-[#4a2d10] px-5 py-4 text-white">
                     <span className="absolute -top-8 -right-5 size-24 rounded-full bg-[#ffc83d]/18" />
                     <div className="relative flex items-start justify-between gap-4">
                         <div className="flex min-w-0 items-center gap-3">
@@ -89,7 +89,7 @@ export function ProcessorQaNotificationBell() {
                 </div>
                 <DropdownMenuSeparator className="m-0 bg-[#eadbc6]" />
                 {notifications.length ? (
-                    <div className="max-h-[430px] overflow-y-auto p-3">
+                    <div className="min-h-0 overflow-y-auto overscroll-contain p-3 [scrollbar-gutter:stable]">
                         {notifications.map((notification) => (
                             <button
                                 key={notification.id}

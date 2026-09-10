@@ -685,7 +685,7 @@ export function PlatformOnboarding() {
                                             type="button"
                                             size="sm"
                                             onClick={() => completeGuide(true)}
-                                            className="bg-[#16734b] text-white hover:bg-[#105d3c]"
+                                            className="bg-[#16734b] text-white hover:bg-[#105d3c] hover:text-white"
                                         >
                                             Finish tour <Check className="size-4" />
                                         </Button>

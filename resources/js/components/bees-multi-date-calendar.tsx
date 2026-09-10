@@ -127,7 +127,7 @@ export function BeesMultiDateCalendar({
                         <button
                             type="button"
                             onClick={() => setIsOpen(false)}
-                            className="rounded-lg bg-[#4a351d] px-3 py-1.5 text-xs font-extrabold text-white hover:bg-[#2f2112]"
+                            className="rounded-lg border border-[#b96c00] bg-[#c97900] px-3 py-1.5 text-xs font-extrabold text-white shadow-sm hover:border-[#945600] hover:bg-[#a96000] hover:text-white"
                         >
                             Done
                         </button>

@@ -436,7 +436,7 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
                         <Button
                             type="button"
                             onClick={toggleHistory}
-                            className={`h-10 gap-2 border font-bold ${historyVisible ? 'border-[#4a351d] bg-[#4a351d] text-white hover:bg-[#2f2112]' : 'border-[#d8bd8c] bg-white text-[#75552d] hover:bg-[#fff4dc]'}`}
+                            className={`h-10 gap-2 border font-bold ${historyVisible ? 'border-[#b96c00] bg-[#c97900] text-white hover:bg-[#a96000] hover:text-white' : 'border-[#d8bd8c] bg-white text-[#75552d] hover:bg-[#fff4dc] hover:text-[#4a351d]'}`}
                         >
                             <History className="size-4" /> {historyVisible ? 'Hide history' : 'Show history'}
                         </Button>
@@ -456,29 +456,32 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
                         </p>
                     </div>
                 )}
-                <div className="flex w-fit rounded-xl border border-[#e2d1b8] bg-[#fffdf8] p-1" role="tablist" aria-label="Reports area">
+                <div className="flex w-fit max-w-full flex-wrap gap-1 rounded-xl bg-[#f7eddd] p-1" role="tablist" aria-label="Reports area">
                     <Button
                         type="button"
+                        variant="ghost"
                         role="tab"
                         aria-selected={pageTab === 'reports'}
                         onClick={() => setPageTab('reports')}
-                        className={`h-10 gap-2 rounded-lg px-4 text-sm font-bold ${pageTab === 'reports' ? 'bg-[#b96c00] text-white hover:bg-[#925400]' : 'bg-transparent text-[#806f59] hover:bg-[#fff0d1]'}`}
+                        className={`h-10 gap-2 rounded-lg border-0 px-4 text-sm font-bold shadow-none ${pageTab === 'reports' ? 'bg-[#c97900] text-white hover:bg-[#a96000] hover:text-white' : 'bg-transparent text-[#806f59] hover:bg-[#fff7e8] hover:text-[#4a351d]'}`}
                     >
                         <PackageCheck className="size-4" /> Daily reports
                     </Button>
                     <Button
                         type="button"
+                        variant="ghost"
                         role="tab"
                         aria-selected={pageTab === 'import'}
                         onClick={() => setPageTab('import')}
-                        className={`h-10 gap-2 rounded-lg px-4 text-sm font-bold ${pageTab === 'import' ? 'bg-[#4a351d] text-white hover:bg-[#2f2112]' : 'bg-transparent text-[#806f59] hover:bg-[#fff0d1]'}`}
+                        className={`h-10 gap-2 rounded-lg border-0 px-4 text-sm font-bold shadow-none ${pageTab === 'import' ? 'bg-[#c97900] text-white hover:bg-[#a96000] hover:text-white' : 'bg-transparent text-[#806f59] hover:bg-[#fff7e8] hover:text-[#4a351d]'}`}
                     >
                         <Upload className="size-4" /> Import Excel
                     </Button>
                     <Button
                         asChild
                         type="button"
-                        className="h-10 gap-2 rounded-lg bg-transparent px-4 text-sm font-bold text-[#806f59] hover:bg-[#fff0d1]"
+                        variant="ghost"
+                        className="h-10 gap-2 rounded-lg border-0 bg-transparent px-4 text-sm font-bold text-[#806f59] shadow-none hover:bg-[#fff7e8] hover:text-[#4a351d]"
                     >
                         <Link href="/operations/reports/platform-pulls" prefetch>
                             <ChartNoAxesCombined className="size-4" /> Platform Pulls
@@ -591,18 +594,20 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
                             <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
                                 <div className="grid gap-1.5">
                                     <span className="px-1 text-xs font-bold text-[#6d5735]">Report type</span>
-                                    <div className="flex rounded-xl border border-[#e2d1b8] bg-[#fffaf1] p-1">
+                                    <div className="flex gap-1 rounded-xl bg-[#f7eddd] p-1">
                                         <Button
                                             type="button"
+                                            variant="ghost"
                                             onClick={() => setReportType('midday')}
-                                            className={`h-10 gap-2 rounded-lg px-4 text-sm font-bold ${reportType === 'midday' ? 'bg-[#b96c00] text-white hover:bg-[#925400]' : 'bg-transparent text-[#806f59] hover:bg-[#fff0d1]'}`}
+                                            className={`h-10 gap-2 rounded-lg border-0 px-4 text-sm font-bold shadow-none ${reportType === 'midday' ? 'bg-[#c97900] text-white hover:bg-[#a96000] hover:text-white' : 'bg-transparent text-[#806f59] hover:bg-[#fff7e8] hover:text-[#4a351d]'}`}
                                         >
                                             <Sun className="size-4" /> Mid-Day Report
                                         </Button>
                                         <Button
                                             type="button"
+                                            variant="ghost"
                                             onClick={() => setReportType('endOfDay')}
-                                            className={`h-10 gap-2 rounded-lg px-4 text-sm font-bold ${reportType === 'endOfDay' ? 'bg-[#b96c00] text-white hover:bg-[#925400]' : 'bg-transparent text-[#806f59] hover:bg-[#fff0d1]'}`}
+                                            className={`h-10 gap-2 rounded-lg border-0 px-4 text-sm font-bold shadow-none ${reportType === 'endOfDay' ? 'bg-[#c97900] text-white hover:bg-[#a96000] hover:text-white' : 'bg-transparent text-[#806f59] hover:bg-[#fff7e8] hover:text-[#4a351d]'}`}
                                         >
                                             <Moon className="size-4" /> End of Day
                                         </Button>
@@ -623,7 +628,7 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
                                                 key={value}
                                                 type="button"
                                                 onClick={() => setBatch(value)}
-                                                className={`h-9 rounded-lg px-4 text-sm font-bold ${batch === value ? 'bg-[#4a351d] text-white hover:bg-[#2f2112]' : 'border border-[#d9c7a9] bg-white text-[#705b3d] hover:bg-[#fff4d8]'}`}
+                                                className={`h-9 rounded-lg px-4 text-sm font-bold ${batch === value ? 'border border-[#b96c00] bg-[#c97900] text-white hover:bg-[#a96000] hover:text-white' : 'border border-[#d9c7a9] bg-white text-[#705b3d] hover:bg-[#fff4d8] hover:text-[#4a351d]'}`}
                                             >
                                                 {value === 'overall' && <Layers3 className="size-4" />}
                                                 {label}
@@ -682,7 +687,7 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
                                     type="button"
                                     onClick={exportCombinedReport}
                                     disabled={!hasReportData}
-                                    className="h-10 w-full gap-2 bg-[#4a351d] px-4 font-bold text-white hover:bg-[#2f2112] sm:w-auto"
+                                    className="h-10 w-full gap-2 bg-[#c97900] px-4 font-bold text-white hover:bg-[#a96000] hover:text-white sm:w-auto"
                                 >
                                     <Download className="size-4" /> Export to Excel
                                 </Button>

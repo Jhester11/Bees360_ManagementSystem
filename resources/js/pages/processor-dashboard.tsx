@@ -736,7 +736,7 @@ export default function ProcessorDashboard({
                             {!isQaView && (
                                 <div className="grid gap-2 text-xs font-bold text-[#ffe9b5]">
                                     Reporting timezone
-                                    <div className="flex h-11 rounded-xl bg-white/10 p-1 ring-1 ring-white/15">
+                                    <div className="flex h-11 gap-1 rounded-xl bg-white/10 p-1">
                                         {(['ph', 'cst'] as Timezone[]).map((zone) => (
                                             <button
                                                 key={zone}
@@ -903,7 +903,7 @@ export default function ProcessorDashboard({
                                 <Button
                                     type="button"
                                     onClick={() => openProcessorNotification(latestQaNotification)}
-                                    className="h-10 bg-[#155d3d] px-4 font-bold text-white hover:bg-[#10472f]"
+                                    className="h-10 bg-[#155d3d] px-4 font-bold text-white hover:bg-[#10472f] hover:text-white"
                                 >
                                     <Eye className="size-4" /> View feedback
                                 </Button>
@@ -1116,13 +1116,13 @@ export default function ProcessorDashboard({
                                 <p className="mt-1 text-sm text-[#806f59]">General Exterior and 4-Point reports for {periodLabel}</p>
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
-                                <div className="inline-flex w-fit rounded-xl border border-[#e1c894] bg-white p-1">
+                                <div className="inline-flex w-fit gap-1 rounded-xl bg-[#f7eddd] p-1">
                                     {(['ph', 'cst'] as Timezone[]).map((zone) => (
                                         <button
                                             key={`daily-${zone}`}
                                             type="button"
                                             onClick={() => setTimezone(zone)}
-                                            className={`rounded-lg px-4 py-2 text-xs font-black transition ${timezone === zone ? 'bg-[#553112] text-white shadow-sm' : 'text-[#806f59] hover:bg-[#fff3d8]'}`}
+                                            className={`rounded-lg px-4 py-2 text-xs font-black transition ${timezone === zone ? 'bg-[#c97900] text-white shadow-sm hover:bg-[#a96000] hover:text-white' : 'text-[#806f59] hover:bg-[#fff3d8] hover:text-[#4a351d]'}`}
                                         >
                                             {zone.toUpperCase()} Time
                                         </button>
@@ -1364,7 +1364,7 @@ export default function ProcessorDashboard({
                                 type="button"
                                 onClick={() => setShowAllFeedback(true)}
                                 disabled={qaHistory.length === 0}
-                                className="h-11 gap-2 bg-[#553112] px-5 font-bold text-white hover:bg-[#3f230c] disabled:bg-[#cbbda9]"
+                                className="h-11 gap-2 bg-[#c97900] px-5 font-bold text-white hover:bg-[#a96000] hover:text-white"
                             >
                                 <Eye className="size-4" />
                                 View all feedback

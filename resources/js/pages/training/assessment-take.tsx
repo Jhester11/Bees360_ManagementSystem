@@ -1,7 +1,10 @@
 import { Assessment, Question, TrainingPage, button, secondary } from '@/components/training/training-ui';
 import { router } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
-export default function Take({ assessment, attempt, questions }: { assessment: Assessment; attempt: any; questions: Question[] }) {
+
+type AssessmentAttempt = { id: number; started_at: string };
+
+export default function Take({ assessment, attempt, questions }: { assessment: Assessment; attempt: AssessmentAttempt; questions: Question[] }) {
     const [index, setIndex] = useState(0),
         [answers, setAnswers] = useState<Record<number, number>>({}),
         [seconds, setSeconds] = useState(
@@ -13,7 +16,7 @@ export default function Take({ assessment, attempt, questions }: { assessment: A
         if (!assessment.time_limit_minutes) return;
         const id = setInterval(() => setSeconds((s) => Math.max(0, s - 1)), 1000);
         return () => clearInterval(id);
-    }, []);
+    }, [assessment.time_limit_minutes]);
     function submit() {
         const unanswered = questions.length - Object.keys(answers).length;
         if (
@@ -41,7 +44,7 @@ export default function Take({ assessment, attempt, questions }: { assessment: A
                         {questions.map((x, i) => (
                             <button
                                 onClick={() => setIndex(i)}
-                                className={`aspect-square rounded-lg text-xs font-bold ${i === index ? 'bg-[#4b2b0d] text-white' : answers[x.id] ? 'bg-emerald-100 text-emerald-800' : 'bg-[#f2eadc]'}`}
+                                className={`aspect-square rounded-lg text-xs font-bold transition ${i === index ? 'bg-[#c97900] text-white shadow-sm hover:bg-[#a96000] hover:text-white' : answers[x.id] ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : 'bg-[#f2eadc] text-[#59452e] hover:bg-[#ffe7ad]'}`}
                                 key={x.id}
                             >
                                 {i + 1}

@@ -443,7 +443,7 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
                                 key={item.id}
                                 type="button"
                                 onClick={() => setCheckpoint(item.id)}
-                                className={`h-10 gap-2 rounded-lg px-4 font-bold ${checkpoint === item.id ? 'bg-[#4a351d] text-white hover:bg-[#2f2112]' : 'border border-[#d9c7a9] bg-white text-[#705b3d] hover:bg-[#fff4d8]'}`}
+                                className={`h-10 gap-2 rounded-lg px-4 font-bold ${checkpoint === item.id ? 'border border-[#b96c00] bg-[#c97900] text-white hover:bg-[#a96000] hover:text-white' : 'border border-[#d9c7a9] bg-white text-[#705b3d] hover:bg-[#fff4d8] hover:text-[#4a351d]'}`}
                             >
                                 {checkpoint === item.id && <CheckCircle2 className="size-4 text-[#f2cf72]" />}
                                 {item.label}
@@ -471,7 +471,7 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
                                     key={value}
                                     type="button"
                                     onClick={() => setBatch(value)}
-                                    className={`h-9 rounded-lg px-3 text-xs font-bold ${batch === value ? 'bg-[#4a351d] text-white hover:bg-[#2f2112]' : 'border border-[#d9c7a9] bg-white text-[#705b3d] hover:bg-[#fff4d8]'}`}
+                                    className={`h-9 rounded-lg px-3 text-xs font-bold ${batch === value ? 'border border-[#b96c00] bg-[#c97900] text-white hover:bg-[#a96000] hover:text-white' : 'border border-[#d9c7a9] bg-white text-[#705b3d] hover:bg-[#fff4d8] hover:text-[#4a351d]'}`}
                                 >
                                     {value === 'all' ? 'All Batches' : `Batch ${value}`}
                                 </Button>

@@ -253,7 +253,7 @@ export default function CstReports({ rows, processorNames, filters, summary, can
                         <Button
                             type="button"
                             onClick={() => setSuccessOpen(false)}
-                            className="mt-2 h-11 w-full bg-[#4a351d] font-bold text-white hover:bg-[#342615]"
+                            className="mt-2 h-11 w-full bg-[#c97900] font-bold text-white hover:bg-[#a96000] hover:text-white"
                         >
                             Close and view reports
                         </Button>
@@ -349,7 +349,7 @@ export default function CstReports({ rows, processorNames, filters, summary, can
                         <Button
                             onClick={applyFilters}
                             disabled={!processor || applying}
-                            className="h-12 bg-[#4a351d] px-5 font-bold text-white hover:bg-[#342615]"
+                            className="h-12 bg-[#c97900] px-5 font-bold text-white hover:bg-[#a96000] hover:text-white"
                         >
                             <Search className="size-4" />
                             {applying ? 'Loading…' : 'View reports'}

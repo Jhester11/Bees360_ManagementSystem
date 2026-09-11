@@ -249,6 +249,52 @@ test('operations administrators can update account details and replace the profi
     Storage::disk('local')->assertExists($user->avatar_path);
 });
 
+test('operations administrators can update an account password with confirmation', function () {
+    $administrator = User::factory()->create(['role' => UserRole::Operations]);
+    $user = User::factory()->create([
+        'n_name' => 'Password User',
+        'password' => 'OldSecurePass123!',
+        'role' => UserRole::Reviewer,
+        'batch' => null,
+    ]);
+
+    $response = $this->actingAs($administrator)->patch(route('operations.users.update', $user), [
+        'name' => $user->name,
+        'n_name' => $user->n_name,
+        'email' => $user->email,
+        'password' => 'NewSecurePass123!',
+        'password_confirmation' => 'NewSecurePass123!',
+        'role' => $user->role->value,
+        'batch' => $user->batch,
+    ]);
+
+    $response->assertRedirect()->assertSessionHas('userMessage');
+    $this->assertCredentials(['email' => $user->email, 'password' => 'NewSecurePass123!']);
+});
+
+test('account password updates require matching confirmation', function () {
+    $administrator = User::factory()->create(['role' => UserRole::Operations]);
+    $user = User::factory()->create([
+        'n_name' => 'Confirm User',
+        'password' => 'OldSecurePass123!',
+        'role' => UserRole::Reviewer,
+        'batch' => null,
+    ]);
+
+    $response = $this->actingAs($administrator)->patch(route('operations.users.update', $user), [
+        'name' => $user->name,
+        'n_name' => $user->n_name,
+        'email' => $user->email,
+        'password' => 'NewSecurePass123!',
+        'password_confirmation' => 'DifferentSecurePass123!',
+        'role' => $user->role->value,
+        'batch' => $user->batch,
+    ]);
+
+    $response->assertSessionHasErrors('password');
+    $this->assertCredentials(['email' => $user->email, 'password' => 'OldSecurePass123!']);
+});
+
 test('deleting an account removes its profile image and all connected data', function () {
     Storage::fake('local');
     Storage::fake('public');

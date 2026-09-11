@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Enums\UserRole;
 use App\Http\Requests\Concerns\ValidatesSpreadsheetInput;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -12,6 +13,8 @@ class StoreCstProcessorMetricsRequest extends FormRequest
     use ValidatesSpreadsheetInput;
 
     private const MAXIMUM_PAYLOAD_BYTES = 8 * 1024 * 1024;
+
+    private const CENTRAL_TIMEZONE = 'America/Chicago';
 
     protected function prepareForValidation(): void
     {
@@ -42,7 +45,11 @@ class StoreCstProcessorMetricsRequest extends FormRequest
             'source_file' => ['bail', 'required', 'string', 'max:255', $this->safeSpreadsheetFileName(['xlsx', 'xls', 'csv'])],
             'metrics' => ['required', 'array', 'min:1', 'max:5000'],
             'metrics.*' => ['required', 'array:report_date,processor_name,general_exterior,four_point,qc_score,qc_reviews'],
-            'metrics.*.report_date' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
+            'metrics.*.report_date' => [
+                'required',
+                'date_format:Y-m-d',
+                'before_or_equal:'.CarbonImmutable::now(self::CENTRAL_TIMEZONE)->toDateString(),
+            ],
             'metrics.*.processor_name' => ['bail', 'required', 'string', 'max:255', $this->safeSpreadsheetText()],
             'metrics.*.general_exterior' => ['required', 'integer', 'min:0', 'max:100000'],
             'metrics.*.four_point' => ['required', 'integer', 'min:0', 'max:100000'],

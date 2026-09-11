@@ -46,6 +46,7 @@ type ReportsProps = {
     historyEntries: ReportEntry[];
 };
 type ImportEntry = { source: Source; project_id: string; insured_by: string; inspection_type: string; assembled_by: string; assembled_at: string };
+type ImportSummary = { saved: number; ignored: number };
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Operations dashboard', href: '/dashboard' },
@@ -76,7 +77,7 @@ async function rowsFromWorkbook(file: File, source: Source): Promise<ImportEntry
 }
 
 export default function Reports({ reportEntries, processorRoster, latestReportDate, historyVisible, historyEntries }: ReportsProps) {
-    const page = usePage<{ flash?: { importSummary?: { saved: number; ignored: number } } }>();
+    const page = usePage<{ flash?: { importSummary?: ImportSummary } }>();
     const { flash } = page.props;
     const initialParameters = new URLSearchParams(page.url.split('?')[1] ?? '');
     const [pageTab, setPageTab] = useState<PageTab>(() => (initialParameters.get('tab') === 'import' ? 'import' : 'reports'));
@@ -91,9 +92,11 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
     const [draggingSource, setDraggingSource] = useState<Source | null>(null);
     const [showImportConfirmation, setShowImportConfirmation] = useState(false);
     const [showSuccessModal, setShowSuccessModal] = useState(() => Boolean(flash?.importSummary));
+    const [importResult, setImportResult] = useState<ImportSummary | null>(flash?.importSummary ?? null);
 
     useEffect(() => {
         if (flash?.importSummary) {
+            setImportResult(flash.importSummary);
             setShowSuccessModal(true);
         }
     }, [flash?.importSummary]);
@@ -270,6 +273,7 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
 
     async function importReports() {
         setShowImportConfirmation(false);
+        setImportResult(null);
         setUploadError(null);
         setIsUploading(true);
         setUploadProgress(5);
@@ -298,10 +302,15 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
                                 'The import could not be saved. Check the workbook and try again.',
                         );
                     },
-                    onSuccess: () => {
+                    onSuccess: (responsePage) => {
+                        const summary = (responsePage.props.flash as { importSummary?: ImportSummary } | undefined)?.importSummary;
+
                         setUploadProgress(100);
                         setActiveFile(null);
                         setClosedFile(null);
+                        if (summary) {
+                            setImportResult(summary);
+                        }
                         setShowSuccessModal(true);
                     },
                     onFinish: () => setIsUploading(false),
@@ -395,16 +404,26 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
                             <DialogDescription className="text-sm leading-6 text-[#756448]">
                                 Your report has been generated and saved to the Bees360 database. You can now review the totals by date and batch.
                             </DialogDescription>
-                            <div className="grid grid-cols-2 gap-3 rounded-xl border border-[#f0dfbd] bg-[#fff8e8] p-4 text-center">
-                                <div>
-                                    <p className="text-2xl font-extrabold text-[#9e5b00]">{flash?.importSummary?.saved ?? 0}</p>
-                                    <p className="mt-1 text-xs font-bold text-[#806f59] uppercase">Rows saved</p>
-                                </div>
-                                <div className="border-l border-[#ead6aa]">
+                            <div
+                                className={`grid gap-3 rounded-xl border border-[#f0dfbd] bg-[#fff8e8] p-4 text-center ${importResult ? 'grid-cols-2' : 'grid-cols-1'}`}
+                            >
+                                {importResult && (
+                                    <div>
+                                        <p className="text-2xl font-extrabold text-[#9e5b00]">{importResult.saved.toLocaleString()}</p>
+                                        <p className="mt-1 text-xs font-bold text-[#806f59] uppercase">Rows saved</p>
+                                    </div>
+                                )}
+                                <div className={importResult ? 'border-l border-[#ead6aa]' : ''}>
                                     <p className="text-2xl font-extrabold text-[#9e5b00]">{formatDate(reportDate)}</p>
                                     <p className="mt-1 text-xs font-bold text-[#806f59] uppercase">Report date</p>
                                 </div>
                             </div>
+                            {importResult && importResult.ignored > 0 && (
+                                <p className="text-xs font-semibold text-[#806f59]">
+                                    {importResult.ignored.toLocaleString()} row{importResult.ignored === 1 ? '' : 's'} ignored because they did not
+                                    match the approved report rules.
+                                </p>
+                            )}
                         </DialogHeader>
                         <DialogFooter className="px-7 pt-2 pb-7 sm:justify-center">
                             <Button

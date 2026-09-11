@@ -14,13 +14,15 @@ use Inertia\Response;
 
 class CstReportController extends Controller
 {
+    private const CENTRAL_TIMEZONE = 'America/Chicago';
+
     public function __construct(private readonly ActiveProcessorRoster $roster) {}
 
     public function __invoke(Request $request): Response
     {
-        $phToday = CarbonImmutable::now('Asia/Manila')->startOfDay();
-        $startDate = $this->dateOrDefault($request->string('start_date')->toString(), $phToday->startOfMonth());
-        $endDate = $this->dateOrDefault($request->string('end_date')->toString(), $phToday);
+        $centralToday = CarbonImmutable::now(self::CENTRAL_TIMEZONE)->startOfDay();
+        $startDate = $this->dateOrDefault($request->string('start_date')->toString(), $centralToday->startOfMonth());
+        $endDate = $this->dateOrDefault($request->string('end_date')->toString(), $centralToday);
 
         if ($startDate->greaterThan($endDate)) {
             [$startDate, $endDate] = [$endDate, $startDate];
@@ -83,14 +85,14 @@ class CstReportController extends Controller
                 'total' => $rows->sum('total'),
             ],
             'canImport' => $request->user()?->role === UserRole::Operations,
-            'phToday' => $phToday->toDateString(),
+            'centralToday' => $centralToday->toDateString(),
         ]);
     }
 
     private function dateOrDefault(string $date, CarbonImmutable $default): CarbonImmutable
     {
         try {
-            return $date !== '' ? CarbonImmutable::createFromFormat('!Y-m-d', $date, 'Asia/Manila') : $default;
+            return $date !== '' ? CarbonImmutable::createFromFormat('!Y-m-d', $date, self::CENTRAL_TIMEZONE) : $default;
         } catch (\Throwable) {
             return $default;
         }

@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { CheckCircle2, ImagePlus, LoaderCircle, LockKeyhole, Pencil, ShieldCheck, Trash2, UserPlus, UsersRound } from 'lucide-react';
+import { CheckCircle2, Eye, EyeOff, ImagePlus, LoaderCircle, LockKeyhole, Pencil, ShieldCheck, Trash2, UserPlus, UsersRound } from 'lucide-react';
 import { DragEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 
 type ManagedUser = {
@@ -66,6 +66,8 @@ export default function Users({ users, roles }: UsersProps) {
     const [isDragging, setIsDragging] = useState(false);
     const [imageLoading, setImageLoading] = useState(false);
     const [imageLoadProgress, setImageLoadProgress] = useState(0);
+    const [showPassword, setShowPassword] = useState(false);
+    const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false);
     const form = useForm({
         _method: 'post' as 'post' | 'patch',
         name: '',
@@ -150,6 +152,8 @@ export default function Users({ users, roles }: UsersProps) {
 
     function openCreate() {
         setEditingUser(null);
+        setShowPassword(false);
+        setShowPasswordConfirmation(false);
         form.clearErrors();
         form.setData({
             _method: 'post',
@@ -167,6 +171,8 @@ export default function Users({ users, roles }: UsersProps) {
 
     function openUpdate(user: ManagedUser) {
         setEditingUser(user);
+        setShowPassword(false);
+        setShowPasswordConfirmation(false);
         form.clearErrors();
         form.setData({
             _method: 'patch',
@@ -478,28 +484,51 @@ export default function Users({ users, roles }: UsersProps) {
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <div className="grid gap-2">
                                         <Label htmlFor="user-password">Password</Label>
-                                        <Input
-                                            id="user-password"
-                                            type="password"
-                                            value={form.data.password}
-                                            onChange={(e) => form.setData('password', e.target.value)}
-                                            autoComplete="new-password"
-                                            placeholder="Password"
-                                            className={accountInputClass}
-                                        />
+                                        <div className="relative">
+                                            <Input
+                                                id="user-password"
+                                                type={showPassword ? 'text' : 'password'}
+                                                value={form.data.password}
+                                                onChange={(e) => form.setData('password', e.target.value)}
+                                                autoComplete="new-password"
+                                                placeholder={editingUser ? 'Enter a new password' : 'Password'}
+                                                className={`${accountInputClass} pr-11`}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowPassword((visible) => !visible)}
+                                                className="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-r-xl text-[#806f59] transition hover:bg-[#fff4dc] hover:text-[#4a351d] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#d78b13]"
+                                                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                                aria-pressed={showPassword}
+                                            >
+                                                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                            </button>
+                                        </div>
                                         <InputError message={form.errors.password} />
                                     </div>
                                     <div className="grid gap-2">
                                         <Label htmlFor="user-password-confirmation">Confirm password</Label>
-                                        <Input
-                                            id="user-password-confirmation"
-                                            type="password"
-                                            value={form.data.password_confirmation}
-                                            onChange={(e) => form.setData('password_confirmation', e.target.value)}
-                                            autoComplete="new-password"
-                                            placeholder="Confirm password"
-                                            className={accountInputClass}
-                                        />
+                                        <div className="relative">
+                                            <Input
+                                                id="user-password-confirmation"
+                                                type={showPasswordConfirmation ? 'text' : 'password'}
+                                                value={form.data.password_confirmation}
+                                                onChange={(e) => form.setData('password_confirmation', e.target.value)}
+                                                autoComplete="new-password"
+                                                placeholder="Confirm password"
+                                                className={`${accountInputClass} pr-11`}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowPasswordConfirmation((visible) => !visible)}
+                                                className="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-r-xl text-[#806f59] transition hover:bg-[#fff4dc] hover:text-[#4a351d] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#d78b13]"
+                                                aria-label={showPasswordConfirmation ? 'Hide password confirmation' : 'Show password confirmation'}
+                                                aria-pressed={showPasswordConfirmation}
+                                            >
+                                                {showPasswordConfirmation ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                            </button>
+                                        </div>
+                                        <InputError message={form.errors.password_confirmation} />
                                     </div>
                                 </div>
                                 <div className="grid gap-2">

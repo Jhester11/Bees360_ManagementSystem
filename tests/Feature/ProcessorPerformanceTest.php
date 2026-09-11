@@ -87,7 +87,8 @@ test('CST reports require a processor selection and show stored daily metrics', 
         ->component('operations/cst-reports')
         ->has('rows', 0)
         ->where('filters.startDate', '2026-09-01')
-        ->where('filters.endDate', '2026-09-08')
+        ->where('filters.endDate', '2026-09-07')
+        ->where('centralToday', '2026-09-07')
         ->where('canImport', true));
 
     $this->get('/operations/cst-reports?start_date=2026-09-01&end_date=2026-09-08&processor=Allan%20Layug')
@@ -456,6 +457,26 @@ test('CST imports require valid bounded metrics', function () {
         'source_file' => 'invalid.xlsx',
         'metrics' => [['report_date' => 'invalid', 'processor_name' => '', 'general_exterior' => -1, 'four_point' => 0, 'qc_score' => 101, 'qc_reviews' => 0]],
     ])->assertSessionHasErrors(['metrics.0.report_date', 'metrics.0.processor_name', 'metrics.0.general_exterior', 'metrics.0.qc_score']);
+
+    expect(CstProcessorMetric::query()->count())->toBe(0);
+});
+
+test('CST imports reject a date that has not started in US Central time', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-11 00:30:00', 'Asia/Manila'));
+    $operations = User::factory()->create(['role' => UserRole::Operations]);
+    createPerformanceProcessor('Allan Layug', 2);
+
+    $this->actingAs($operations)->post('/operations/processors/cst-import', [
+        'source_file' => 'central-boundary.xlsx',
+        'metrics' => [[
+            'report_date' => '2026-09-11',
+            'processor_name' => 'Allan Layug',
+            'general_exterior' => 1,
+            'four_point' => 0,
+            'qc_score' => null,
+            'qc_reviews' => 0,
+        ]],
+    ])->assertSessionHasErrors('metrics.0.report_date');
 
     expect(CstProcessorMetric::query()->count())->toBe(0);
 });

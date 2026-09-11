@@ -24,7 +24,7 @@ type Props = {
     filters: { startDate: string; endDate: string; processor: string };
     summary: { generalExterior: number; fourPoint: number; total: number };
     canImport: boolean;
-    phToday: string;
+    centralToday: string;
 };
 
 type Tier = {
@@ -43,6 +43,30 @@ const breadcrumbs: BreadcrumbItem[] = [
 
 const formatDate = (date: string) =>
     new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
+
+const centralDateKey = (date: Date) => {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Chicago',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).formatToParts(date);
+    const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
+
+    return `${value('year')}-${value('month')}-${value('day')}`;
+};
+
+const formatCentralDateTime = (date: Date) =>
+    new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Chicago',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZoneName: 'short',
+    }).format(date);
 
 function deliveryStatus(total: number) {
     if (total < 25) return { label: 'Under delivered', className: 'bg-[#fde1e2] text-[#a5474b] ring-[#efc1c3]' };
@@ -115,7 +139,7 @@ function TierProgressGauge({ tier, period }: { tier: Tier; period: string }) {
     );
 }
 
-export default function CstReports({ rows, processorNames, filters, summary, canImport, phToday }: Props) {
+export default function CstReports({ rows, processorNames, filters, summary, canImport, centralToday }: Props) {
     const page = usePage<{ flash?: { cstImportSummary?: { saved: number; file: string } }; errors?: Record<string, string> }>();
     const [startDate, setStartDate] = useState(filters.startDate);
     const [endDate, setEndDate] = useState(filters.endDate);
@@ -128,6 +152,8 @@ export default function CstReports({ rows, processorNames, filters, summary, can
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [successOpen, setSuccessOpen] = useState(Boolean(page.props.flash?.cstImportSummary));
     const [savedCount, setSavedCount] = useState(page.props.flash?.cstImportSummary?.saved ?? 0);
+    const [centralNow, setCentralNow] = useState(() => new Date());
+    const liveCentralToday = centralDateKey(centralNow) || centralToday;
     const selectedFiles = useMemo(
         () => [activeFile, closedFile, archivedFile].filter((file): file is File => Boolean(file)),
         [activeFile, archivedFile, closedFile],
@@ -158,6 +184,12 @@ export default function CstReports({ rows, processorNames, filters, summary, can
         },
         { under: 0, delivered: 0, over: 0 },
     );
+
+    useEffect(() => {
+        const clock = window.setInterval(() => setCentralNow(new Date()), 1000);
+
+        return () => window.clearInterval(clock);
+    }, []);
 
     useEffect(() => {
         const imported = page.props.flash?.cstImportSummary;
@@ -262,14 +294,14 @@ export default function CstReports({ rows, processorNames, filters, summary, can
 
                 <section className="flex flex-col justify-between gap-4 rounded-2xl border border-[#ead4ad] bg-gradient-to-r from-[#fffdf8] to-[#fff5df] p-5 lg:flex-row lg:items-center">
                     <div>
-                        <p className="text-xs font-extrabold tracking-[.16em] text-[#b26a00] uppercase">Central reporting time</p>
+                        <p className="text-xs font-extrabold tracking-[.16em] text-[#b26a00] uppercase">Houston Central Time</p>
                         <h1 className="mt-2 text-3xl font-black text-[#342615]">CST processor reports</h1>
                         <p className="mt-2 text-sm text-[#776a57]">
-                            Upload CST workbooks and review daily processor totals using a Philippine-time date selection.
+                            Upload CST workbooks and review daily processor totals using Houston, Texas calendar dates.
                         </p>
                     </div>
                     <span className="inline-flex items-center gap-2 self-start rounded-xl bg-[#4a351d] px-4 py-3 text-sm font-bold text-[#fff8e7]">
-                        <Clock3 className="size-4 text-[#ffc83d]" /> PH date: {formatDate(phToday)}
+                        <Clock3 className="size-4 text-[#ffc83d]" /> Houston: {formatCentralDateTime(centralNow)}
                     </span>
                 </section>
 
@@ -331,10 +363,17 @@ export default function CstReports({ rows, processorNames, filters, summary, can
                             id="cst-start-date"
                             label="Start date"
                             value={startDate}
-                            max={endDate < phToday ? endDate : phToday}
+                            max={endDate < liveCentralToday ? endDate : liveCentralToday}
                             onChange={setStartDate}
                         />
-                        <BeesDatePicker id="cst-end-date" label="End date" value={endDate} min={startDate} max={phToday} onChange={setEndDate} />
+                        <BeesDatePicker
+                            id="cst-end-date"
+                            label="End date"
+                            value={endDate}
+                            min={startDate}
+                            max={liveCentralToday}
+                            onChange={setEndDate}
+                        />
                         <label className="grid gap-2 text-sm font-bold text-[#594324]">
                             Processor
                             <ProcessorSelect

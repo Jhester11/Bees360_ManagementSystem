@@ -121,12 +121,31 @@ const processorNavItems: NavItem[] = [
     },
 ];
 
+const traineeNavItems: NavItem[] = [
+    {
+        title: 'Training Library',
+        url: '/training/library',
+        icon: BookOpenCheck,
+        tourId: 'nav-training-library',
+    },
+    {
+        title: 'My Training',
+        url: '/training/my-training',
+        icon: BookOpenCheck,
+        tourId: 'nav-my-training',
+    },
+];
+
 export function AppSidebar() {
     const { auth } = usePage<SharedData>().props;
     const isProcessor = auth.user.role === 'processor';
+    const isTrainee = auth.user.role === 'trainee';
+    const isLearner = isProcessor || isTrainee;
     const visibleMainNavItems = isProcessor
         ? processorNavItems
-        : mainNavItems.filter((item) => item.url !== '/operations/users' || auth.user.role === 'operations');
+        : isTrainee
+          ? traineeNavItems
+          : mainNavItems.filter((item) => item.url !== '/operations/users' || auth.user.role === 'operations');
     const trainingItems: NavItem[] = ['trainer', 'operations'].includes(auth.user.role)
         ? [
               { title: 'Training Dashboard', url: '/training', icon: BookOpenCheck },
@@ -136,13 +155,13 @@ export function AppSidebar() {
               { title: 'Assignments', url: '/training/assignments', icon: UsersRound },
               { title: 'Training Reports', url: '/training/reports', icon: BarChart3 },
           ]
-        : isProcessor
+        : isLearner
           ? []
           : [
                 { title: 'Training Library', url: '/training/library', icon: BookOpenCheck },
                 { title: 'My Training', url: '/training/my-training', icon: BookOpenCheck },
             ];
-    const visibleQualityNavItems = isProcessor ? [] : qualityNavItems.filter((item) => item.url !== '/training/library');
+    const visibleQualityNavItems = isLearner ? [] : qualityNavItems.filter((item) => item.url !== '/training/library');
 
     return (
         <Sidebar
@@ -163,7 +182,7 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent className="[scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                <NavMain items={visibleMainNavItems} label={isProcessor ? 'My workspace' : 'Operations'} />
+                <NavMain items={visibleMainNavItems} label={isLearner ? 'My workspace' : 'Operations'} />
                 {trainingItems.length > 0 && <NavMain items={trainingItems} label="Training" />}
                 {visibleQualityNavItems.length > 0 && <NavMain items={visibleQualityNavItems} label="Learning & Quality" />}
             </SidebarContent>
@@ -174,7 +193,7 @@ export function AppSidebar() {
                         <SidebarMenuItem>
                             <SidebarMenuButton asChild>
                                 <Link
-                                    href={isProcessor ? '/settings/profile' : '/operations/settings'}
+                                    href={isLearner ? '/settings/profile' : '/operations/settings'}
                                     prefetch="hover"
                                     cacheFor="5m"
                                     data-tour="nav-settings"

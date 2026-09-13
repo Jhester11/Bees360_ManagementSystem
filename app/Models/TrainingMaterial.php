@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\UserRole;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -62,7 +63,7 @@ class TrainingMaterial extends Model
 
     public function scopeVisibleTo(Builder $query, User $user): Builder
     {
-        if ($user->role->value !== 'processor') {
+        if (! in_array($user->role, [UserRole::Processor, UserRole::Trainee], true)) {
             return $query;
         }
 

@@ -25,6 +25,7 @@ class PerformanceAnnouncementService
                 'message' => $newUser->name.' joined Bees360 as '.match ($newUser->role) {
                     UserRole::Operations => 'Operation',
                     UserRole::Processor => 'Processor',
+                    UserRole::Trainee => 'Trainee',
                     UserRole::Trainer => 'Trainer',
                     UserRole::Qa => 'Quality Assurance',
                     UserRole::Reviewer => 'Reviewer',
@@ -39,7 +40,13 @@ class PerformanceAnnouncementService
         $month = CarbonImmutable::now('Asia/Manila')->startOfMonth();
         $end = $month->endOfMonth();
         $accounts = User::query()
-            ->where('role', UserRole::Processor->value)
+            ->where(function ($query): void {
+                $query->where('role', UserRole::Processor->value)
+                    ->orWhere(function ($query): void {
+                        $query->where('tracks_production', true)
+                            ->whereBetween('batch', [1, 3]);
+                    });
+            })
             ->where('is_active', true)
             ->get(['id', 'name', 'n_name']);
 

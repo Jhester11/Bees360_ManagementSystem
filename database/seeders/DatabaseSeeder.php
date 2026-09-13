@@ -16,6 +16,8 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        $this->call(ProcessorRosterSeeder::class);
+
         if (User::query()->where('role', UserRole::Operations->value)->exists()) {
             return;
         }

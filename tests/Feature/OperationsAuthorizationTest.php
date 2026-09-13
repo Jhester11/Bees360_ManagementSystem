@@ -23,7 +23,7 @@ test('processors cannot open staff operations pages', function (string $uri) {
 
 $operationsOnlyRequests = [];
 
-foreach ([UserRole::Processor, UserRole::Trainer, UserRole::Qa, UserRole::Reviewer] as $role) {
+foreach ([UserRole::Processor, UserRole::Trainee, UserRole::Trainer, UserRole::Qa, UserRole::Reviewer] as $role) {
     foreach ([
         'import reports' => '/operations/reports/import',
         'import CST metrics' => '/operations/processors/cst-import',
@@ -48,6 +48,7 @@ test('non-QA staff cannot import QA assessments', function (UserRole $role) {
         ->assertForbidden();
 })->with([
     'processor' => UserRole::Processor,
+    'trainee' => UserRole::Trainee,
     'trainer' => UserRole::Trainer,
     'reviewer' => UserRole::Reviewer,
 ]);

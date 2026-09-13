@@ -38,6 +38,7 @@ const accountInputClass =
 const roleDetails: Record<string, string> = {
     operations: 'Full Operations access, including account management.',
     processor: 'Regular user access for Bees360 processors.',
+    trainee: 'Training-only access with a Batch 1, 2, or 3 assignment.',
     trainer: 'Access intended for Bees360 training workflows.',
     qa: 'Access intended for quality assurance and scoring.',
     reviewer: 'Access intended for report review workflows.',
@@ -537,7 +538,7 @@ export default function Users({ users, roles }: UsersProps) {
                                         value={form.data.role}
                                         onValueChange={(value) => {
                                             form.setData('role', value);
-                                            if (value !== 'processor') form.setData('batch', '');
+                                            if (!['processor', 'trainee'].includes(value)) form.setData('batch', '');
                                         }}
                                     >
                                         <SelectTrigger
@@ -564,9 +565,9 @@ export default function Users({ users, roles }: UsersProps) {
                                     </p>
                                     <InputError message={form.errors.role} />
                                 </div>
-                                {form.data.role === 'processor' && (
+                                {['processor', 'trainee'].includes(form.data.role) && (
                                     <div className="grid gap-2">
-                                        <Label htmlFor="user-batch">Production batch</Label>
+                                        <Label htmlFor="user-batch">{form.data.role === 'trainee' ? 'Training batch' : 'Production batch'}</Label>
                                         <Select value={form.data.batch} onValueChange={(value) => form.setData('batch', value)}>
                                             <SelectTrigger
                                                 id="user-batch"
@@ -588,7 +589,9 @@ export default function Users({ users, roles }: UsersProps) {
                                             </SelectContent>
                                         </Select>
                                         <p className="rounded-lg bg-[#fff5dc] px-3 py-2 text-xs leading-5 text-[#80602b]">
-                                            The full name and N-name will be matched automatically in Reports and Queue Monitor spreadsheets.
+                                            {form.data.role === 'trainee'
+                                                ? 'The trainee will receive training assignments intended for the selected batch.'
+                                                : 'The full name and N-name will be matched automatically in Reports and Queue Monitor spreadsheets.'}
                                         </p>
                                         <InputError message={form.errors.batch} />
                                     </div>
@@ -678,7 +681,11 @@ export default function Users({ users, roles }: UsersProps) {
                                     <p className="truncate text-sm font-semibold text-[#4a3821]">{user.email}</p>
                                     <p className="mt-1 text-xs font-bold tracking-wide text-[#9a6a1a] uppercase">
                                         {roles.find((role) => role.value === user.role)?.label ?? user.role}
-                                        {user.tracks_production && user.batch ? ` · Processes reports · Batch ${user.batch}` : ''}
+                                        {user.tracks_production && user.batch
+                                            ? ` · Processes reports · Batch ${user.batch}`
+                                            : user.role === 'trainee' && user.batch
+                                              ? ` · Training Batch ${user.batch}`
+                                              : ''}
                                     </p>
                                 </div>
                                 <div className="flex flex-wrap items-center justify-between gap-2 md:justify-end">

@@ -10,6 +10,7 @@ use App\Http\Requests\UpdateUserStatusRequest;
 use App\Models\User;
 use App\Services\AvatarStorage;
 use App\Services\PerformanceAnnouncementService;
+use App\Services\TrainingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -22,6 +23,7 @@ class UserController extends Controller
     public function __construct(
         private readonly AvatarStorage $avatars,
         private readonly PerformanceAnnouncementService $announcements,
+        private readonly TrainingService $training,
     ) {}
 
     public function index(): Response
@@ -44,6 +46,7 @@ class UserController extends Controller
                 'label' => match ($role) {
                     UserRole::Operations => 'Operation',
                     UserRole::Processor => 'Processor',
+                    UserRole::Trainee => 'Trainee',
                     UserRole::Trainer => 'Trainer',
                     UserRole::Qa => 'Quality Assurance',
                     UserRole::Reviewer => 'Reviewer',
@@ -55,7 +58,9 @@ class UserController extends Controller
     public function store(StoreUserRequest $request): RedirectResponse
     {
         $data = $request->safe()->only(['name', 'n_name', 'email', 'password', 'role', 'batch']);
-        $data['batch'] = $data['role'] === UserRole::Processor->value ? (int) $data['batch'] : null;
+        $data['batch'] = in_array($data['role'], [UserRole::Processor->value, UserRole::Trainee->value], true)
+            ? (int) $data['batch']
+            : null;
         $data['tracks_production'] = $data['role'] === UserRole::Processor->value;
         $newAvatarPath = null;
 
@@ -65,7 +70,12 @@ class UserController extends Controller
         }
 
         try {
-            $user = User::query()->create($data);
+            $user = DB::transaction(function () use ($data): User {
+                $user = User::query()->create($data);
+                $this->training->enrollMatchingAssignments($user);
+
+                return $user;
+            });
         } catch (Throwable $exception) {
             $this->avatars->delete($newAvatarPath);
 
@@ -105,9 +115,9 @@ class UserController extends Controller
     public function update(UpdateUserRequest $request, User $user): RedirectResponse
     {
         $data = $request->safe()->only(['name', 'n_name', 'email', 'role', 'batch']);
-        $data['batch'] = $data['role'] === UserRole::Processor->value
+        $data['batch'] = in_array($data['role'], [UserRole::Processor->value, UserRole::Trainee->value], true)
             ? (int) $data['batch']
-            : ($user->tracks_production ? (int) $user->batch : null);
+            : ($user->tracks_production && $user->batch !== null ? (int) $user->batch : null);
 
         if ($request->filled('password')) {
             $data['password'] = $request->validated('password');

@@ -105,6 +105,30 @@ test('queue snapshot validation rejects an unknown checkpoint', function () {
     $this->assertDatabaseCount('queue_snapshots', 0);
 });
 
+test('queue snapshot accepts the current Philippine date near the UTC day boundary', function () {
+    config(['app.timezone' => 'UTC']);
+    $this->travelTo(CarbonImmutable::parse('2026-09-12 16:30:00', 'UTC'));
+    $user = User::factory()->create(['role' => UserRole::Operations]);
+    User::factory()->create(['name' => 'Jhun Cervantes', 'n_name' => 'Jhun', 'role' => UserRole::Processor, 'batch' => 1]);
+
+    $this->actingAs($user)->post('/operations/queue-monitor', [
+        'report_date' => '2026-09-13',
+        'checkpoint' => 'start',
+        'file_name' => 'Bees360 Queue.xlsx',
+        'total_rows' => 1,
+        'entries' => [[
+            'name' => 'Jhun Cervantes',
+            'batch' => 1,
+            'general_exterior' => 1,
+            'four_point' => 0,
+            'other' => 0,
+            'total' => 1,
+        ]],
+    ])->assertRedirect(route('operations.queue-monitor'));
+
+    $this->assertDatabaseHas('queue_snapshots', ['report_date' => '2026-09-13', 'file_name' => 'Bees360 Queue.xlsx']);
+});
+
 test('queue snapshots are not saved when no active processor names match', function () {
     $user = User::factory()->create(['role' => UserRole::Operations]);
 

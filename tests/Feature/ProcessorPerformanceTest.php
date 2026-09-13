@@ -672,3 +672,35 @@ test('QA score imports calculate an average and update repeated report uploads w
         ->where('importHistory.0.matched', 1)
         ->where('importHistory.0.uploadedBy', $uploader->name));
 });
+
+test('QA imports link Jhun while his account retains Operations access', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-04 10:00:00', 'Asia/Manila'));
+    $uploader = User::factory()->create(['role' => UserRole::Qa]);
+    $jhun = User::factory()->create([
+        'name' => 'Jhun Cervantes',
+        'n_name' => 'Jhun',
+        'role' => UserRole::Operations,
+        'batch' => 1,
+        'tracks_production' => true,
+    ]);
+
+    $this->actingAs($uploader)->post('/operations/processors/qa-import', [
+        'source_file' => 'Jhun QA.xlsx',
+        'assessments' => [[
+            'assessment_date' => '2026-09-03',
+            'processor_name' => 'Jhun Lester Cervantes',
+            'score' => 95,
+            'project_id' => 'JHUN-QA',
+            'qc_name' => 'QA Reviewer',
+            'report_url' => null,
+            'feedback' => [],
+        ]],
+    ])->assertRedirect(route('operations.processors'));
+
+    $this->assertDatabaseHas('qa_assessments', [
+        'processor_id' => $jhun->id,
+        'processor_name' => 'Jhun Cervantes',
+        'score' => 95,
+    ]);
+    expect($jhun->fresh()->role)->toBe(UserRole::Operations);
+});

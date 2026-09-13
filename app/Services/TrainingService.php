@@ -32,6 +32,55 @@ class TrainingService
         };
     }
 
+    public function enrollMatchingAssignments(User $user): int
+    {
+        if (! $user->is_active) {
+            return 0;
+        }
+
+        $assignments = TrainingAssignment::query()
+            ->with('material:id,title')
+            ->where('is_active', true)
+            ->where(function ($query) use ($user): void {
+                $query->where('scope_type', 'all')
+                    ->orWhere(function ($roleQuery) use ($user): void {
+                        $roleQuery->where('scope_type', 'role')
+                            ->where('scope_value', $user->role->value);
+                    });
+
+                if ($user->batch !== null) {
+                    $query->orWhere(function ($batchQuery) use ($user): void {
+                        $batchQuery->where('scope_type', 'batch')
+                            ->where('scope_value', (string) $user->batch);
+                    });
+                }
+            })
+            ->get();
+
+        $enrolled = 0;
+
+        foreach ($assignments as $assignment) {
+            $assignmentUser = TrainingAssignmentUser::firstOrCreate(
+                ['training_assignment_id' => $assignment->id, 'user_id' => $user->id],
+                ['status' => 'not_started', 'assigned_at' => now()],
+            );
+
+            if (! $assignmentUser->wasRecentlyCreated) {
+                continue;
+            }
+
+            $enrolled++;
+            $user->notify(new Bees360Announcement([
+                'type' => 'training_assigned',
+                'title' => 'New training assigned',
+                'message' => $assignment->material->title,
+                'url' => route('training.my'),
+            ]));
+        }
+
+        return $enrolled;
+    }
+
     public function assign(array $data, User $trainer): TrainingAssignment
     {
         return DB::transaction(function () use ($data, $trainer) {

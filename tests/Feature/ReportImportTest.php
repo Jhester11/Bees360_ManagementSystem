@@ -82,7 +82,13 @@ test('large report imports are saved without exceeding database placeholder limi
 
 test('reports use active processor accounts while retaining reviewer history', function () {
     $user = User::factory()->create(['role' => UserRole::Operations]);
-    User::factory()->create(['name' => 'Emma Alegre', 'n_name' => 'Emma', 'role' => UserRole::Reviewer, 'batch' => null]);
+    User::factory()->create([
+        'name' => 'Emma Alegre',
+        'n_name' => 'Emma',
+        'role' => UserRole::Reviewer,
+        'batch' => null,
+        'tracks_production' => true,
+    ]);
     User::factory()->create(['name' => 'New Processor Name', 'n_name' => 'Newbie', 'role' => UserRole::Processor, 'batch' => 3]);
     ReportEntry::query()->create([
         'report_date' => '2026-09-09',
@@ -99,10 +105,12 @@ test('reports use active processor accounts while retaining reviewer history', f
     $this->actingAs($user)->post('/operations/reports/import', [
         'entries' => json_encode([
             ['source' => 'active', 'project_id' => 'NEW-1', 'insured_by' => '', 'inspection_type' => 'Exterior Underwriting', 'assembled_by' => 'Newbie', 'assembled_at' => '09/09/2026 10:00'],
+            ['source' => 'closed', 'project_id' => 'EMMA-NEW', 'insured_by' => '', 'inspection_type' => '4-Point Underwriting', 'assembled_by' => 'Emma Alegre', 'assembled_at' => '09/09/2026 11:00'],
         ]),
     ])->assertRedirect(route('operations.reports'));
 
     $this->assertDatabaseHas('report_entries', ['processor_name' => 'Emma Alegre']);
+    $this->assertDatabaseHas('report_entries', ['processor_name' => 'Emma Alegre', 'batch' => 2, 'project_id' => 'EMMA-NEW']);
     $this->assertDatabaseHas('report_entries', ['processor_name' => 'New Processor Name', 'batch' => 3, 'project_id' => 'NEW-1']);
 
     $this->actingAs($user)->get(route('operations.reports'))->assertInertia(fn (Assert $page) => $page

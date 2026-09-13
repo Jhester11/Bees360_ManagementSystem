@@ -99,7 +99,13 @@ class QaScoreController extends Controller
             ->orderBy('processor_name')
             ->pluck('processor_name')
             ->merge(User::query()
-                ->where('role', UserRole::Processor->value)
+                ->where(function ($query): void {
+                    $query->where('role', UserRole::Processor->value)
+                        ->orWhere(function ($query): void {
+                            $query->where('tracks_production', true)
+                                ->whereBetween('batch', [1, 3]);
+                        });
+                })
                 ->where('is_active', true)
                 ->orderBy('name')
                 ->pluck('name'))

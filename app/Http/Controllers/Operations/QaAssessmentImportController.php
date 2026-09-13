@@ -2,34 +2,35 @@
 
 namespace App\Http\Controllers\Operations;
 
-use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreQaAssessmentsRequest;
 use App\Models\QaAssessment;
 use App\Models\QaImport;
-use App\Models\User;
 use App\Notifications\NewQaAssessment;
+use App\Services\ActiveProcessorRoster;
 use App\Services\PerformanceAnnouncementService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class QaAssessmentImportController extends Controller
 {
     private const UPSERT_CHUNK_SIZE = 500;
 
-    public function __construct(private readonly PerformanceAnnouncementService $announcements) {}
+    public function __construct(
+        private readonly PerformanceAnnouncementService $announcements,
+        private readonly ActiveProcessorRoster $processorRoster,
+    ) {}
 
     public function __invoke(StoreQaAssessmentsRequest $request): RedirectResponse
     {
         $validated = $request->validated();
-        $users = User::query()->where('role', UserRole::Processor->value)->get(['id', 'name', 'n_name']);
+        $users = $this->processorRoster->all();
         $now = now();
         $matched = 0;
 
         $rows = collect($validated['assessments'])->map(function (array $assessment) use ($users, $request, $validated, $now): array {
-            $processor = $this->matchProcessor($assessment['processor_name'], $users);
+            $processor = $this->processorRoster->match($assessment['processor_name'], $users);
 
             $processorName = $processor?->name ?? trim($assessment['processor_name']);
 
@@ -102,26 +103,5 @@ class QaAssessmentImportController extends Controller
                 : route('operations.processors');
 
         return redirect()->to($redirectUrl)->with('qaImportSummary', $summary);
-    }
-
-    private function matchProcessor(string $name, Collection $users): ?User
-    {
-        $needle = $this->normalize($name);
-        $needleWords = collect(explode(' ', $needle))->filter(fn (string $word) => mb_strlen($word) > 1);
-
-        return $users->first(function (User $user) use ($needle, $needleWords): bool {
-            $fullName = $this->normalize($user->name);
-            $nickname = $this->normalize($user->n_name ?? '');
-            $fullNameWords = collect(explode(' ', $fullName));
-
-            return $needle === $fullName
-                || ($nickname !== '' && $needle === $nickname)
-                || ($needleWords->count() >= 2 && $needleWords->every(fn (string $word) => $fullNameWords->contains($word)));
-        });
-    }
-
-    private function normalize(string $value): string
-    {
-        return Str::of($value)->lower()->replaceMatches('/[^a-z0-9]+/', ' ')->squish()->value();
     }
 }

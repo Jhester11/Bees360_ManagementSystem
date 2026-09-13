@@ -50,7 +50,11 @@ class StoreUserRequest extends FormRequest
             'password' => ['required', 'confirmed', Password::defaults()],
             'role' => ['required', Rule::enum(UserRole::class)],
             'batch' => [
-                Rule::requiredIf(fn (): bool => $this->input('role') === UserRole::Processor->value),
+                Rule::requiredIf(fn (): bool => in_array(
+                    $this->input('role'),
+                    [UserRole::Processor->value, UserRole::Trainee->value],
+                    true,
+                )),
                 'nullable',
                 'integer',
                 'between:1,3',

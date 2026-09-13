@@ -42,6 +42,9 @@ test('trainers and operations can create training materials while processors can
     $this->actingAs($trainer)->post('/training/materials', $payload)->assertRedirect();
     $this->assertDatabaseHas('training_materials', ['title' => 'SageSure Exterior', 'created_by' => $trainer->id]);
     $this->assertDatabaseHas('training_material_audiences', ['audience' => 'reviewer']);
+    $savedMaterial = TrainingMaterial::where('title', 'SageSure Exterior')->firstOrFail();
+    expect($savedMaterial->pdf_path)->not->toBeEmpty();
+    Storage::disk('local')->assertExists($savedMaterial->pdf_path);
 });
 
 test('processor access is restricted by audience while reviewer can view all', function () {
@@ -54,6 +57,18 @@ test('processor access is restricted by audience while reviewer can view all', f
     $this->actingAs($processor)->get(route('training.materials.show', $processorBook))->assertOk();
     $this->actingAs($processor)->get(route('training.materials.read', $processorBook))->assertOk();
     $this->actingAs($reviewer)->get(route('training.materials.show', $reviewerOnly))->assertOk();
+});
+
+test('trainees receive processor training access without production permissions', function () {
+    $trainer = User::factory()->create(['role' => UserRole::Trainer]);
+    $trainee = User::factory()->create(['role' => UserRole::Trainee, 'batch' => 2]);
+    $processorBook = trainingMaterial($trainer, ['processor']);
+    $reviewerBook = trainingMaterial($trainer, ['reviewer']);
+
+    $this->actingAs($trainee)->get(route('training.library'))->assertOk();
+    $this->actingAs($trainee)->get(route('training.materials.show', $processorBook))->assertOk();
+    $this->actingAs($trainee)->get(route('training.materials.show', $reviewerBook))->assertForbidden();
+    $this->actingAs($trainee)->get('/operations/mtd')->assertForbidden();
 });
 
 test('reading progress is saved and completes training without an assessment', function () {
@@ -148,9 +163,137 @@ test('question image endpoint enforces the material audience', function () {
     $this->actingAs($processor)->get(route('training.questions.image', $question))->assertForbidden();
 });
 
+test('trainer can upload an image while editing an existing assessment', function () {
+    Storage::fake('local');
+    $trainer = User::factory()->create(['role' => UserRole::Trainer]);
+    $material = trainingMaterial($trainer);
+    $assessment = Assessment::create([
+        'training_material_id' => $material->id,
+        'created_by' => $trainer->id,
+        'name' => 'Visual identification',
+        'passing_score' => 80,
+        'maximum_attempts' => 2,
+    ]);
+    $question = $assessment->questions()->create([
+        'question' => 'Which feature is shown above?',
+        'points' => 1,
+        'position' => 1,
+    ]);
+    $question->choices()->createMany([
+        ['choice' => 'Guard house', 'is_correct' => true, 'position' => 1],
+        ['choice' => 'Chimney', 'is_correct' => false, 'position' => 2],
+    ]);
+
+    $response = $this->actingAs($trainer)->post(route('training.assessments.update', $assessment), [
+        '_method' => 'put',
+        'training_material_id' => $material->id,
+        'name' => 'Visual identification',
+        'passing_score' => 80,
+        'maximum_attempts' => 2,
+        'randomize_questions' => false,
+        'randomize_choices' => false,
+        'show_score' => true,
+        'show_correct_answers' => true,
+        'require_training_completion' => false,
+        'is_published' => true,
+        'questions' => [[
+            'id' => $question->id,
+            'question' => 'Which feature is shown above?',
+            'image' => UploadedFile::fake()->createWithContent(
+                'updated-reference.png',
+                base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII='),
+            ),
+            'points' => 1,
+            'choices' => [
+                ['choice' => 'Guard house', 'is_correct' => true],
+                ['choice' => 'Chimney', 'is_correct' => false],
+            ],
+        ]],
+    ]);
+
+    $response->assertRedirect();
+    $savedQuestion = $assessment->fresh()->questions()->firstOrFail();
+    expect($savedQuestion->image_path)->not->toBeEmpty();
+    Storage::disk('local')->assertExists($savedQuestion->image_path);
+});
+
 test('operations can read reports but processors cannot', function () {
     $operations = User::factory()->create(['role' => UserRole::Operations]);
     $processor = User::factory()->create(['role' => UserRole::Processor]);
     $this->actingAs($operations)->get(route('training.reports'))->assertOk();
     $this->actingAs($processor)->get(route('training.reports'))->assertForbidden();
+});
+
+test('a newly created processor is enrolled in matching active training assignments', function () {
+    $operations = User::factory()->create(['role' => UserRole::Operations]);
+    $material = trainingMaterial($operations);
+
+    $allAssignment = TrainingAssignment::create([
+        'training_material_id' => $material->id,
+        'assigned_by' => $operations->id,
+        'name' => 'All users training',
+        'scope_type' => 'all',
+        'is_active' => true,
+    ]);
+    $roleAssignment = TrainingAssignment::create([
+        'training_material_id' => $material->id,
+        'assigned_by' => $operations->id,
+        'name' => 'Processor training',
+        'scope_type' => 'role',
+        'scope_value' => UserRole::Processor->value,
+        'is_active' => true,
+    ]);
+    $batchAssignment = TrainingAssignment::create([
+        'training_material_id' => $material->id,
+        'assigned_by' => $operations->id,
+        'name' => 'Batch 3 training',
+        'scope_type' => 'batch',
+        'scope_value' => '3',
+        'is_active' => true,
+    ]);
+    $reviewerAssignment = TrainingAssignment::create([
+        'training_material_id' => $material->id,
+        'assigned_by' => $operations->id,
+        'name' => 'Reviewer training',
+        'scope_type' => 'role',
+        'scope_value' => UserRole::Reviewer->value,
+        'is_active' => true,
+    ]);
+    $inactiveAssignment = TrainingAssignment::create([
+        'training_material_id' => $material->id,
+        'assigned_by' => $operations->id,
+        'name' => 'Closed training',
+        'scope_type' => 'all',
+        'is_active' => false,
+    ]);
+
+    $this->actingAs($operations)->post(route('operations.users.store'), [
+        'name' => 'New Training Processor',
+        'n_name' => 'New Trainee',
+        'email' => 'new.trainee@bees360.com',
+        'password' => 'SecurePass123!',
+        'password_confirmation' => 'SecurePass123!',
+        'role' => UserRole::Processor->value,
+        'batch' => 3,
+    ])->assertRedirect(route('operations.users.index'));
+
+    $newUser = User::where('email', 'new.trainee@bees360.com')->firstOrFail();
+
+    foreach ([$allAssignment, $roleAssignment, $batchAssignment] as $assignment) {
+        $this->assertDatabaseHas('training_assignment_users', [
+            'training_assignment_id' => $assignment->id,
+            'user_id' => $newUser->id,
+            'status' => 'not_started',
+        ]);
+    }
+
+    foreach ([$reviewerAssignment, $inactiveAssignment] as $assignment) {
+        $this->assertDatabaseMissing('training_assignment_users', [
+            'training_assignment_id' => $assignment->id,
+            'user_id' => $newUser->id,
+        ]);
+    }
+
+    expect($newUser->onboarding_completed_at)->toBeNull()
+        ->and($newUser->notifications()->where('data->type', 'training_assigned')->count())->toBe(3);
 });

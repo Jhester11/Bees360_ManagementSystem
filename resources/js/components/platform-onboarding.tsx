@@ -15,6 +15,28 @@ function savedStep(key: string, totalSteps: number) {
 }
 
 function guideFor(user: User): GuideStep[] {
+    if (user.role === 'trainee')
+        return [
+            {
+                title: 'Training Library',
+                description: 'Browse the Bees360 learning materials available for your training role.',
+                href: '/training/library',
+                target: 'nav-training-library',
+            },
+            {
+                title: 'My Training',
+                description: 'Open your assigned courses, continue reading, and complete your assessments here.',
+                href: '/training/my-training',
+                target: 'nav-my-training',
+            },
+            {
+                title: 'Profile and security',
+                description: 'Update your profile image and keep your Bees360 password secure.',
+                href: '/settings/profile',
+                target: 'change-password',
+            },
+        ];
+
     if (user.role === 'processor')
         return [
             {

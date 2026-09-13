@@ -9,6 +9,13 @@ use Illuminate\Support\Str;
 
 class ActiveProcessorRoster
 {
+    private const HISTORICAL_BATCHES = [
+        'arianne joy lopez' => 2,
+        'emma alegre' => 2,
+        'reginald king palo' => 1,
+        'rheven violet aladin' => 2,
+    ];
+
     private const LEGACY_ALIASES = [
         'arianne lopez' => 'Arianne Joy Lopez',
         'chris gozon' => 'Christer John C. Gozon',
@@ -45,13 +52,33 @@ class ActiveProcessorRoster
         return $this->processors ??= User::query()
             ->where(function ($query): void {
                 $query->where('role', UserRole::Processor->value)
-                    ->orWhere('tracks_production', true);
+                    ->orWhere(function ($query): void {
+                        $query->where('tracks_production', true)
+                            ->whereBetween('batch', [1, 3]);
+                    });
             })
             ->where('is_active', true)
-            ->whereBetween('batch', [1, 3])
             ->orderBy('batch')
             ->orderBy('name')
             ->get(['id', 'name', 'n_name', 'batch']);
+    }
+
+    /** @return Collection<int, User> */
+    public function productionHistory(): Collection
+    {
+        return User::query()
+            ->where(function ($query): void {
+                $query->where('role', UserRole::Processor->value)
+                    ->orWhere('tracks_production', true);
+            })
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'n_name', 'batch']);
+    }
+
+    public function productionBatch(User $processor): int
+    {
+        return (int) ($processor->batch ?? self::HISTORICAL_BATCHES[$this->normalize($processor->name)] ?? 0);
     }
 
     /** @param Collection<int, User>|null $processors */

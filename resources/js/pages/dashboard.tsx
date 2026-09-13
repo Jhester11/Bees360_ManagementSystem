@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, usePoll } from '@inertiajs/react';
-import { ArrowRight, BarChart3, CalendarDays, Clock3, FileCheck2, Files, Trophy, UsersRound } from 'lucide-react';
+import { ArrowRight, BarChart3, CalendarDays, Clock3, Download, FileCheck2, Files, LoaderCircle, Trophy, UsersRound } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
@@ -18,9 +18,17 @@ export type ReportRecord = {
     fourPoint: number;
 };
 
+type AccuracyRecord = {
+    date: string;
+    processor: string;
+    projectId: string;
+    score: number;
+};
+
 type DashboardProps = {
     showReportRange?: boolean;
     reportRecords: ReportRecord[];
+    accuracyRecords: AccuracyRecord[];
     processorNames: string[];
     reportRange: { first: string | null; latest: string | null };
     overview: {
@@ -76,6 +84,15 @@ export function formatDate(date: string) {
     );
 }
 
+function formatLongDate(date: string) {
+    return new Intl.DateTimeFormat('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: 'UTC',
+    }).format(new Date(`${date}T00:00:00Z`));
+}
+
 export { BeesDatePicker } from '@/components/bees-date-picker';
 
 function philippineGreeting() {
@@ -93,8 +110,15 @@ function philippineGreeting() {
     return 'Good evening';
 }
 
-export default function Dashboard({ showReportRange = false, reportRecords, processorNames, reportRange, overview }: DashboardProps) {
-    usePoll(30_000, { only: ['reportRecords', 'processorNames', 'reportRange', 'overview'] });
+export default function Dashboard({
+    showReportRange = false,
+    reportRecords,
+    accuracyRecords,
+    processorNames,
+    reportRange,
+    overview,
+}: DashboardProps) {
+    usePoll(30_000, { only: ['reportRecords', 'accuracyRecords', 'processorNames', 'reportRange', 'overview'] });
 
     const [currentPhilippineDate, setCurrentPhilippineDate] = useState(philippinesDate);
     const referenceDate = showReportRange ? currentPhilippineDate : (reportRange.latest ?? currentPhilippineDate);
@@ -103,6 +127,8 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
     const [selectedProcessor, setSelectedProcessor] = useState(showReportRange ? '' : 'all');
     const [appliedProcessor, setAppliedProcessor] = useState(showReportRange ? '' : 'all');
     const [greeting, setGreeting] = useState(philippineGreeting);
+    const [exportingMtd, setExportingMtd] = useState(false);
+    const [exportError, setExportError] = useState<string | null>(null);
 
     useEffect(() => {
         const timer = window.setInterval(() => {
@@ -135,13 +161,54 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
         [appliedProcessor, endDate, reportRecords, showReportRange, startDate],
     );
 
+    const visibleAccuracyRecords = useMemo(
+        () =>
+            accuracyRecords.filter(
+                (record) =>
+                    record.date >= startDate &&
+                    record.date <= endDate &&
+                    appliedProcessor !== '' &&
+                    (appliedProcessor === 'all' || record.processor === appliedProcessor),
+            ),
+        [accuracyRecords, appliedProcessor, endDate, startDate],
+    );
+
+    const accuracyData = useMemo(() => {
+        const summarize = (items: AccuracyRecord[]) => ({
+            average: items.length > 0 ? items.reduce((sum, item) => sum + item.score, 0) / items.length : null,
+            reviews: items.length,
+        });
+        const byDate = new Map<string, AccuracyRecord[]>();
+        const byProcessor = new Map<string, AccuracyRecord[]>();
+
+        visibleAccuracyRecords.forEach((record) => {
+            byDate.set(record.date, [...(byDate.get(record.date) ?? []), record]);
+            byProcessor.set(record.processor, [...(byProcessor.get(record.processor) ?? []), record]);
+        });
+
+        return {
+            overall: summarize(visibleAccuracyRecords),
+            byDate: new Map(Array.from(byDate, ([key, items]) => [key, summarize(items)])),
+            byProcessor: new Map(Array.from(byProcessor, ([key, items]) => [key, summarize(items)])),
+            daily: Array.from(byDate, ([date, items]) => ({ date, ...summarize(items) })).sort((a, b) => a.date.localeCompare(b.date)),
+        };
+    }, [visibleAccuracyRecords]);
+
     const dashboardData = useMemo(() => {
-        const daily = new Map<string, { date: string; dateLabel: string; reports: number }>();
+        const daily = new Map<string, { date: string; dateLabel: string; reports: number; generalExterior: number; fourPoint: number }>();
         const processors = new Map<string, { completed: number; generalExterior: number; fourPoint: number }>();
 
         visibleRecords.forEach((record) => {
-            const currentDaily = daily.get(record.date) ?? { date: record.date, dateLabel: record.dateLabel, reports: 0 };
+            const currentDaily = daily.get(record.date) ?? {
+                date: record.date,
+                dateLabel: record.dateLabel,
+                reports: 0,
+                generalExterior: 0,
+                fourPoint: 0,
+            };
             currentDaily.reports += record.reports;
+            currentDaily.generalExterior += record.generalExterior;
+            currentDaily.fourPoint += record.fourPoint;
             daily.set(record.date, currentDaily);
             const processor = processors.get(record.processor) ?? { completed: 0, generalExterior: 0, fourPoint: 0 };
             processor.completed += record.reports;
@@ -171,6 +238,329 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
             overDelivered: dailyReports.filter((report) => report.label === 'Over delivered').length,
         };
     }, [visibleRecords]);
+
+    async function exportMtdReport() {
+        if (!appliedProcessor || dashboardData.dailyReports.length === 0 || exportingMtd) return;
+
+        setExportingMtd(true);
+        setExportError(null);
+
+        try {
+            const XLSX = await import('xlsx-js-style');
+            const selectionLabel = appliedProcessor === 'all' ? 'All processors' : appliedProcessor;
+            const formattedRange = `${formatLongDate(startDate)} to ${formatLongDate(endDate)}`;
+            const titleStyle = {
+                alignment: { horizontal: 'center', vertical: 'center' },
+                font: { name: 'Century Gothic', sz: 12, bold: true, color: { rgb: 'FFF8E7' } },
+                fill: { fgColor: { rgb: '4A351D' } },
+            };
+            const subtitleStyle = {
+                alignment: { horizontal: 'center', vertical: 'center' },
+                font: { name: 'Century Gothic', sz: 10, bold: true, color: { rgb: '805C24' } },
+                fill: { fgColor: { rgb: 'FFF1CC' } },
+            };
+            const headerStyle = {
+                alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+                font: { name: 'Century Gothic', sz: 10, bold: true, color: { rgb: 'FFF8E7' } },
+                fill: { fgColor: { rgb: '3B2915' } },
+                border: { bottom: { style: 'thin', color: { rgb: '80603A' } } },
+            };
+            const bodyStyle = {
+                alignment: { horizontal: 'center', vertical: 'center' },
+                font: { name: 'Century Gothic', sz: 10, color: { rgb: '4A3821' } },
+                fill: { fgColor: { rgb: 'FFFFFF' } },
+                border: { bottom: { style: 'thin', color: { rgb: 'F0E5D4' } } },
+            };
+            const metricStyle = {
+                alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+                font: { name: 'Century Gothic', sz: 11, bold: true, color: { rgb: '694400' } },
+                fill: { fgColor: { rgb: 'FFF0C5' } },
+                border: {
+                    top: { style: 'thin', color: { rgb: 'E2BD67' } },
+                    bottom: { style: 'thin', color: { rgb: 'E2BD67' } },
+                    left: { style: 'thin', color: { rgb: 'E2BD67' } },
+                    right: { style: 'thin', color: { rgb: 'E2BD67' } },
+                },
+            };
+            const chartSheet = XLSX.utils.aoa_to_sheet([
+                ['BEES360 | MTD REPORT PERFORMANCE'],
+                [`${formattedRange} · ${selectionLabel}`],
+                [],
+                [
+                    'REPORTS ASSEMBLED',
+                    dashboardData.total,
+                    'AVERAGE PER DAY',
+                    dashboardData.average,
+                    'GENERAL EXTERIOR',
+                    dashboardData.generalExterior,
+                    '4-POINT',
+                    dashboardData.fourPoint,
+                    'QA ACCURACY',
+                    accuracyData.overall.average === null ? 'NO QA DATA' : accuracyData.overall.average / 100,
+                ],
+                [],
+                ['REPORTS ASSEMBLED'],
+                [`Daily completed reports from ${formattedRange}`],
+            ]);
+            chartSheet['!merges'] = [
+                { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } },
+                { s: { r: 1, c: 0 }, e: { r: 1, c: 9 } },
+                { s: { r: 5, c: 0 }, e: { r: 5, c: 9 } },
+                { s: { r: 6, c: 0 }, e: { r: 6, c: 9 } },
+            ];
+            chartSheet['!cols'] = Array.from({ length: 10 }, () => ({ wch: 14 }));
+            chartSheet['!rows'] = [{ hpt: 30 }, { hpt: 22 }, { hpt: 8 }, { hpt: 32 }, { hpt: 8 }, { hpt: 25 }, { hpt: 20 }, { hpt: 8 }];
+            chartSheet.A1.s = titleStyle;
+            chartSheet.A2.s = subtitleStyle;
+            chartSheet.A6.s = headerStyle;
+            chartSheet.A7.s = {
+                ...bodyStyle,
+                alignment: { horizontal: 'center', vertical: 'center' },
+                font: { ...bodyStyle.font, color: { rgb: '806F59' } },
+            };
+
+            for (const address of ['A4', 'B4', 'C4', 'D4', 'E4', 'F4', 'G4', 'H4', 'I4', 'J4']) {
+                chartSheet[address].s = metricStyle;
+            }
+            if (accuracyData.overall.average !== null) chartSheet.J4.s = { ...metricStyle, numFmt: '0.00%' };
+            chartSheet['!ref'] = 'A1:J26';
+
+            const dailyHeaderRow = 4;
+            const dailyFirstRow = dailyHeaderRow + 1;
+            const dailyTotalRow = dailyFirstRow + dashboardData.dailyReports.length;
+            const dailySheet = XLSX.utils.aoa_to_sheet([
+                ['BEES360 | MTD DAILY DATA'],
+                [`${formattedRange} · ${selectionLabel}`],
+                [],
+                ['REPORT DATE', 'GENERAL EXTERIOR', '4-POINT', 'REPORTS ASSEMBLED', 'QA ACCURACY', 'QA REVIEWS', 'PENDING (MANUAL)', 'STATUS'],
+                ...dashboardData.dailyReports.map((day) => [
+                    new Date(`${day.date}T00:00:00Z`),
+                    day.generalExterior,
+                    day.fourPoint,
+                    day.reports,
+                    accuracyData.byDate.get(day.date)?.average === undefined ? '' : accuracyData.byDate.get(day.date)!.average! / 100,
+                    accuracyData.byDate.get(day.date)?.reviews ?? 0,
+                    '',
+                    day.label.toUpperCase(),
+                ]),
+                [
+                    'MTD TOTAL',
+                    dashboardData.generalExterior,
+                    dashboardData.fourPoint,
+                    dashboardData.total,
+                    accuracyData.overall.average === null ? '' : accuracyData.overall.average / 100,
+                    accuracyData.overall.reviews,
+                    '',
+                    '',
+                ],
+            ]);
+            dailySheet['!merges'] = [
+                { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
+                { s: { r: 1, c: 0 }, e: { r: 1, c: 7 } },
+            ];
+            dailySheet['!cols'] = [{ wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 20 }, { wch: 22 }];
+            dailySheet.A1.s = titleStyle;
+            dailySheet.A2.s = subtitleStyle;
+            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) dailySheet[`${column}${dailyHeaderRow}`].s = headerStyle;
+            dailySheet[`G${dailyHeaderRow}`].s = { ...headerStyle, fill: { fgColor: { rgb: 'B96C00' } } };
+            dashboardData.dailyReports.forEach((day, index) => {
+                const row = dailyFirstRow + index;
+                const fill = index % 2 === 0 ? 'FFFFFF' : 'FFF8E8';
+                for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) {
+                    dailySheet[`${column}${row}`].s = { ...bodyStyle, fill: { fgColor: { rgb: fill } } };
+                }
+                dailySheet[`A${row}`].s.numFmt = 'mmmm d, yyyy';
+                dailySheet[`A${row}`].s.font = { ...bodyStyle.font, bold: true };
+                dailySheet[`D${row}`] = { f: `B${row}+C${row}`, v: day.reports, t: 'n', s: dailySheet[`D${row}`].s };
+                if (accuracyData.byDate.has(day.date)) dailySheet[`E${row}`].s.numFmt = '0.00%';
+                dailySheet[`G${row}`].s = {
+                    ...bodyStyle,
+                    alignment: { horizontal: 'center', vertical: 'center' },
+                    font: { ...bodyStyle.font, bold: true, color: { rgb: '8A5100' } },
+                    fill: { fgColor: { rgb: 'FFF1CC' } },
+                    numFmt: '#,##0',
+                };
+                const statusColors =
+                    day.label === 'Under delivered'
+                        ? { font: 'A5474B', fill: 'FDE1E2' }
+                        : day.label === 'Over delivered'
+                          ? { font: '477239', fill: 'E2EFD9' }
+                          : { font: '936000', fill: 'FFF0C5' };
+                dailySheet[`H${row}`].s = {
+                    ...bodyStyle,
+                    alignment: { horizontal: 'center', vertical: 'center' },
+                    font: { ...bodyStyle.font, bold: true, color: { rgb: statusColors.font } },
+                    fill: { fgColor: { rgb: statusColors.fill } },
+                };
+            });
+            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) dailySheet[`${column}${dailyTotalRow}`].s = metricStyle;
+            dailySheet[`B${dailyTotalRow}`] = {
+                f: `SUM(B${dailyFirstRow}:B${dailyTotalRow - 1})`,
+                v: dashboardData.generalExterior,
+                t: 'n',
+                s: metricStyle,
+            };
+            dailySheet[`C${dailyTotalRow}`] = {
+                f: `SUM(C${dailyFirstRow}:C${dailyTotalRow - 1})`,
+                v: dashboardData.fourPoint,
+                t: 'n',
+                s: metricStyle,
+            };
+            dailySheet[`D${dailyTotalRow}`] = {
+                f: `SUM(D${dailyFirstRow}:D${dailyTotalRow - 1})`,
+                v: dashboardData.total,
+                t: 'n',
+                s: metricStyle,
+            };
+            dailySheet[`E${dailyTotalRow}`].s = { ...metricStyle, numFmt: '0.00%' };
+            dailySheet[`F${dailyTotalRow}`].s = metricStyle;
+            dailySheet[`G${dailyTotalRow}`] = {
+                f: `SUM(G${dailyFirstRow}:G${dailyTotalRow - 1})`,
+                v: 0,
+                t: 'n',
+                s: { ...metricStyle, fill: { fgColor: { rgb: 'FFE3A0' } } },
+            };
+            const processorSheet = XLSX.utils.json_to_sheet(
+                visibleRecords.map((record) => ({
+                    'Report Date': new Date(`${record.date}T00:00:00Z`),
+                    Processor: record.processor,
+                    Batch: record.batch,
+                    'General Exterior': record.generalExterior,
+                    '4-Point': record.fourPoint,
+                    'Reports Assembled': record.reports,
+                    'MTD QA Accuracy':
+                        accuracyData.byProcessor.get(record.processor)?.average === undefined
+                            ? ''
+                            : accuracyData.byProcessor.get(record.processor)!.average! / 100,
+                    'Pending (Manual)': '',
+                })),
+            );
+            processorSheet['!cols'] = [
+                { wch: 16 },
+                { wch: 30 },
+                { wch: 10 },
+                { wch: 20 },
+                { wch: 14 },
+                { wch: 20 },
+                { wch: 18 },
+                { wch: 20 },
+            ];
+            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) processorSheet[`${column}1`].s = headerStyle;
+            processorSheet.H1.s = { ...headerStyle, fill: { fgColor: { rgb: 'B96C00' } } };
+            visibleRecords.forEach((_, index) => {
+                const row = index + 2;
+                const fill = index % 2 === 0 ? 'FFFFFF' : 'FFF8E8';
+                for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) {
+                    processorSheet[`${column}${row}`].s = { ...bodyStyle, fill: { fgColor: { rgb: fill } } };
+                }
+                processorSheet[`A${row}`].s = {
+                    ...processorSheet[`A${row}`].s,
+                    font: { ...bodyStyle.font, bold: true },
+                    numFmt: 'mmmm d, yyyy',
+                };
+                if (processorSheet[`G${row}`].v !== '') processorSheet[`G${row}`].s.numFmt = '0.00%';
+                processorSheet[`H${row}`].s = {
+                    ...bodyStyle,
+                    alignment: { horizontal: 'center', vertical: 'center' },
+                    font: { ...bodyStyle.font, bold: true, color: { rgb: '8A5100' } },
+                    fill: { fgColor: { rgb: 'FFF1CC' } },
+                    numFmt: '#,##0',
+                };
+            });
+
+            const qaHeaderRow = 4;
+            const qaFirstRow = qaHeaderRow + 1;
+            const qaTotalRow = qaFirstRow + visibleAccuracyRecords.length;
+            const qaSheet = XLSX.utils.aoa_to_sheet([
+                ['BEES360 | QA SCORES'],
+                [`${formattedRange} · ${selectionLabel}`],
+                [],
+                ['REPORT DATE', 'PROJECT ID', 'QA SCORE'],
+                ...visibleAccuracyRecords.map((record) => [
+                    new Date(`${record.date}T00:00:00Z`),
+                    record.projectId,
+                    record.score / 100,
+                ]),
+                ['TOTAL ACCURACY', '', accuracyData.overall.average === null ? '' : accuracyData.overall.average / 100],
+            ]);
+            qaSheet['!merges'] = [
+                { s: { r: 0, c: 0 }, e: { r: 0, c: 2 } },
+                { s: { r: 1, c: 0 }, e: { r: 1, c: 2 } },
+                { s: { r: qaTotalRow - 1, c: 0 }, e: { r: qaTotalRow - 1, c: 1 } },
+            ];
+            qaSheet['!cols'] = [{ wch: 22 }, { wch: 30 }, { wch: 18 }];
+            qaSheet.A1.s = titleStyle;
+            qaSheet.A2.s = subtitleStyle;
+            for (const column of ['A', 'B', 'C']) qaSheet[`${column}${qaHeaderRow}`].s = headerStyle;
+            visibleAccuracyRecords.forEach((_, index) => {
+                const row = qaFirstRow + index;
+                const fill = index % 2 === 0 ? 'FFFFFF' : 'FFF8E8';
+                for (const column of ['A', 'B', 'C']) {
+                    qaSheet[`${column}${row}`].s = { ...bodyStyle, fill: { fgColor: { rgb: fill } } };
+                }
+                qaSheet[`A${row}`].s = {
+                    ...qaSheet[`A${row}`].s,
+                    font: { ...bodyStyle.font, bold: true },
+                    numFmt: 'mmmm d, yyyy',
+                };
+                qaSheet[`C${row}`].s = { ...qaSheet[`C${row}`].s, numFmt: '0.00%' };
+            });
+            qaSheet[`A${qaTotalRow}`].s = metricStyle;
+            qaSheet[`C${qaTotalRow}`].s = { ...metricStyle, numFmt: '0.00%' };
+            if (visibleAccuracyRecords.length > 0) {
+                qaSheet[`C${qaTotalRow}`] = {
+                    f: `AVERAGE(C${qaFirstRow}:C${qaTotalRow - 1})`,
+                    v: accuracyData.overall.average! / 100,
+                    t: 'n',
+                    s: { ...metricStyle, numFmt: '0.00%' },
+                };
+            }
+
+            const workbook = XLSX.utils.book_new();
+            workbook.Props = {
+                Title: 'Bees360 MTD Report',
+                Subject: `${formattedRange} · ${selectionLabel}`,
+                Author: 'Bees360',
+            };
+            XLSX.utils.book_append_sheet(workbook, chartSheet, 'MTD Dashboard');
+            XLSX.utils.book_append_sheet(workbook, dailySheet, 'Daily Data');
+            XLSX.utils.book_append_sheet(workbook, processorSheet, 'Processor Data');
+            XLSX.utils.book_append_sheet(workbook, qaSheet, 'QA Scores');
+            const workbookBytes = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', compression: true }) as ArrayBuffer;
+            const { addNativeAreaChart, addNativeGaugeChart } = await import('@/lib/xlsx-native-chart');
+            const areaChartWorkbook = addNativeAreaChart(new Uint8Array(workbookBytes), {
+                title: 'Reports assembled',
+                dataSheetName: 'Daily Data',
+                firstDataRow: dailyFirstRow,
+                categoryColumn: 'A',
+                valueColumn: 'D',
+                points: dashboardData.dailyReports.map((day) => ({ date: day.date, value: day.reports })),
+            });
+            const chartedWorkbook = addNativeGaugeChart(areaChartWorkbook, {
+                title: 'Total Accuracy',
+                worksheetIndex: 4,
+                accuracy: accuracyData.overall.average,
+                assessmentCount: accuracyData.overall.reviews,
+                periodLabel: formattedRange,
+            });
+            const downloadBuffer = chartedWorkbook.buffer.slice(
+                chartedWorkbook.byteOffset,
+                chartedWorkbook.byteOffset + chartedWorkbook.byteLength,
+            ) as ArrayBuffer;
+            const downloadUrl = URL.createObjectURL(
+                new Blob([downloadBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+            );
+            const download = document.createElement('a');
+            download.href = downloadUrl;
+            download.download = `BEES360 MTD REPORT ${startDate} TO ${endDate}.xlsx`;
+            download.click();
+            URL.revokeObjectURL(downloadUrl);
+        } catch {
+            setExportError('The MTD Excel report could not be generated. Please try again.');
+        } finally {
+            setExportingMtd(false);
+        }
+    }
 
     const topProcessor = dashboardData.rankedProcessors[0];
     const reportRangeBreadcrumbs: BreadcrumbItem[] = [
@@ -400,11 +790,28 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
                         <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#342615]">MTD report performance</h1>
                         <p className="mt-2 text-sm text-[#776a57]">Choose a date range and processor to review imported report production.</p>
                     </div>
-                    <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[#eed8a9] bg-[#fff5dc] px-3 py-1.5 text-xs font-semibold text-[#936000]">
-                        <span className="size-2 rounded-full bg-[#4a9a55]" />
-                        {reportRange.latest ? `Live data through ${formatDate(reportRange.latest)}` : 'No report data imported'}
+                    <div className="flex flex-wrap items-center gap-3">
+                        <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[#eed8a9] bg-[#fff5dc] px-3 py-1.5 text-xs font-semibold text-[#936000]">
+                            <span className="size-2 rounded-full bg-[#4a9a55]" />
+                            {reportRange.latest ? `Live data through ${formatDate(reportRange.latest)}` : 'No report data imported'}
+                        </div>
+                        <Button
+                            type="button"
+                            disabled={!appliedProcessor || dashboardData.dailyReports.length === 0 || exportingMtd}
+                            onClick={() => void exportMtdReport()}
+                            className="h-10 gap-2 rounded-xl bg-[#3f2b16] px-4 font-bold text-white hover:bg-[#28190c] disabled:bg-[#cdbd9f]"
+                        >
+                            {exportingMtd ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}
+                            {exportingMtd ? 'Building Excel…' : 'Export Excel'}
+                        </Button>
                     </div>
                 </section>
+
+                {exportError && (
+                    <p role="alert" className="rounded-xl border border-[#efc5c7] bg-[#fff1f1] px-4 py-3 text-sm font-semibold text-[#a5474b]">
+                        {exportError}
+                    </p>
+                )}
 
                 <section className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-4 shadow-[0_8px_30px_rgb(88,57,18,0.05)] sm:p-5">
                     <div className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)_auto] lg:items-end">
@@ -470,14 +877,14 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
                     <p className="mt-4 flex items-center gap-2 text-xs text-[#887760]">
                         <Clock3 className="size-3.5 text-[#b26a00]" />
                         {appliedProcessor
-                            ? `Showing ${appliedProcessor === 'all' ? 'all processors' : appliedProcessor} from ${startDate} to ${endDate}.`
+                            ? `Showing ${appliedProcessor === 'all' ? 'all processors' : appliedProcessor} from ${formatLongDate(startDate)} to ${formatLongDate(endDate)}.`
                             : 'Select a processor and click Compare periods to view MTD data.'}
                     </p>
                 </section>
 
-                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
                     {[
-                        { label: 'Reports polished', value: dashboardData.total, icon: FileCheck2, tone: 'bg-[#fff0c9] text-[#a96300]' },
+                        { label: 'Reports assembled', value: dashboardData.total, icon: FileCheck2, tone: 'bg-[#fff0c9] text-[#a96300]' },
                         { label: 'Average per day', value: dashboardData.average, icon: BarChart3, tone: 'bg-[#ffeadf] text-[#b34d10]' },
                         {
                             label: 'General Exterior',
@@ -490,6 +897,20 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
                             value: dashboardData.fourPoint,
                             icon: FileCheck2,
                             tone: 'bg-[#f1ebff] text-[#7440a2]',
+                        },
+                        {
+                            label: 'QA accuracy',
+                            value: accuracyData.overall.average === null ? '—' : `${accuracyData.overall.average.toFixed(2)}%`,
+                            icon: BarChart3,
+                            tone: 'bg-[#e2f3ed] text-[#24715a]',
+                            note: accuracyData.overall.average === null ? 'No QA data in this range' : 'Average assessment score',
+                        },
+                        {
+                            label: 'QA reviews',
+                            value: accuracyData.overall.reviews,
+                            icon: FileCheck2,
+                            tone: 'bg-[#e8f2ff] text-[#2f659a]',
+                            note: 'Assessments in selected range',
                         },
                         { label: 'Top processor', value: topProcessor?.name ?? '—', icon: Trophy, tone: 'bg-[#e6f5e5] text-[#28703c]' },
                         {
@@ -510,19 +931,70 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
                                 </div>
                                 <p className="mt-4 text-sm font-medium text-[#806f59]">{metric.label}</p>
                                 <p className="mt-1 truncate text-2xl font-bold tracking-tight text-[#342615]">{metric.value}</p>
-                                <p className="mt-2 text-xs text-[#9a8a72]">Imported report data</p>
+                                <p className="mt-2 text-xs text-[#9a8a72]">{'note' in metric ? metric.note : 'Imported report data'}</p>
                             </article>
                         );
                     })}
                 </section>
 
-                <section className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.8fr)]">
+                {appliedProcessor && (
+                    <section className="overflow-hidden rounded-2xl border border-[#cfe5dc] bg-[#fbfffd] shadow-[0_8px_30px_rgb(36,113,90,0.06)]">
+                        <div className="flex flex-col justify-between gap-3 border-b border-[#dcebe5] p-5 sm:flex-row sm:items-center sm:px-6">
+                            <div>
+                                <p className="text-xs font-bold tracking-[0.14em] text-[#24715a] uppercase">Quality performance</p>
+                                <h2 className="mt-1 text-lg font-bold tracking-tight text-[#342615]">MTD QA results</h2>
+                                <p className="mt-1 text-sm text-[#806f59]">
+                                    {appliedProcessor === 'all' ? 'All processors' : appliedProcessor} · {formatLongDate(startDate)} to{' '}
+                                    {formatLongDate(endDate)}
+                                </p>
+                            </div>
+                            <div className="flex gap-2">
+                                <span className="rounded-xl bg-[#e2f3ed] px-3 py-2 text-sm font-bold text-[#24715a]">
+                                    {accuracyData.overall.average === null ? 'No score' : `${accuracyData.overall.average.toFixed(2)}% average`}
+                                </span>
+                                <span className="rounded-xl bg-[#e8f2ff] px-3 py-2 text-sm font-bold text-[#2f659a]">
+                                    {accuracyData.overall.reviews} review{accuracyData.overall.reviews === 1 ? '' : 's'}
+                                </span>
+                            </div>
+                        </div>
+                        {accuracyData.daily.length > 0 ? (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-sm">
+                                    <thead className="bg-[#f0f8f5] text-xs tracking-wide text-[#55766a] uppercase">
+                                        <tr>
+                                            <th className="px-5 py-3 font-bold sm:px-6">Assessment date</th>
+                                            <th className="px-5 py-3 font-bold">Average accuracy</th>
+                                            <th className="px-5 py-3 font-bold">QA reviews</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-[#e2eee9]">
+                                        {accuracyData.daily.map((day) => (
+                                            <tr key={day.date}>
+                                                <td className="px-5 py-3.5 font-semibold text-[#4a3821] sm:px-6">{formatDate(day.date)}</td>
+                                                <td className="px-5 py-3.5 font-bold text-[#24715a]">
+                                                    {day.average === null ? '—' : `${day.average.toFixed(2)}%`}
+                                                </td>
+                                                <td className="px-5 py-3.5 font-semibold text-[#4a3821]">{day.reviews}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <p className="px-5 py-8 text-center text-sm text-[#806f59] sm:px-6">
+                                No QA assessments are available for this processor and date range.
+                            </p>
+                        )}
+                    </section>
+                )}
+
+                <section className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,0.7fr)]">
                     <article className="min-w-0 rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5 shadow-[0_8px_30px_rgb(88,57,18,0.05)] sm:p-6">
                         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                             <div>
-                                <h2 className="text-lg font-bold tracking-tight text-[#342615]">Reports polished</h2>
+                                <h2 className="text-lg font-bold tracking-tight text-[#342615]">Reports assembled</h2>
                                 <p className="mt-1 text-sm text-[#806f59]">
-                                    Daily completed reports from {startDate} to {endDate}
+                                    Daily completed reports from {formatLongDate(startDate)} to {formatLongDate(endDate)}
                                 </p>
                             </div>
                             <div className="rounded-lg bg-[#fff1cc] px-3 py-2 text-right">
@@ -594,7 +1066,7 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
                                 <thead className="bg-[#fff8e8] text-xs tracking-wide text-[#806f59] uppercase">
                                     <tr>
                                         <th className="px-5 py-3 font-bold">Report date</th>
-                                        <th className="px-5 py-3 font-bold">Reports</th>
+                                        <th className="px-5 py-3 font-bold">Reports assembled</th>
                                         <th className="px-5 py-3 font-bold">Status</th>
                                     </tr>
                                 </thead>
@@ -602,7 +1074,7 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
                                     {dashboardData.dailyReports.length ? (
                                         dashboardData.dailyReports.map((report) => (
                                             <tr key={report.date}>
-                                                <td className="px-5 py-3.5 font-semibold text-[#4a3821]">{report.dateLabel}</td>
+                                                <td className="px-5 py-3.5 font-bold text-[#4a3821]">{formatLongDate(report.date)}</td>
                                                 <td className="px-5 py-3.5 font-bold text-[#4a3821]">{report.reports}</td>
                                                 <td className="px-5 py-3.5">
                                                     <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${report.className}`}>
@@ -614,7 +1086,8 @@ export default function Dashboard({ showReportRange = false, reportRecords, proc
                                     ) : (
                                         <tr>
                                             <td colSpan={3} className="px-5 py-8 text-center text-sm text-[#806f59]">
-                                                No imported report records are available for this date and processor selection.
+                                                The comparison was applied, but no production workbook rows are available for this processor and date range.
+                                                {accuracyData.overall.reviews > 0 ? ' The available QA results are shown above.' : ''}
                                             </td>
                                         </tr>
                                     )}

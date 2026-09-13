@@ -8,7 +8,9 @@ use App\Models\CstProcessorMetric;
 use App\Models\QaAssessment;
 use App\Models\ReportEntry;
 use App\Models\User;
+use App\Services\ActiveProcessorRoster;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -38,9 +40,15 @@ class DashboardController extends Controller
         'wengmir africa' => 'wengmir a africa',
     ];
 
-    public function index(Request $request): Response
+    public function __construct(private readonly ActiveProcessorRoster $processorRoster) {}
+
+    public function index(Request $request): Response|RedirectResponse
     {
-        if ($request->user()?->role === UserRole::Processor) {
+        if ($request->user()?->role === UserRole::Trainee) {
+            return to_route('training.my');
+        }
+
+        if ($request->user()?->role === UserRole::Processor || $request->user()?->tracks_production) {
             return $this->renderProcessorDashboard($request);
         }
 
@@ -61,7 +69,7 @@ class DashboardController extends Controller
     {
         return Inertia::render('dashboard', [
             'showReportRange' => $showReportRange,
-            ...$this->reportData(),
+            ...$this->reportData(applyMtdNoonCutoff: $showReportRange),
         ]);
     }
 
@@ -112,7 +120,13 @@ class DashboardController extends Controller
                 : $this->belongsToProcessor($processor, $assessment->processor_name))
             ->values();
         $processorAccounts = User::query()
-            ->where('role', UserRole::Processor->value)
+            ->where(function ($query): void {
+                $query->where('role', UserRole::Processor->value)
+                    ->orWhere(function ($query): void {
+                        $query->where('tracks_production', true)
+                            ->whereBetween('batch', [1, 3]);
+                    });
+            })
             ->where('is_active', true)
             ->get(['id', 'name', 'n_name']);
 
@@ -392,8 +406,9 @@ class DashboardController extends Controller
         }
     }
 
-    private function reportData(): array
+    private function reportData(bool $applyMtdNoonCutoff = false): array
     {
+        $processorAccounts = $this->processorRoster->all();
         $entries = ReportEntry::query()
             ->orderByDesc('source')
             ->get([
@@ -404,13 +419,39 @@ class DashboardController extends Controller
                 'project_id',
                 'inspection_type',
                 'report_category',
+                'assembled_at',
             ])
+            ->when(
+                $applyMtdNoonCutoff,
+                fn (Collection $entries): Collection => $entries->filter(
+                    fn (ReportEntry $entry): bool => $this->isWithinMtdCountingWindow($entry),
+                ),
+            )
             ->unique(fn (ReportEntry $entry) => implode('|', [
                 $entry->report_date->format('Y-m-d'),
-                $entry->processor_name,
+                $this->processorKey($entry->processor_name),
                 $entry->project_id,
                 $entry->inspection_type,
             ]))
+            ->values();
+        $processorNamesByKey = $entries
+            ->pluck('processor_name')
+            ->mapWithKeys(fn (string $name): array => [$this->processorKey($name) => $name])
+            ->merge($processorAccounts->mapWithKeys(
+                fn (User $processor): array => [$this->processorKey($processor->name) => $processor->name],
+            ));
+        $accuracyRecords = QaAssessment::query()
+            ->orderBy('assessment_date')
+            ->get(['assessment_date', 'processor_name', 'project_id', 'score'])
+            ->map(fn (QaAssessment $assessment): array => [
+                'date' => $assessment->assessment_date->format('Y-m-d'),
+                'processor' => $processorNamesByKey->get(
+                    $this->processorKey($assessment->processor_name),
+                    $assessment->processor_name,
+                ),
+                'projectId' => $assessment->project_id,
+                'score' => (float) $assessment->score,
+            ])
             ->values();
 
         $latestReportDate = $entries->max(fn (ReportEntry $entry) => $entry->report_date->format('Y-m-d'));
@@ -420,15 +461,18 @@ class DashboardController extends Controller
         $weeklyEntries = $entries->filter(fn (ReportEntry $entry) => $entry->report_date->betweenIncluded($weekStart, $weekEnd));
 
         $records = $entries
-            ->groupBy(fn (ReportEntry $entry) => $entry->report_date->format('Y-m-d').'|'.$entry->processor_name)
-            ->map(function (Collection $group): array {
+            ->groupBy(fn (ReportEntry $entry) => $entry->report_date->format('Y-m-d').'|'.$this->processorKey($entry->processor_name))
+            ->map(function (Collection $group) use ($processorNamesByKey): array {
                 /** @var ReportEntry $first */
                 $first = $group->first();
 
                 return [
                     'date' => $first->report_date->format('Y-m-d'),
                     'dateLabel' => $first->report_date->format('M j'),
-                    'processor' => $first->processor_name,
+                    'processor' => $processorNamesByKey->get(
+                        $this->processorKey($first->processor_name),
+                        $first->processor_name,
+                    ),
                     'batch' => $first->batch,
                     'reports' => $group->count(),
                     'generalExterior' => $group->where('report_category', 'general_exterior')->count(),
@@ -478,7 +522,13 @@ class DashboardController extends Controller
 
         return [
             'reportRecords' => $records,
-            'processorNames' => $entries->pluck('processor_name')->unique()->sort()->values(),
+            'accuracyRecords' => $accuracyRecords,
+            'processorNames' => $processorAccounts
+                ->pluck('name')
+                ->merge($records->pluck('processor'))
+                ->unique()
+                ->sort()
+                ->values(),
             'reportRange' => [
                 'first' => $entries->min(fn (ReportEntry $entry) => $entry->report_date->format('Y-m-d')),
                 'latest' => $latestReportDate,
@@ -498,5 +548,14 @@ class DashboardController extends Controller
                 'topProcessors' => $topProcessors,
             ],
         ];
+    }
+
+    private function isWithinMtdCountingWindow(ReportEntry $entry): bool
+    {
+        if ($entry->report_date->day !== 1 || $entry->assembled_at === null) {
+            return true;
+        }
+
+        return $entry->assembled_at->format('H:i:s') >= '12:00:00';
     }
 }

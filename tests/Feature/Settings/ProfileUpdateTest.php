@@ -74,6 +74,7 @@ test('identity fields sent by any account role are ignored', function (UserRole 
         ->and($user->fresh()->n_name)->toBe($user->n_name);
 })->with([
     'processor' => UserRole::Processor,
+    'trainee' => UserRole::Trainee,
     'trainer' => UserRole::Trainer,
     'quality assurance' => UserRole::Qa,
     'reviewer' => UserRole::Reviewer,

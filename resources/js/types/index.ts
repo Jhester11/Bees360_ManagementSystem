@@ -38,7 +38,7 @@ export interface User {
     email_verified_at: string | null;
     created_at: string;
     updated_at: string;
-    role: 'operations' | 'processor' | 'trainer' | 'qa' | 'reviewer';
+    role: 'operations' | 'processor' | 'trainee' | 'trainer' | 'qa' | 'reviewer';
     is_active: boolean;
     onboarding_completed_at: string | null;
     [key: string]: unknown; // This allows for additional properties...

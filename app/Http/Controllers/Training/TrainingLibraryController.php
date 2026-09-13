@@ -25,7 +25,7 @@ class TrainingLibraryController extends Controller
     public function library(Request $r)
     {
         $q = TrainingMaterial::with(['subject', 'topic', 'author', 'audiences'])->visibleTo($r->user());
-        if ($r->user()->role === UserRole::Processor) {
+        if (in_array($r->user()->role, [UserRole::Processor, UserRole::Trainee], true)) {
             $q->where('status', 'published');
         }
         foreach (['category', 'difficulty', 'status'] as $f) {

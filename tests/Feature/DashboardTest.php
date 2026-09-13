@@ -19,6 +19,80 @@ test('authenticated users can visit the dashboard', function () {
     $this->get('/dashboard')->assertOk();
 });
 
+test('trainee dashboard opens My Training instead of operations data', function () {
+    $trainee = User::factory()->create(['role' => UserRole::Trainee, 'batch' => 3]);
+
+    $this->actingAs($trainee)->get('/dashboard')->assertRedirect(route('training.my'));
+});
+
+test('Jhun remains visible in MTD reports while his account has Operations access', function () {
+    $jhun = User::factory()->create([
+        'name' => 'Jhun Cervantes',
+        'n_name' => 'Jhun',
+        'role' => UserRole::Operations,
+        'batch' => 1,
+        'tracks_production' => true,
+    ]);
+    ReportEntry::query()->create([
+        'report_date' => '2026-09-03',
+        'source' => 'closed',
+        'batch' => 1,
+        'processor_name' => 'Jhun Lester Cervantes',
+        'project_id' => 'JHUN-MTD',
+        'insured_by' => 'Sample insured',
+        'inspection_type' => 'Exterior Underwriting',
+        'report_category' => 'general_exterior',
+        'assembled_at' => '2026-09-03 10:00:00',
+    ]);
+
+    $this->actingAs($jhun)->get('/operations/mtd')->assertInertia(fn (Assert $page) => $page
+        ->component('dashboard')
+        ->where('processorNames', ['Jhun Cervantes'])
+        ->where('reportRecords.0.processor', 'Jhun Cervantes')
+        ->where('reportRecords.0.reports', 1));
+});
+
+test('active processor accounts appear in the MTD selector before they have report rows', function () {
+    $operations = User::factory()->create(['role' => UserRole::Operations]);
+    User::factory()->create([
+        'name' => 'New Processor',
+        'n_name' => 'New',
+        'role' => UserRole::Processor,
+        'batch' => 2,
+    ]);
+
+    $this->actingAs($operations)->get('/operations/mtd')->assertInertia(fn (Assert $page) => $page
+        ->component('dashboard')
+        ->where('processorNames', ['New Processor'])
+        ->where('reportRecords', []));
+});
+
+test('reviewers with processor history see their own previous production dashboard', function () {
+    $reviewer = User::factory()->create([
+        'name' => 'Emma Alegre',
+        'n_name' => 'Emma',
+        'role' => UserRole::Reviewer,
+        'batch' => null,
+        'tracks_production' => true,
+    ]);
+    ReportEntry::query()->create([
+        'report_date' => '2026-09-03',
+        'source' => 'closed',
+        'batch' => 2,
+        'processor_name' => 'Emma Alegre',
+        'project_id' => 'EMMA-HISTORY',
+        'insured_by' => 'Sample insured',
+        'inspection_type' => 'Exterior Underwriting',
+        'report_category' => 'general_exterior',
+        'assembled_at' => '2026-09-03 10:00:00',
+    ]);
+
+    $this->actingAs($reviewer)->get('/dashboard?month=2026-09')->assertInertia(fn (Assert $page) => $page
+        ->component('processor-dashboard')
+        ->where('metrics.ph.totalCases', 1)
+        ->where('auth.user.name', 'Emma Alegre'));
+});
+
 test('processor dashboard displays only the signed in processors monthly PH CST and QA metrics', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-04 10:00:00', 'Asia/Manila'));
     $processor = User::factory()->create([
@@ -219,6 +293,71 @@ test('dashboard displays deduplicated imported report data', function () {
         ->where('reportRange.latest', '2026-08-31')
         ->has('reportRecords', 2)
         ->where('processorNames', ['Allan Layug', 'Chrismer Flores']));
+});
+
+test('operations dashboard exposes QA accuracy records for the MTD Excel export', function () {
+    $operations = User::factory()->create(['role' => UserRole::Operations]);
+    ReportEntry::query()->create([
+        'report_date' => '2026-09-02',
+        'source' => 'closed',
+        'batch' => 1,
+        'processor_name' => 'Mac Evens T. Payongayong',
+        'project_id' => 'MAC-REPORT',
+        'insured_by' => 'Sample insured',
+        'inspection_type' => 'Exterior Underwriting',
+        'report_category' => 'general_exterior',
+        'assembled_at' => '2026-09-02 10:00:00',
+    ]);
+    QaAssessment::query()->create([
+        'record_key' => hash('sha256', 'MAC-QA|2026-09-02'),
+        'assessment_date' => '2026-09-02',
+        'processor_name' => 'Mac Payongayong',
+        'project_id' => 'MAC-QA',
+        'qc_name' => 'QA Reviewer',
+        'score' => 92.5,
+        'source_file' => 'QA September.xlsx',
+        'uploaded_by' => $operations->id,
+    ]);
+
+    $this->actingAs($operations)->get('/dashboard')->assertInertia(fn (Assert $page) => $page
+        ->component('dashboard')
+        ->has('accuracyRecords', 1)
+        ->where('accuracyRecords.0.date', '2026-09-02')
+        ->where('accuracyRecords.0.processor', 'Mac Evens T. Payongayong')
+        ->where('accuracyRecords.0.projectId', 'MAC-QA')
+        ->where('accuracyRecords.0.score', 92.5));
+});
+
+test('MTD reports start counting at noon Philippine Time on the first day of each month', function () {
+    $operations = User::factory()->create(['role' => UserRole::Operations]);
+
+    foreach ([
+        ['BEFORE-NOON', '2026-09-01 11:59:59'],
+        ['AT-NOON', '2026-09-01 12:00:00'],
+        ['NEXT-DAY', '2026-09-02 08:00:00'],
+    ] as [$projectId, $assembledAt]) {
+        ReportEntry::query()->create([
+            'report_date' => str($assembledAt)->before(' ')->toString(),
+            'source' => 'closed',
+            'batch' => 1,
+            'processor_name' => 'Allan Layug',
+            'project_id' => $projectId,
+            'insured_by' => 'Sample insured',
+            'inspection_type' => 'Exterior Underwriting',
+            'report_category' => 'general_exterior',
+            'assembled_at' => $assembledAt,
+        ]);
+    }
+
+    $this->actingAs($operations)->get('/operations/mtd')->assertInertia(fn (Assert $page) => $page
+        ->has('reportRecords', 2)
+        ->where('reportRecords.0.date', '2026-09-01')
+        ->where('reportRecords.0.reports', 1)
+        ->where('reportRecords.1.date', '2026-09-02')
+        ->where('reportRecords.1.reports', 1));
+
+    $this->get('/dashboard')->assertInertia(fn (Assert $page) => $page
+        ->where('reportRecords.0.reports', 2));
 });
 
 test('leaderboard combines a processors over-delivered days into one overall result', function () {

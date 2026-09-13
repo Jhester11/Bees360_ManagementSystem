@@ -3,6 +3,7 @@
 use App\Enums\UserRole;
 use App\Models\User;
 use App\Services\ActiveProcessorRoster;
+use Database\Seeders\ProcessorRosterSeeder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -18,7 +19,7 @@ test('operations administrators can view user management', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->component('operations/users')
             ->has('users', 2)
-            ->has('roles', 5));
+            ->has('roles', 6));
 });
 
 test('operations administrators can create an account with a profile image and role', function () {
@@ -83,6 +84,43 @@ test('processor accounts require a production batch', function () {
         ->assertSessionHasErrors('batch');
 });
 
+test('operations administrators can create a trainee account with a batch', function () {
+    $administrator = User::factory()->create(['role' => UserRole::Operations]);
+
+    $response = $this->actingAs($administrator)->post(route('operations.users.store'), [
+        'name' => 'New Trainee',
+        'n_name' => 'Trainee',
+        'email' => 'trainee@bees360.com',
+        'password' => 'SecurePass123!',
+        'password_confirmation' => 'SecurePass123!',
+        'role' => UserRole::Trainee->value,
+        'batch' => 2,
+    ]);
+
+    $response->assertRedirect(route('operations.users.index'))->assertSessionHas('userMessage');
+    $this->assertDatabaseHas('users', [
+        'email' => 'trainee@bees360.com',
+        'role' => UserRole::Trainee->value,
+        'batch' => 2,
+        'tracks_production' => false,
+    ]);
+});
+
+test('trainee accounts require a training batch', function () {
+    $administrator = User::factory()->create(['role' => UserRole::Operations]);
+
+    $this->actingAs($administrator)->post(route('operations.users.store'), [
+        'name' => 'Batchless Trainee',
+        'n_name' => 'Batchless',
+        'email' => 'batchless.trainee@bees360.com',
+        'password' => 'SecurePass123!',
+        'password_confirmation' => 'SecurePass123!',
+        'role' => UserRole::Trainee->value,
+    ])->assertSessionHasErrors('batch');
+
+    $this->assertDatabaseMissing('users', ['email' => 'batchless.trainee@bees360.com']);
+});
+
 test('legacy spreadsheet names match the active processor account identity', function () {
     $processor = User::factory()->create([
         'name' => 'Chris Gozon',
@@ -112,6 +150,29 @@ test('an Operations account marked for production appears in the processor roste
     expect($matched?->is($jhun))->toBeTrue();
 });
 
+test('processor roster seeding preserves reviewer roles and historical production access', function () {
+    $jhun = User::factory()->create([
+        'name' => 'Jhun Cervantes',
+        'n_name' => 'Jhun',
+        'email' => 'aitest7@bees360.com',
+        'role' => UserRole::Operations,
+    ]);
+
+    $this->seed(ProcessorRosterSeeder::class);
+
+    expect(User::query()->where('role', UserRole::Processor->value)->count())->toBeGreaterThan(0);
+    foreach (['Emma Alegre', 'Reginald King Palo', 'Arianne Joy Lopez', 'Rheven Violet Aladin'] as $name) {
+        $reviewer = User::query()->where('name', $name)->firstOrFail();
+        expect($reviewer->role)->toBe(UserRole::Reviewer)
+            ->and($reviewer->tracks_production)->toBeTrue()
+            ->and($reviewer->batch)->toBeNull();
+    }
+
+    expect($jhun->fresh()->role)->toBe(UserRole::Operations)
+        ->and($jhun->fresh()->tracks_production)->toBeTrue()
+        ->and($jhun->fresh()->batch)->toBe(1);
+});
+
 test('updating a production Operations account preserves its report batch', function () {
     $administrator = User::factory()->create(['role' => UserRole::Operations]);
     $jhun = User::factory()->create([
@@ -134,6 +195,30 @@ test('updating a production Operations account preserves its report batch', func
 
     expect($jhun->fresh()->batch)->toBe(1)
         ->and($jhun->fresh()->tracks_production)->toBeTrue();
+});
+
+test('updating a reviewer with processor history keeps the account batchless', function () {
+    $administrator = User::factory()->create(['role' => UserRole::Operations]);
+    $reviewer = User::factory()->create([
+        'name' => 'Emma Alegre',
+        'n_name' => 'Emma',
+        'role' => UserRole::Reviewer,
+        'batch' => null,
+        'tracks_production' => true,
+    ]);
+
+    $this->actingAs($administrator)->patch(route('operations.users.update', $reviewer), [
+        'name' => 'Emma Alegre',
+        'n_name' => 'Emma',
+        'email' => $reviewer->email,
+        'password' => '',
+        'password_confirmation' => '',
+        'role' => UserRole::Reviewer->value,
+        'batch' => '',
+    ])->assertRedirect();
+
+    expect($reviewer->fresh()->batch)->toBeNull()
+        ->and($reviewer->fresh()->tracks_production)->toBeTrue();
 });
 
 test('account creation rejects duplicate processor identities', function () {

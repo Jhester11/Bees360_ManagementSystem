@@ -1,7 +1,9 @@
 import { Empty, TrainingPage, button, field } from '@/components/training/training-ui';
-import { Link, useForm } from '@inertiajs/react';
+import { Link, useForm, usePoll } from '@inertiajs/react';
 import { FormEvent } from 'react';
 export default function Assignments({ assignments, materials, users }: { assignments: any; materials: any[]; users: any[] }) {
+    usePoll(10000, { only: ['users'] });
+
     const f = useForm({
         training_material_id: materials[0]?.id || 0,
         name: '',

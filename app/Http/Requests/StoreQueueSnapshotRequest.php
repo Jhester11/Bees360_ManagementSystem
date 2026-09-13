@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Enums\UserRole;
 use App\Http\Requests\Concerns\ValidatesSpreadsheetInput;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -26,7 +27,11 @@ class StoreQueueSnapshotRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'report_date' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
+            'report_date' => [
+                'required',
+                'date_format:Y-m-d',
+                'before_or_equal:'.CarbonImmutable::now('Asia/Manila')->toDateString(),
+            ],
             'checkpoint' => ['required', Rule::in(['start', '11am', '2pm', '4pm'])],
             'file_name' => ['bail', 'required', 'string', 'max:255', $this->safeSpreadsheetFileName(['xlsx', 'xls'])],
             'total_rows' => ['required', 'integer', 'min:0', 'max:100000'],
@@ -38,6 +43,13 @@ class StoreQueueSnapshotRequest extends FormRequest
             'entries.*.four_point' => ['required', 'integer', 'min:0', 'max:100000'],
             'entries.*.other' => ['required', 'integer', 'min:0', 'max:100000'],
             'entries.*.total' => ['required', 'integer', 'min:0', 'max:100000'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'report_date.before_or_equal' => 'The Bees360 queue report date cannot be later than today in Philippine Time.',
         ];
     }
 }

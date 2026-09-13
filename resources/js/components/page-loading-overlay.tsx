@@ -15,10 +15,19 @@ export function PageLoadingOverlay() {
     useEffect(() => {
         let showTimer: number | undefined;
         let failsafeTimer: number | undefined;
+        let readyFrame: number | undefined;
+
+        const stopNativeLoadingWhenRendered = () => {
+            window.cancelAnimationFrame(readyFrame);
+            readyFrame = window.requestAnimationFrame(() => {
+                if (document.readyState !== 'complete') window.stop();
+            });
+        };
 
         const markPageReady = () => {
             delete document.documentElement.dataset.pageLoading;
             window.dispatchEvent(new CustomEvent('bees360:page-ready'));
+            stopNativeLoadingWhenRendered();
         };
 
         const hideLoader = () => {
@@ -64,11 +73,17 @@ export function PageLoadingOverlay() {
             hideLoader();
         });
 
+        // React mounts only after the initial page component and its critical
+        // assets are available. Clear any browser-native loading state left by
+        // a stalled optional request after the first rendered frame.
+        readyFrame = window.requestAnimationFrame(markPageReady);
+
         return () => {
             stopBeforeListener();
             stopFinishListener();
             window.clearTimeout(showTimer);
             window.clearTimeout(failsafeTimer);
+            window.cancelAnimationFrame(readyFrame);
             delete document.documentElement.dataset.pageLoading;
         };
     }, []);

@@ -1092,7 +1092,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                     <AlertTriangle className="size-5 text-[#d88a0c]" />
                                 </div>
                                 <p className="mt-1 text-xs text-[#806f59]">Repeated feedback remains counted to reveal frequent errors.</p>
-                                <div className="mt-4 grid max-h-96 gap-2 overflow-y-auto pr-1">
+                                <div className="scrollbar-hidden mt-4 grid max-h-96 gap-2 overflow-y-auto pr-1">
                                     {feedbackSummary.slice(0, 20).map(([feedback, count], index) => (
                                         <div key={`${feedback}-${index}`} className="rounded-xl border border-[#eee2cf] bg-[#fffaf1] p-3">
                                             <div className="flex items-start gap-3">
@@ -1119,7 +1119,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                     <h3 className="font-extrabold text-[#342615]">Assessment records</h3>
                                     <p className="mt-1 text-xs text-[#806f59]">Total Score is used as the QA score.</p>
                                 </div>
-                                <div className="max-h-[470px] overflow-auto">
+                                <div className="scrollbar-hidden max-h-[470px] overflow-auto">
                                     <table className="w-full min-w-[680px] text-left text-sm">
                                         <thead className="sticky top-0 bg-[#edf7f1] text-xs tracking-wide text-[#37624e] uppercase">
                                             <tr>

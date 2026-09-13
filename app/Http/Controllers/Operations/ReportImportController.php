@@ -52,11 +52,12 @@ class ReportImportController extends Controller
 
     public function store(StoreReportImportRequest $request): RedirectResponse
     {
-        $summary = $this->reportImporter->import($request->validated('entries'));
+        $entries = $request->validated('entries');
+        $summary = $this->reportImporter->import($entries);
 
         if ($summary['saved'] === 0) {
             return back()->withErrors([
-                'entries' => 'No report rows matched a known production account and an Exterior or 4-Point inspection.',
+                'entries' => 'No Exterior / 4-Point report rows could be matched to a known processor account.',
             ]);
         }
 

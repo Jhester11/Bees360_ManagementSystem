@@ -1,6 +1,21 @@
 import { TrainingPage, button, defaultTrainingCover, secondary } from '@/components/training/training-ui';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import { Bookmark, ChevronLeft, ChevronRight, Maximize, Minus, Pause, Play, Plus, RotateCcw, Search, Sparkles, Volume2, X, ZoomIn } from 'lucide-react';
+import {
+    Bookmark,
+    ChevronLeft,
+    ChevronRight,
+    Maximize,
+    Minus,
+    Pause,
+    Play,
+    Plus,
+    RotateCcw,
+    Search,
+    Sparkles,
+    Volume2,
+    X,
+    ZoomIn,
+} from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 
 const csrf = () =>
@@ -417,7 +432,7 @@ export default function Reader({
                 >
                     <AmbientParticles />
                     <aside
-                        className={`${isFullscreen ? 'hidden' : 'block'} relative z-20 overflow-y-auto border-r border-white/10 bg-black/35 p-2 text-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}
+                        className={`${isFullscreen ? 'hidden' : 'block'} scrollbar-hidden relative z-20 overflow-y-auto border-r border-white/10 bg-black/35 p-2 text-white`}
                     >
                         {outline.length > 0 && <p className="mb-2 text-center text-[10px] font-bold uppercase">Contents</p>}
                         {outline.slice(0, 8).map((item, index) => (
@@ -617,7 +632,11 @@ function BookCover({
                                     <span className="text-[#728519]">{material.subject?.name || 'Learning Center'}</span>
                                 </div>
                                 <h2 className="mt-3 text-xl leading-tight font-black tracking-wide uppercase sm:text-3xl">{material.title}</h2>
-                                {material.description && <p className="mt-3 line-clamp-2 text-xs leading-5 font-semibold text-[#536174] sm:text-sm">{material.description}</p>}
+                                {material.description && (
+                                    <p className="mt-3 line-clamp-2 text-xs leading-5 font-semibold text-[#536174] sm:text-sm">
+                                        {material.description}
+                                    </p>
+                                )}
                                 <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-bold text-[#536174] sm:text-xs">
                                     {material.topic?.name && <span>{material.topic.name}</span>}
                                     <span>{material.category}</span>
@@ -679,7 +698,7 @@ function BookCover({
                                 </button>
                             </div>
                         </div>
-                        <div className="min-h-0 flex-1 overflow-auto rounded-xl bg-[#152033] p-2 [scrollbar-color:#7184a0_#152033]">
+                        <div className="scrollbar-hidden min-h-0 flex-1 overflow-auto rounded-xl bg-[#152033] p-2">
                             <img
                                 src={coverSource}
                                 alt={`${material.title} enlarged book cover`}
@@ -900,7 +919,7 @@ function BookPage({
                                 </button>
                             </div>
                         </div>
-                        <div className="grid min-h-0 flex-1 place-items-center overflow-auto rounded-xl bg-[#152033] p-3 [scrollbar-color:#7184a0_#152033]">
+                        <div className="scrollbar-hidden grid min-h-0 flex-1 place-items-center overflow-auto rounded-xl bg-[#152033] p-3">
                             {selectedImage && (
                                 <img
                                     src={selectedImage.source}
@@ -910,7 +929,9 @@ function BookPage({
                                 />
                             )}
                         </div>
-                        <p className="text-center text-xs text-[#b9c7d8]">Use the zoom controls for details. Press Esc or close to return to the same book page.</p>
+                        <p className="text-center text-xs text-[#b9c7d8]">
+                            Use the zoom controls for details. Press Esc or close to return to the same book page.
+                        </p>
                     </div>
                 </DialogContent>
             </Dialog>

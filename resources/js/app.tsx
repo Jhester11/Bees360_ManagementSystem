@@ -11,7 +11,7 @@ declare global {
     const route: typeof routeFn;
 }
 
-const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+const appName = import.meta.env.VITE_APP_NAME || 'Bees360';
 
 // An open tab can reference an old lazy-loaded chunk after a deployment or local
 // production build. Recover automatically instead of leaving the user on a blank page.

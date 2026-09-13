@@ -17,6 +17,7 @@ import {
     Gauge,
     History,
     Inbox,
+    LayoutGrid,
     Minus,
     ShieldCheck,
     Sparkles,
@@ -289,6 +290,7 @@ export default function QueueMonitor({
     );
     const [showConfirmation, setShowConfirmation] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
+    const [showAllCheckpoints, setShowAllCheckpoints] = useState(false);
     const [isChecking, setIsChecking] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [detailMetric, setDetailMetric] = useState<QueueDetailMetric | null>(null);
@@ -631,6 +633,12 @@ export default function QueueMonitor({
                     onConfirm={confirmWorkbookCheck}
                 />
                 <SuccessDialog open={showSuccess} onOpenChange={setShowSuccess} result={importedResult} activeProcessors={activeProcessors} />
+                <AllCheckpointsDialog
+                    open={showAllCheckpoints}
+                    onOpenChange={setShowAllCheckpoints}
+                    queues={currentDayQueues}
+                    reportDate={currentReportDate}
+                />
                 <QueueMetricDetailsDialog
                     metric={detailMetric}
                     onOpenChange={(open) => !open && setDetailMetric(null)}
@@ -687,7 +695,24 @@ export default function QueueMonitor({
                             </div>
                         </div>
 
-                        <div className="relative grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        <div className="relative grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                            <button
+                                type="button"
+                                onClick={() => setShowAllCheckpoints(true)}
+                                aria-label="View all daily queue checkpoints"
+                                className="relative overflow-hidden rounded-2xl border border-[#3a2817] bg-[#3a2817] p-4 text-left text-white shadow-[0_10px_28px_rgba(58,40,23,0.16)] transition-all hover:-translate-y-0.5 hover:bg-[#4a341e] hover:shadow-lg focus-visible:ring-2 focus-visible:ring-[#c77a00] focus-visible:ring-offset-2 focus-visible:outline-none"
+                            >
+                                <div className="flex items-start justify-between gap-3">
+                                    <span className="grid size-10 place-items-center rounded-xl bg-[#ffc83d] text-[#3a2817]">
+                                        <LayoutGrid className="size-5" />
+                                    </span>
+                                    <span className="rounded-full bg-white/10 px-2 py-1 text-[9px] font-extrabold text-[#ffd567] uppercase">
+                                        {Object.values(currentDayQueues).filter(Boolean).length} of {checkpoints.length} saved
+                                    </span>
+                                </div>
+                                <p className="mt-4 text-sm font-extrabold">All Checkpoints</p>
+                                <p className="mt-1 text-sm font-bold text-[#ffd567]">View everything</p>
+                            </button>
                             {checkpoints.map((checkpoint, index) => {
                                 const isSelected = checkpoint.id === selectedId;
                                 const isLatest = checkpoint.id === latestId;
@@ -1036,6 +1061,107 @@ function ConfirmationDialog({
                     </Button>
                     <Button type="button" className="bg-[#b96c00] font-bold text-white hover:bg-[#925400]" onClick={onConfirm}>
                         Yes, generate & save
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function AllCheckpointsDialog({
+    open,
+    onOpenChange,
+    queues,
+    reportDate,
+}: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    queues: Partial<Record<CheckpointId, WorkbookResult>>;
+    reportDate: string;
+}) {
+    const savedCount = Object.values(queues).filter(Boolean).length;
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="max-h-[90vh] overflow-hidden border-[#d9bd88] bg-[#fffdf8] p-0 sm:max-w-5xl">
+                <div className="bg-[#3a2817] px-6 py-5 text-white">
+                    <div className="flex items-center gap-3">
+                        <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#ffc83d] text-[#3a2817]">
+                            <LayoutGrid className="size-5" />
+                        </span>
+                        <div>
+                            <DialogTitle className="text-xl font-black">All queue checkpoints</DialogTitle>
+                            <DialogDescription className="mt-1 text-sm text-[#ead9bd]">
+                                {formatReportDate(reportDate)} · Philippine Time
+                            </DialogDescription>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="overflow-auto px-4 py-5 sm:px-6">
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#ead7b9] bg-[#fff5dc] px-4 py-3">
+                        <div>
+                            <p className="text-xs font-extrabold tracking-[0.12em] text-[#9b5d00] uppercase">Daily overview</p>
+                            <p className="mt-1 text-sm font-bold text-[#5a4227]">Review every saved queue snapshot in one place.</p>
+                        </div>
+                        <span className="rounded-full bg-[#3a2817] px-3 py-1.5 text-xs font-extrabold text-[#ffd567]">
+                            {savedCount} of {checkpoints.length} saved
+                        </span>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-2xl border border-[#e7d6bd]">
+                        <table className="w-full min-w-[920px] text-left text-sm">
+                            <thead className="bg-[#3a2817] text-xs tracking-wide text-[#fff7e8] uppercase">
+                                <tr>
+                                    <th className="px-4 py-3.5">Checkpoint</th>
+                                    <th className="px-4 py-3.5">Workbook</th>
+                                    <th className="px-4 py-3.5 text-center">Approved queue</th>
+                                    <th className="px-4 py-3.5 text-center">Active processors</th>
+                                    <th className="px-4 py-3.5 text-center">Excluded rows</th>
+                                    <th className="px-4 py-3.5 text-center">Checked at</th>
+                                    <th className="px-4 py-3.5 text-center">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[#eee3d2]">
+                                {checkpoints.map((checkpoint) => {
+                                    const result = queues[checkpoint.id];
+                                    const activeProcessors = result?.processorRows.filter((processor) => processor.total > 0).length ?? 0;
+
+                                    return (
+                                        <tr key={checkpoint.id} className="odd:bg-white even:bg-[#fff8e8]">
+                                            <td className="px-4 py-4">
+                                                <p className="font-black text-[#3d2b18]">{checkpoint.label}</p>
+                                                <p className="mt-0.5 text-xs font-semibold text-[#9b6412]">{checkpoint.time} PHT</p>
+                                            </td>
+                                            <td className="max-w-[240px] truncate px-4 py-4 font-semibold text-[#5f4b32]">
+                                                {result?.fileName ?? 'No workbook saved'}
+                                            </td>
+                                            <td className="px-4 py-4 text-center font-black text-[#8d5708]">{result?.matchedRows ?? '—'}</td>
+                                            <td className="px-4 py-4 text-center font-bold text-[#3c6f49]">{result ? activeProcessors : '—'}</td>
+                                            <td className="px-4 py-4 text-center font-bold text-[#9b3f35]">{result?.ignoredRows ?? '—'}</td>
+                                            <td className="px-4 py-4 text-center font-semibold text-[#5f4b32]">
+                                                {result ? `${result.checkedAt} PHT` : '—'}
+                                            </td>
+                                            <td className="px-4 py-4 text-center">
+                                                <span
+                                                    className={`inline-flex rounded-full px-2.5 py-1 text-xs font-extrabold ${
+                                                        result ? 'bg-[#e5f5e6] text-[#2f7544]' : 'bg-[#f2ede5] text-[#7c6a52]'
+                                                    }`}
+                                                >
+                                                    {result ? 'Saved' : 'Not saved'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <DialogFooter className="border-t border-[#eadbc6] bg-[#fff8e8] px-6 py-4">
+                    <Button type="button" onClick={() => onOpenChange(false)} className="bg-[#b96c00] font-bold text-white hover:bg-[#925400]">
+                        Close
                     </Button>
                 </DialogFooter>
             </DialogContent>

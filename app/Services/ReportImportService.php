@@ -18,39 +18,69 @@ class ReportImportService
     public function import(array $entries): array
     {
         $processors = $this->processorRoster->productionHistory();
-        $records = collect($entries)
-            ->map(function (array $entry) use ($processors): ?array {
-                $processor = $this->processorRoster->match((string) ($entry['assembled_by'] ?? ''), $processors);
-                $category = $this->category((string) ($entry['inspection_type'] ?? ''));
+        $inputEntries = collect($entries);
+        $processorNamesByProjectId = $inputEntries
+            ->filter(fn (array $entry): bool => filled($entry['project_id'] ?? null) && filled($entry['assembled_by'] ?? null))
+            ->mapWithKeys(fn (array $entry): array => [trim((string) $entry['project_id']) => trim((string) $entry['assembled_by'])]);
+        $projectIdsWithoutProcessor = $inputEntries
+            ->filter(fn (array $entry): bool => filled($entry['project_id'] ?? null) && blank($entry['assembled_by'] ?? null))
+            ->pluck('project_id')
+            ->map(fn (mixed $projectId): string => trim((string) $projectId))
+            ->filter()
+            ->unique()
+            ->values();
 
-                if ($processor === null || $category === null) {
-                    return null;
-                }
+        $projectIdsWithoutProcessor->chunk(500)->each(function (Collection $projectIds) use ($processorNamesByProjectId): void {
+            ReportEntry::query()
+                ->whereIn('project_id', $projectIds)
+                ->whereNotNull('processor_name')
+                ->orderByDesc('assembled_at')
+                ->get(['project_id', 'processor_name'])
+                ->each(function (ReportEntry $entry) use ($processorNamesByProjectId): void {
+                    $projectId = trim((string) $entry->project_id);
 
-                try {
-                    $assembledAt = CarbonImmutable::parse((string) $entry['assembled_at'], 'Asia/Manila');
-                } catch (\Throwable) {
-                    return null;
-                }
+                    if (! $processorNamesByProjectId->has($projectId)) {
+                        $processorNamesByProjectId->put($projectId, $entry->processor_name);
+                    }
+                });
+        });
 
-                if ($assembledAt->isAfter(CarbonImmutable::now('Asia/Manila')->endOfDay())) {
-                    return null;
-                }
+        $mappedRecords = $inputEntries->map(function (array $entry) use ($processorNamesByProjectId, $processors): ?array {
+            $projectId = trim((string) ($entry['project_id'] ?? ''));
+            $assembledBy = trim((string) ($entry['assembled_by'] ?? ''));
+            $processorName = $assembledBy !== '' ? $assembledBy : (string) $processorNamesByProjectId->get($projectId, '');
+            $processor = $this->processorRoster->match($processorName, $processors);
+            $category = $this->category((string) ($entry['inspection_type'] ?? ''));
 
-                return [
-                    'report_date' => $assembledAt->toDateString(),
-                    'source' => $entry['source'],
-                    'batch' => $this->processorRoster->productionBatch($processor),
-                    'processor_name' => $processor->name,
-                    'project_id' => trim((string) $entry['project_id']),
-                    'insured_by' => filled($entry['insured_by'] ?? null) ? trim((string) $entry['insured_by']) : null,
-                    'inspection_type' => trim((string) $entry['inspection_type']),
-                    'report_category' => $category,
-                    'assembled_at' => $assembledAt,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            })
+            if ($processor === null || $category === null) {
+                return null;
+            }
+
+            try {
+                $assembledAt = CarbonImmutable::parse((string) $entry['assembled_at'], 'Asia/Manila');
+            } catch (\Throwable) {
+                return null;
+            }
+
+            if ($assembledAt->isAfter(CarbonImmutable::now('Asia/Manila')->endOfDay())) {
+                return null;
+            }
+
+            return [
+                'report_date' => $assembledAt->toDateString(),
+                'source' => $entry['source'],
+                'batch' => $this->processorRoster->productionBatch($processor),
+                'processor_name' => $processor->name,
+                'project_id' => $projectId,
+                'insured_by' => filled($entry['insured_by'] ?? null) ? trim((string) $entry['insured_by']) : null,
+                'inspection_type' => trim((string) $entry['inspection_type']),
+                'report_category' => $category,
+                'assembled_at' => $assembledAt,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        });
+        $records = $mappedRecords
             ->filter()
             ->unique(fn (array $entry): string => implode('|', [$entry['source'], $entry['project_id'], $entry['report_date'], $entry['processor_name'], $entry['inspection_type']]))
             ->values();
@@ -67,7 +97,7 @@ class ReportImportService
 
         return [
             'saved' => $records->count(),
-            'ignored' => count($entries) - $records->count(),
+            'ignored' => $mappedRecords->filter(fn (?array $record): bool => $record === null)->count(),
         ];
     }
 

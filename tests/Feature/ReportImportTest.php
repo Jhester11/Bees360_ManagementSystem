@@ -59,6 +59,62 @@ test('report imports do not show success when no active processor rows match', f
     $this->assertDatabaseCount('report_entries', 0);
 });
 
+test('report imports recover a blank assembled-by value from an existing project assignment', function () {
+    $user = User::factory()->create(['role' => UserRole::Operations]);
+    User::factory()->create(['name' => 'Allan Layug', 'n_name' => 'Allan', 'role' => UserRole::Processor, 'batch' => 2]);
+    ReportEntry::query()->create([
+        'report_date' => '2026-09-12',
+        'source' => 'active',
+        'batch' => 2,
+        'processor_name' => 'Allan Layug',
+        'project_id' => 'KNOWN-PROJECT',
+        'insured_by' => 'Sample insured',
+        'inspection_type' => 'Exterior Underwriting',
+        'report_category' => 'general_exterior',
+        'assembled_at' => '2026-09-12 10:00:00',
+    ]);
+
+    $response = $this->actingAs($user)->post('/operations/reports/import', [
+        'entries' => json_encode([[
+            'source' => 'closed',
+            'project_id' => 'KNOWN-PROJECT',
+            'insured_by' => 'Sample insured',
+            'inspection_type' => 'Exterior Underwriting',
+            'assembled_by' => '',
+            'assembled_at' => '09/13/2026 11:00',
+        ]]),
+    ]);
+
+    $response->assertRedirect(route('operations.reports'));
+    $response->assertSessionHas('importSummary', ['saved' => 1, 'ignored' => 0]);
+    $this->assertDatabaseHas('report_entries', [
+        'report_date' => '2026-09-13',
+        'source' => 'closed',
+        'processor_name' => 'Allan Layug',
+        'project_id' => 'KNOWN-PROJECT',
+    ]);
+});
+
+test('report imports ignore blank processor names that cannot be matched from project history', function () {
+    $user = User::factory()->create(['role' => UserRole::Operations]);
+
+    $response = $this->actingAs($user)->post('/operations/reports/import', [
+        'entries' => json_encode([[
+            'source' => 'active',
+            'project_id' => 'UNKNOWN-PROJECT',
+            'insured_by' => 'Sample insured',
+            'inspection_type' => 'Exterior Underwriting',
+            'assembled_by' => '',
+            'assembled_at' => '09/13/2026 11:00',
+        ]]),
+    ]);
+
+    $response->assertSessionHasErrors('entries');
+    $this->assertDatabaseMissing('report_entries', [
+        'project_id' => 'UNKNOWN-PROJECT',
+    ]);
+});
+
 test('large report imports are saved without exceeding database placeholder limits', function () {
     $user = User::factory()->create(['role' => UserRole::Operations]);
     User::factory()->create(['name' => 'Allan Layug', 'n_name' => 'Allan', 'role' => UserRole::Processor, 'batch' => 2]);

@@ -27,7 +27,6 @@ class StoreReportImportRequest extends FormRequest
                     && filled($entry['source'] ?? null)
                     && filled($entry['project_id'] ?? null)
                     && filled($entry['inspection_type'] ?? null)
-                    && filled($entry['assembled_by'] ?? null)
                     && filled($entry['assembled_at'] ?? null))
                 ->values()
                 ->all(),
@@ -48,8 +47,16 @@ class StoreReportImportRequest extends FormRequest
             'entries.*.project_id' => ['bail', 'required', 'string', 'max:50', $this->safeSpreadsheetText()],
             'entries.*.insured_by' => ['bail', 'nullable', 'string', 'max:255', $this->safeSpreadsheetText()],
             'entries.*.inspection_type' => ['bail', 'required', 'string', 'max:255', $this->safeSpreadsheetText()],
-            'entries.*.assembled_by' => ['bail', 'required', 'string', 'max:255', $this->safeSpreadsheetText()],
+            'entries.*.assembled_by' => ['bail', 'nullable', 'string', 'max:255', $this->safeSpreadsheetText()],
             'entries.*.assembled_at' => ['bail', 'required', 'string', 'max:100', $this->safeSpreadsheetText()],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'entries.required' => 'No usable report rows were found in the selected workbook.',
+            'entries.min' => 'No usable report rows were found in the selected workbook.',
         ];
     }
 }

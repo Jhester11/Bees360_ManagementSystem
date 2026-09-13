@@ -124,6 +124,7 @@ test('processor dashboard displays only the signed in processors monthly PH CST 
     foreach ([
         [$processor, 'Lourdes M. Completado', 7, 2],
         [$otherProcessor, 'Allan Layug', 99, 20],
+        [$otherProcessor, 'Unassigned', 200, 0],
     ] as [$uploader, $name, $generalExterior, $fourPoint]) {
         CstProcessorMetric::query()->create([
             'report_date' => '2026-08-15',
@@ -385,6 +386,7 @@ test('leaderboard combines a processors over-delivered days into one overall res
     $createReports('Lourdes M. Completado', 1, '2026-09-02', 31, 'lourdes');
     $createReports('Chrismer Flores', 3, '2026-09-02', 32, 'chrismer');
     $createReports('Chrismer Flores', 3, '2026-09-03', 33, 'chrismer-next');
+    $createReports('Unassigned', 0, '2026-09-03', 40, 'unassigned');
 
     $this->get('/dashboard')->assertInertia(fn (Assert $page) => $page
         ->component('dashboard')

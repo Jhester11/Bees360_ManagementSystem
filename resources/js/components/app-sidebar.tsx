@@ -108,12 +108,6 @@ const processorNavItems: NavItem[] = [
         tourId: 'nav-dashboard',
     },
     {
-        title: 'QA Feedback',
-        url: '/dashboard?view=qa#qa-history',
-        icon: ShieldCheck,
-        tourId: 'nav-qa-feedback',
-    },
-    {
         title: 'Daily Reports',
         url: '/dashboard?view=daily',
         icon: FileText,

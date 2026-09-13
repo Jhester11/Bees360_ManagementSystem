@@ -244,6 +244,7 @@ class DashboardController extends Controller
 
         $productionLeaders = function (Collection $records, bool $isCst) use ($accountsByKey, $qaByProcessor, $currentKey): Collection {
             return $records
+                ->reject(fn (ReportEntry|CstProcessorMetric $record): bool => $this->processorKey($record->processor_name) === 'unassigned')
                 ->groupBy(fn (ReportEntry|CstProcessorMetric $record): string => $this->processorKey($record->processor_name))
                 ->map(function (Collection $processorRecords, string $key) use ($accountsByKey, $qaByProcessor, $currentKey, $isCst): array {
                     /** @var User|null $account */
@@ -279,6 +280,7 @@ class DashboardController extends Controller
         };
 
         $accuracyLeaders = $qaByProcessor
+            ->reject(fn (array $qa, string $key): bool => $key === 'unassigned')
             ->map(function (array $qa, string $key) use ($accountsByKey, $currentKey, $qaAssessments): array {
                 /** @var User|null $account */
                 $account = $accountsByKey->get($key);
@@ -497,6 +499,7 @@ class DashboardController extends Controller
         $weekStartDate = $weekStart->format('Y-m-d');
         $weekEndDate = $weekEnd->format('Y-m-d');
         $topProcessors = $records
+            ->reject(fn (array $record): bool => $this->processorKey($record['processor']) === 'unassigned')
             ->filter(fn (array $record): bool => $record['date'] >= $weekStartDate
                 && $record['date'] <= $weekEndDate
                 && $record['reports'] > 31)

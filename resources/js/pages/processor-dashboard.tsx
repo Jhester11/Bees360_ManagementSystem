@@ -21,7 +21,7 @@ import {
     UsersRound,
     WalletCards,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Area, AreaChart, Bar, CartesianGrid, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 type Timezone = 'ph' | 'cst';
@@ -244,7 +244,6 @@ export default function ProcessorDashboard({
     availableMonths,
     metrics,
     dailyOutput,
-    qaHistory,
     leaderboards,
     achievement,
     workspaceOverview,
@@ -254,15 +253,12 @@ export default function ProcessorDashboard({
     const { auth, notifications = [] } = page.props;
     const currentView = new URL(page.url, 'http://bees360.local').searchParams.get('view');
     const isDailyView = currentView === 'daily';
-    const isQaView = currentView === 'qa';
     const [timezone, setTimezone] = useState<Timezone>('ph');
     const [clock, setClock] = useState(() => new Date(phNow));
     const [monthLoading, setMonthLoading] = useState(false);
     const [exporting, setExporting] = useState(false);
-    const [feedbackRecord, setFeedbackRecord] = useState<QaRecord | null>(null);
-    const [showAllFeedback, setShowAllFeedback] = useState(false);
     const [showAchievement, setShowAchievement] = useState(Boolean(achievement));
-    usePoll(30_000, { only: ['metrics', 'dailyOutput', 'qaHistory', 'workspaceOverview', 'phNow'] });
+    usePoll(30_000, { only: ['metrics', 'dailyOutput', 'workspaceOverview', 'phNow'] });
 
     useEffect(() => {
         const timer = window.setInterval(() => setClock(new Date()), 1000);
@@ -284,18 +280,6 @@ export default function ProcessorDashboard({
     const highestProduction = productionLeaders[0]?.totalCases || 1;
     const highestAccuracy = leaderboards.accuracy[0]?.qaScore || 100;
     const hasProduction = performance.totalCases > 0;
-    const recurringFeedback = useMemo(() => {
-        const counts = new Map<string, number>();
-        qaHistory
-            .flatMap((record) => record.feedback)
-            .forEach((feedback) => {
-                const normalizedFeedback = feedback?.trim();
-                if (!normalizedFeedback || normalizedFeedback.toLowerCase().includes('no error')) return;
-                counts.set(normalizedFeedback, (counts.get(normalizedFeedback) ?? 0) + 1);
-            });
-        return [...counts.entries()].map(([feedback, count]) => ({ feedback, count })).sort((a, b) => b.count - a.count);
-    }, [qaHistory]);
-
     function selectMonth(month: string) {
         setMonthLoading(true);
         router.get(
@@ -520,46 +504,9 @@ export default function ProcessorDashboard({
     }
 
     return (
-        <AppLayout
-            breadcrumbs={
-                isDailyView
-                    ? [{ title: 'Daily Reports', href: '/dashboard?view=daily' }]
-                    : isQaView
-                      ? [{ title: 'QA Feedback', href: '/dashboard?view=qa#qa-history' }]
-                      : breadcrumbs
-            }
-        >
-            <Head title={isDailyView ? 'Daily Reports' : isQaView ? 'QA Feedback' : 'Dashboard'} />
+        <AppLayout breadcrumbs={isDailyView ? [{ title: 'Daily Reports', href: '/dashboard?view=daily' }] : breadcrumbs}>
+            <Head title={isDailyView ? 'Daily Reports' : 'Dashboard'} />
             <div className="flex flex-1 flex-col gap-6 bg-[#fffaf1] p-5 text-[#342615] md:p-8">
-                <Dialog open={Boolean(feedbackRecord)} onOpenChange={(open) => !open && setFeedbackRecord(null)}>
-                    <DialogContent className="max-w-xl border-[#ead5a6] bg-[#fffdf8] text-[#342615]">
-                        <DialogHeader>
-                            <DialogTitle>QA feedback · {feedbackRecord?.projectId || 'Assessment'}</DialogTitle>
-                            <DialogDescription className="text-[#806f59]">
-                                {feedbackRecord ? `${formatDate(feedbackRecord.date)} · ${feedbackRecord.score}% score` : ''}
-                            </DialogDescription>
-                        </DialogHeader>
-                        <div className="grid max-h-[55vh] gap-2 overflow-y-auto pr-1">
-                            {feedbackRecord?.feedback.some((item) => item?.trim()) ? (
-                                feedbackRecord.feedback
-                                    .filter((item) => item?.trim())
-                                    .map((item, index) => (
-                                        <div
-                                            key={`${item}-${index}`}
-                                            className="rounded-xl border border-[#efdfc8] bg-white p-3 text-sm leading-6 text-[#5c4932]"
-                                        >
-                                            {item.trim()}
-                                        </div>
-                                    ))
-                            ) : (
-                                <p className="rounded-xl bg-[#eef8eb] p-4 text-sm font-semibold text-[#347846]">
-                                    No errors were recorded for this assessment.
-                                </p>
-                            )}
-                        </div>
-                    </DialogContent>
-                </Dialog>
-
                 <Dialog open={showAchievement} onOpenChange={setShowAchievement}>
                     <DialogContent className="max-w-lg overflow-hidden border-[#e5bc59] bg-[#fffdf8] p-0 text-[#342615] shadow-[0_24px_80px_rgba(73,43,11,0.28)]">
                         <div className="relative overflow-hidden bg-[#4a2d10] px-7 py-8 text-center text-white">
@@ -598,93 +545,6 @@ export default function ProcessorDashboard({
                     </DialogContent>
                 </Dialog>
 
-                <Dialog open={showAllFeedback} onOpenChange={setShowAllFeedback}>
-                    <DialogContent
-                        onInteractOutside={(event) => event.preventDefault()}
-                        onEscapeKeyDown={(event) => event.preventDefault()}
-                        className="h-[min(88vh,760px)] max-w-[calc(100vw-2rem)] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden border-[#d2e5d7] bg-[#fbfffb] p-0 text-[#342615] sm:max-w-4xl"
-                    >
-                        <DialogHeader className="border-b border-[#dceade] bg-[#eff8f1] px-6 py-5 pr-14 text-left">
-                            <DialogTitle className="flex items-center gap-3 text-xl">
-                                <span className="grid size-10 place-items-center rounded-xl bg-[#dff1e4] text-[#16815b]">
-                                    <Eye className="size-5" />
-                                </span>
-                                All QA feedback
-                            </DialogTitle>
-                            <DialogDescription className="text-[#63796b]">
-                                {auth.user.name} · {periodLabel} · {qaHistory.length} assessment{qaHistory.length === 1 ? '' : 's'}
-                            </DialogDescription>
-                        </DialogHeader>
-                        <div className="min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6">
-                            <div className="flex flex-col gap-3">
-                                {qaHistory.length ? (
-                                    qaHistory.map((record) => {
-                                        const errors = record.feedback
-                                            .map((item) => item?.trim())
-                                            .filter((item): item is string => Boolean(item) && !item.toLowerCase().includes('no error'));
-
-                                        return (
-                                            <article
-                                                key={`all-${record.id}`}
-                                                className="shrink-0 overflow-hidden rounded-2xl border border-[#dce8df] bg-white shadow-[0_3px_12px_rgba(39,85,55,0.05)]"
-                                            >
-                                                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e7eee8] bg-[#fbfdfb] px-4 py-3">
-                                                    <div className="min-w-0">
-                                                        <p className="font-black text-[#342615]">Project {record.projectId || '—'}</p>
-                                                        <p className="mt-1 text-xs text-[#806f59]">
-                                                            {formatDate(record.date)} · QC: {record.qcName || '—'}
-                                                        </p>
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <span
-                                                            className={`rounded-full px-2.5 py-1 text-xs font-black ${
-                                                                record.score >= 95
-                                                                    ? 'bg-[#e1f3df] text-[#347846]'
-                                                                    : record.score >= 90
-                                                                      ? 'bg-[#fff0c9] text-[#936000]'
-                                                                      : 'bg-[#f9dfda] text-[#a5474b]'
-                                                            }`}
-                                                        >
-                                                            {record.score}%
-                                                        </span>
-                                                        <span className="rounded-full bg-[#fff3d8] px-2.5 py-1 text-xs font-bold text-[#a96300]">
-                                                            {errors.length} error{errors.length === 1 ? '' : 's'}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                <div className="grid gap-2 p-4">
-                                                    {errors.length ? (
-                                                        errors.map((item, index) => (
-                                                            <p
-                                                                key={`${record.id}-${item}-${index}`}
-                                                                className="rounded-xl border border-[#efdfc8] bg-[#fffaf1] px-3 py-2.5 text-sm leading-6 break-words whitespace-normal text-[#5c4932]"
-                                                            >
-                                                                {item}
-                                                            </p>
-                                                        ))
-                                                    ) : (
-                                                        <p className="rounded-xl bg-[#eef8eb] px-3 py-2.5 text-sm font-semibold text-[#347846]">
-                                                            No errors were recorded for this assessment.
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            </article>
-                                        );
-                                    })
-                                ) : (
-                                    <div className="grid min-h-48 place-items-center rounded-2xl border border-dashed border-[#bcd9c8] text-center">
-                                        <div>
-                                            <ShieldCheck className="mx-auto size-10 text-[#76a98b]" />
-                                            <p className="mt-3 font-black">No feedback available</p>
-                                            <p className="mt-1 text-sm text-[#806f59]">There are no QA assessments for {periodLabel}.</p>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </DialogContent>
-                </Dialog>
-
                 <section
                     data-tour="processor-welcome"
                     className="relative overflow-hidden rounded-3xl bg-[#4a2d10] px-6 py-6 text-white shadow-[0_16px_40px_rgba(74,45,16,0.18)] md:px-8"
@@ -708,7 +568,7 @@ export default function ProcessorDashboard({
                                 <span className="size-2 animate-pulse rounded-full bg-[#68d391]" /> Live PH Time · {phDateTime(clock)}
                             </p>
                         </div>
-                        <div className={`grid gap-3 ${isQaView ? 'lg:min-w-[280px]' : 'sm:grid-cols-2 lg:min-w-[440px]'}`}>
+                        <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[440px]">
                             <label className="grid gap-2 text-xs font-bold text-[#ffe9b5]">
                                 {isDailyView ? 'Report month · PH calendar' : 'Reporting month'}
                                 <span className="relative">
@@ -733,28 +593,26 @@ export default function ProcessorDashboard({
                                     </span>
                                 )}
                             </label>
-                            {!isQaView && (
-                                <div className="grid gap-2 text-xs font-bold text-[#ffe9b5]">
-                                    Reporting timezone
-                                    <div className="flex h-11 gap-1 rounded-xl bg-white/10 p-1">
-                                        {(['ph', 'cst'] as Timezone[]).map((zone) => (
-                                            <button
-                                                key={zone}
-                                                type="button"
-                                                onClick={() => setTimezone(zone)}
-                                                className={`flex-1 rounded-lg text-sm font-black transition duration-300 ${timezone === zone ? 'bg-[#ffc83d] text-[#3f280e] shadow' : 'text-white hover:bg-white/10'}`}
-                                            >
-                                                {zone === 'ph' ? 'PH Time' : 'CST Time'}
-                                            </button>
-                                        ))}
-                                    </div>
+                            <div className="grid gap-2 text-xs font-bold text-[#ffe9b5]">
+                                Reporting timezone
+                                <div className="flex h-11 gap-1 rounded-xl bg-white/10 p-1">
+                                    {(['ph', 'cst'] as Timezone[]).map((zone) => (
+                                        <button
+                                            key={zone}
+                                            type="button"
+                                            onClick={() => setTimezone(zone)}
+                                            className={`flex-1 rounded-lg text-sm font-black transition duration-300 ${timezone === zone ? 'bg-[#ffc83d] text-[#3f280e] shadow' : 'text-white hover:bg-white/10'}`}
+                                        >
+                                            {zone === 'ph' ? 'PH Time' : 'CST Time'}
+                                        </button>
+                                    ))}
                                 </div>
-                            )}
+                            </div>
                         </div>
                     </div>
                 </section>
 
-                {!isDailyView && !isQaView && (
+                {!isDailyView && (
                     <section data-tour="team-overview" className="grid gap-4">
                         <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
                             <div>
@@ -978,7 +836,7 @@ export default function ProcessorDashboard({
                     </section>
                 )}
 
-                {!isDailyView && !isQaView && (
+                {!isDailyView && (
                     <section id="leaderboards" className="grid scroll-mt-6 gap-6 xl:grid-cols-2">
                         <article
                             data-tour="production-leaderboard"
@@ -1320,109 +1178,6 @@ export default function ProcessorDashboard({
                                 </div>
                             )}
                         </article>
-                        {!isDailyView && (
-                            <article className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5 shadow-[0_8px_28px_rgba(88,57,18,0.05)] sm:p-6">
-                                <p className="text-xs font-bold tracking-[0.16em] text-[#16815b] uppercase">Quality pattern</p>
-                                <h2 className="mt-1 text-xl font-black">Recurring feedback</h2>
-                                <p className="mt-1 text-sm text-[#806f59]">Repeated notes during {periodLabel}</p>
-                                <div className="mt-5 grid max-h-72 gap-2 overflow-y-auto pr-1">
-                                    {recurringFeedback.length ? (
-                                        recurringFeedback.map((item) => (
-                                            <div key={item.feedback} className="flex gap-3 rounded-xl border border-[#efdfc8] bg-[#fffaf1] p-3">
-                                                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#ffe3a0] text-xs font-black text-[#9c5d00]">
-                                                    {item.count}×
-                                                </span>
-                                                <p className="text-xs leading-5 text-[#5c4932]">{item.feedback}</p>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <div className="rounded-xl bg-[#eef8eb] p-4 text-center text-sm font-semibold text-[#347846]">
-                                            No recurring feedback for this month.
-                                        </div>
-                                    )}
-                                </div>
-                            </article>
-                        )}
-                    </section>
-                )}
-
-                {!isDailyView && (
-                    <section
-                        id="qa-history"
-                        data-tour="qa-history"
-                        className="scroll-mt-6 overflow-hidden rounded-2xl border border-[#bcd9c8] bg-[#fbfffb] shadow-[0_8px_28px_rgba(20,122,81,0.06)]"
-                    >
-                        <div className="flex flex-col justify-between gap-4 border-b border-[#dceade] p-5 sm:flex-row sm:items-center sm:p-6">
-                            <div>
-                                <p className="text-xs font-bold tracking-[0.16em] text-[#16815b] uppercase">Quality history</p>
-                                <h2 className="mt-1 text-xl font-black">My QA assessment records</h2>
-                                <p className="mt-1 text-sm text-[#806f59]">
-                                    {periodLabel} · {qaHistory.length} assessment{qaHistory.length === 1 ? '' : 's'}
-                                </p>
-                            </div>
-                            <Button
-                                type="button"
-                                onClick={() => setShowAllFeedback(true)}
-                                disabled={qaHistory.length === 0}
-                                className="h-11 gap-2 bg-[#c97900] px-5 font-bold text-white hover:bg-[#a96000] hover:text-white"
-                            >
-                                <Eye className="size-4" />
-                                View all feedback
-                            </Button>
-                        </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full min-w-[760px] text-left text-sm">
-                                <thead className="bg-[#eaf5ee] text-xs font-bold tracking-wide text-[#3d6b52] uppercase">
-                                    <tr>
-                                        <th className="px-5 py-3">Date</th>
-                                        <th className="px-5 py-3">Project</th>
-                                        <th className="px-5 py-3">QC</th>
-                                        <th className="px-5 py-3">Score</th>
-                                        <th className="px-5 py-3">Errors</th>
-                                        <th className="px-5 py-3 text-right">Feedback</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-[#e5eee7]">
-                                    {qaHistory.length ? (
-                                        qaHistory.map((record) => {
-                                            const errors = record.feedback.filter(
-                                                (item) => item?.trim() && !item.trim().toLowerCase().includes('no error'),
-                                            ).length;
-                                            return (
-                                                <tr key={record.id} className="bg-white transition hover:bg-[#fffaf1]">
-                                                    <td className="px-5 py-3.5 text-[#806f59]">{formatDate(record.date)}</td>
-                                                    <td className="px-5 py-3.5 font-bold">{record.projectId || '—'}</td>
-                                                    <td className="px-5 py-3.5 text-[#806f59]">{record.qcName || '—'}</td>
-                                                    <td className="px-5 py-3.5">
-                                                        <span
-                                                            className={`rounded-full px-2.5 py-1 text-xs font-black ${record.score >= 95 ? 'bg-[#e1f3df] text-[#347846]' : record.score >= 90 ? 'bg-[#fff0c9] text-[#936000]' : 'bg-[#f9dfda] text-[#a5474b]'}`}
-                                                        >
-                                                            {record.score}%
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-5 py-3.5 font-bold text-[#a96300]">{errors}</td>
-                                                    <td className="px-5 py-3.5 text-right">
-                                                        <Button
-                                                            type="button"
-                                                            onClick={() => setFeedbackRecord(record)}
-                                                            className="h-9 border border-[#dfb96d] bg-[#fffaf1] text-[#8a5200] hover:bg-[#ffe8b5]"
-                                                        >
-                                                            <Eye className="size-4" /> View
-                                                        </Button>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })
-                                    ) : (
-                                        <tr>
-                                            <td colSpan={6} className="px-5 py-10 text-center text-[#806f59]">
-                                                No QA assessments are available for {periodLabel}.
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
                     </section>
                 )}
             </div>

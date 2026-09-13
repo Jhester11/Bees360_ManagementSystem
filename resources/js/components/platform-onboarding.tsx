@@ -70,12 +70,6 @@ function guideFor(user: User): GuideStep[] {
                 target: 'qa-leaderboard',
             },
             {
-                title: 'QA assessment history',
-                description: 'Review every QA assessment, score, error, and feedback for the selected month here.',
-                href: '/dashboard?view=qa#qa-history',
-                target: 'qa-history',
-            },
-            {
                 title: 'Credits and incentives',
                 description: 'Your weighted credits, tier progress, and current incentive appear here.',
                 href: '/dashboard?view=daily',

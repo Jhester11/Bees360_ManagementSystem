@@ -5,6 +5,7 @@ export type CstImportMetric = {
     processor_name: string;
     general_exterior: number;
     four_point: number;
+    premium_four_point: number;
     qc_score: number | null;
     qc_reviews: number;
 };
@@ -68,24 +69,28 @@ export async function cstMetricsFromWorkbook(file: File): Promise<CstImportMetri
     const rows = SheetJS.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
     if (rows.length === 0) throw new Error('The worksheet does not contain data.');
 
-    const grouped = new Map<string, { date: string; name: string; ge: number; fp: number; score: number; reviews: number }>();
+    const grouped = new Map<string, { date: string; name: string; ge: number; fp: number; premiumFp: number; score: number; reviews: number }>();
     rows.forEach((row) => {
         const processor = String(valueFor(row, ['processor', 'processorname', 'name', 'nname', 'firstassembledby', 'assembledby']) ?? '').trim();
         if (!processor) return;
         const date = dateValue(valueFor(row, ['reportdate', 'date', 'assembleddate', 'firstassembledtime']));
         if (!date) return;
         const key = `${date}|${normalize(processor)}`;
-        const current = grouped.get(key) ?? { date, name: processor, ge: 0, fp: 0, score: 0, reviews: 0 };
+        const current = grouped.get(key) ?? { date, name: processor, ge: 0, fp: 0, premiumFp: 0, score: 0, reviews: 0 };
         const generalExterior = valueFor(row, ['generalexterior', 'genexterior', 'genext', 'ge']);
         const fourPoint = valueFor(row, ['4point', 'fourpoint', 'gen4point', 'fp']);
+        const premiumFourPoint = valueFor(row, ['premium4point', 'premiumfourpoint', 'premiumfp', 'p4p']);
 
-        if (generalExterior !== undefined || fourPoint !== undefined) {
+        if (generalExterior !== undefined || fourPoint !== undefined || premiumFourPoint !== undefined) {
             current.ge += integer(generalExterior);
             current.fp += integer(fourPoint);
+            current.premiumFp += integer(premiumFourPoint);
         } else {
             const inspection = String(valueFor(row, ['inspectiontype', 'reporttype', 'type']) ?? '').toLowerCase();
             if (inspection.includes('exterior')) current.ge += 1;
-            if (inspection.includes('4-point') || inspection.includes('4 point') || inspection.includes('four point')) current.fp += 1;
+            if (inspection.includes('premium 4-point') || inspection.includes('premium 4 point') || inspection.includes('premium four point')) {
+                current.premiumFp += 1;
+            } else if (inspection.includes('4-point') || inspection.includes('4 point') || inspection.includes('four point')) current.fp += 1;
         }
 
         const rawScore = valueFor(row, ['qcscore', 'accuracyscore', 'accuracy', 'qualityscore', 'score']);
@@ -105,6 +110,7 @@ export async function cstMetricsFromWorkbook(file: File): Promise<CstImportMetri
         processor_name: row.name,
         general_exterior: row.ge,
         four_point: row.fp,
+        premium_four_point: row.premiumFp,
         qc_score: row.reviews ? Number((row.score / row.reviews).toFixed(2)) : null,
         qc_reviews: row.reviews,
     }));
@@ -119,13 +125,14 @@ export function combineCstMetrics(groups: CstImportMetric[][]): CstImportMetric[
     const combined = new Map<string, CstImportMetric>();
     groups.flat().forEach((metric) => {
         const key = `${metric.report_date}|${normalize(metric.processor_name)}`;
-        const current = combined.get(key) ?? { ...metric, general_exterior: 0, four_point: 0, qc_score: null, qc_reviews: 0 };
+        const current = combined.get(key) ?? { ...metric, general_exterior: 0, four_point: 0, premium_four_point: 0, qc_score: null, qc_reviews: 0 };
         const reviews = current.qc_reviews + metric.qc_reviews;
         const weightedScore = (current.qc_score ?? 0) * current.qc_reviews + (metric.qc_score ?? 0) * metric.qc_reviews;
         combined.set(key, {
             ...current,
             general_exterior: current.general_exterior + metric.general_exterior,
             four_point: current.four_point + metric.four_point,
+            premium_four_point: current.premium_four_point + metric.premium_four_point,
             qc_score: reviews > 0 ? Number((weightedScore / reviews).toFixed(2)) : null,
             qc_reviews: reviews,
         });

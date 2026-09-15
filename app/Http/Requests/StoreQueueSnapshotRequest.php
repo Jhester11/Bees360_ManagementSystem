@@ -17,6 +17,13 @@ class StoreQueueSnapshotRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $this->guardSpreadsheetPayloadSize(self::MAXIMUM_PAYLOAD_BYTES);
+        $entries = $this->input('entries');
+
+        if (is_array($entries)) {
+            $this->merge(['entries' => collect($entries)->map(fn (mixed $entry): mixed => is_array($entry)
+                ? [...$entry, 'premium_four_point' => $entry['premium_four_point'] ?? 0]
+                : $entry)->values()->all()]);
+        }
     }
 
     public function authorize(): bool
@@ -36,11 +43,12 @@ class StoreQueueSnapshotRequest extends FormRequest
             'file_name' => ['bail', 'required', 'string', 'max:255', $this->safeSpreadsheetFileName(['xlsx', 'xls'])],
             'total_rows' => ['required', 'integer', 'min:0', 'max:100000'],
             'entries' => ['required', 'array', 'max:100'],
-            'entries.*' => ['required', 'array:name,batch,general_exterior,four_point,other,total'],
+            'entries.*' => ['required', 'array:name,batch,general_exterior,four_point,premium_four_point,other,total'],
             'entries.*.name' => ['bail', 'required', 'string', 'max:255', $this->safeSpreadsheetText()],
             'entries.*.batch' => ['required', 'integer', 'between:1,3'],
             'entries.*.general_exterior' => ['required', 'integer', 'min:0', 'max:100000'],
             'entries.*.four_point' => ['required', 'integer', 'min:0', 'max:100000'],
+            'entries.*.premium_four_point' => ['required', 'integer', 'min:0', 'max:100000'],
             'entries.*.other' => ['required', 'integer', 'min:0', 'max:100000'],
             'entries.*.total' => ['required', 'integer', 'min:0', 'max:100000'],
         ];

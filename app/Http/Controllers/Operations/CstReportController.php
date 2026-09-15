@@ -40,7 +40,7 @@ class CstReportController extends Controller
                 ->orderByDesc('report_date')
                 ->orderByDesc('updated_at')
                 ->orderBy('processor_name')
-                ->get(['id', 'report_date', 'processor_name', 'general_exterior', 'four_point', 'updated_at'])
+                ->get(['id', 'report_date', 'processor_name', 'general_exterior', 'four_point', 'premium_four_point', 'updated_at'])
                 ->filter(fn (CstProcessorMetric $metric): bool => $this->roster->canonicalName($metric->processor_name, $processors) !== null)
                 ->groupBy(fn (CstProcessorMetric $metric): string => implode('|', [
                     $metric->report_date->format('Y-m-d'),
@@ -64,7 +64,8 @@ class CstReportController extends Controller
                     'processor' => $this->roster->canonicalName($metric->processor_name, $processors),
                     'generalExterior' => $metric->general_exterior,
                     'fourPoint' => $metric->four_point,
-                    'total' => $metric->general_exterior + $metric->four_point,
+                    'premiumFourPoint' => $metric->premium_four_point,
+                    'total' => $metric->general_exterior + $metric->four_point + $metric->premium_four_point,
                 ])
                 // Filtering a collection preserves its database indexes. Inertia
                 // serializes sparse indexes as an object, while the React page
@@ -82,6 +83,7 @@ class CstReportController extends Controller
             'summary' => [
                 'generalExterior' => $rows->sum('generalExterior'),
                 'fourPoint' => $rows->sum('fourPoint'),
+                'premiumFourPoint' => $rows->sum('premiumFourPoint'),
                 'total' => $rows->sum('total'),
             ],
             'canImport' => $request->user()?->role === UserRole::Operations,

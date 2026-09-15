@@ -69,13 +69,15 @@ class PerformanceAnnouncementService
             $mine = $entries->filter(fn (ReportEntry $entry): bool => $this->matches($account, $entry->processor_name));
             $generalExterior = $mine->where('report_category', 'general_exterior')->count();
             $fourPoint = $mine->where('report_category', 'four_point')->count();
+            $premiumFourPoint = $mine->where('report_category', 'premium_four_point')->count();
 
             return [
                 'user' => $account,
                 'general_exterior' => $generalExterior,
                 'four_point' => $fourPoint,
-                'total' => $generalExterior + $fourPoint,
-                'credits' => round($generalExterior + ($fourPoint * 1.25), 2),
+                'premium_four_point' => $premiumFourPoint,
+                'total' => $generalExterior + $fourPoint + $premiumFourPoint,
+                'credits' => round($generalExterior + (($fourPoint + $premiumFourPoint) * 1.25), 2),
             ];
         });
 
@@ -83,6 +85,7 @@ class PerformanceAnnouncementService
         $this->announceLeader($production, 'total', 'highest_reports', 'Highest polished reports', 'reports', $month);
         $this->announceLeader($production, 'general_exterior', 'top_general_exterior', 'Top General Exterior performer', 'General Exterior reports', $month);
         $this->announceLeader($production, 'four_point', 'top_four_point', 'Top 4-Point performer', '4-Point reports', $month);
+        $this->announceLeader($production, 'premium_four_point', 'top_premium_four_point', 'Top Premium 4-Point performer', 'Premium 4-Point reports', $month);
         $this->announceTiers($production, $month);
 
         $assessments = QaAssessment::query()

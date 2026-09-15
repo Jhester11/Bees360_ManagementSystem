@@ -41,7 +41,7 @@ class QueueSnapshotController extends Controller
                     ->whereNotIn('processor_name', $activeProcessorNames)
                     ->orderByDesc('id')
                     ->limit(1000)
-                    ->get(['id', 'queue_snapshot_id', 'batch', 'processor_name', 'general_exterior', 'four_point', 'other', 'total'])
+                    ->get(['id', 'queue_snapshot_id', 'batch', 'processor_name', 'general_exterior', 'four_point', 'premium_four_point', 'other', 'total'])
                     ->map(fn (QueueProcessorEntry $entry): array => [
                         'reportDate' => $entry->queueSnapshot->report_date->format('Y-m-d'),
                         'checkpoint' => $entry->queueSnapshot->checkpoint,
@@ -49,6 +49,7 @@ class QueueSnapshotController extends Controller
                         'batch' => $entry->batch,
                         'generalExterior' => $entry->general_exterior,
                         'fourPoint' => $entry->four_point,
+                        'premiumFourPoint' => $entry->premium_four_point,
                         'other' => $entry->other,
                         'total' => $entry->total,
                     ])
@@ -73,8 +74,9 @@ class QueueSnapshotController extends Controller
                     'processor_name' => $processor->name,
                     'general_exterior' => $entry['general_exterior'],
                     'four_point' => $entry['four_point'],
+                    'premium_four_point' => $entry['premium_four_point'],
                     'other' => $entry['other'],
-                    'total' => $entry['general_exterior'] + $entry['four_point'] + $entry['other'],
+                    'total' => $entry['general_exterior'] + $entry['four_point'] + $entry['premium_four_point'] + $entry['other'],
                 ];
             })
             ->filter()
@@ -137,6 +139,7 @@ class QueueSnapshotController extends Controller
                         'aliases' => array_values(array_filter([$processor->n_name])),
                         'generalExterior' => $entry->general_exterior,
                         'fourPoint' => $entry->four_point,
+                        'premiumFourPoint' => $entry->premium_four_point,
                         'other' => $entry->other,
                         'total' => $entry->total,
                     ];

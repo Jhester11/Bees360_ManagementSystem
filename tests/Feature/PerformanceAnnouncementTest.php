@@ -24,6 +24,11 @@ test('live production and QA leaders are announced without duplicates', function
             'processor_name' => $leader->name, 'project_id' => 'LEAD-2', 'inspection_type' => '4-Point',
             'report_category' => 'four_point', 'created_at' => now(), 'updated_at' => now(),
         ],
+        [
+            'report_date' => '2026-09-05', 'source' => 'active', 'batch' => 1,
+            'processor_name' => $leader->name, 'project_id' => 'LEAD-3', 'inspection_type' => 'Premium 4-Point',
+            'report_category' => 'premium_four_point', 'created_at' => now(), 'updated_at' => now(),
+        ],
     ]);
 
     QaAssessment::query()->create([
@@ -43,7 +48,8 @@ test('live production and QA leaders are announced without duplicates', function
 
     expect($operations->notifications()->where('data->type', 'overall_top_performer')->count())->toBe(1)
         ->and($leader->notifications()->where('data->type', 'highest_qa')->count())->toBe(1)
-        ->and($leader->notifications()->where('data->type', 'top_four_point')->count())->toBe(1);
+        ->and($leader->notifications()->where('data->type', 'top_four_point')->count())->toBe(1)
+        ->and($leader->notifications()->where('data->type', 'top_premium_four_point')->count())->toBe(1);
 
     $notificationCount = $leader->notifications()->count();
     $service->refreshCurrentMonth();

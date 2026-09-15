@@ -15,6 +15,7 @@ type CstRow = {
     processor: string;
     generalExterior: number;
     fourPoint: number;
+    premiumFourPoint: number;
     total: number;
 };
 
@@ -22,7 +23,7 @@ type Props = {
     rows: CstRow[];
     processorNames: string[];
     filters: { startDate: string; endDate: string; processor: string };
-    summary: { generalExterior: number; fourPoint: number; total: number };
+    summary: { generalExterior: number; fourPoint: number; premiumFourPoint: number; total: number };
     canImport: boolean;
     centralToday: string;
 };
@@ -159,7 +160,7 @@ export default function CstReports({ rows, processorNames, filters, summary, can
         [activeFile, archivedFile, closedFile],
     );
     const displayRows: CstRow[] = Array.isArray(rows) ? rows : Object.values(rows as Record<string, CstRow>);
-    const credits = Math.round((summary.generalExterior + summary.fourPoint * 1.25) * 100) / 100;
+    const credits = Math.round((summary.generalExterior + (summary.fourPoint + summary.premiumFourPoint) * 1.25) * 100) / 100;
     const tiers: Tier[] = [
         { name: 'Tier 1', target: 550, incentive: 100 },
         { name: 'Tier 2', target: 650, incentive: 200 },
@@ -266,6 +267,7 @@ export default function CstReports({ rows, processorNames, filters, summary, can
     const cards = [
         ['General Exterior', summary.generalExterior, FileSpreadsheet, 'bg-[#e4f3df] text-[#237148]'],
         ['4-Point', summary.fourPoint, Gauge, 'bg-[#eee7ff] text-[#7047c4]'],
+        ['Premium 4-Point', summary.premiumFourPoint, Award, 'bg-[#fff0c9] text-[#a96300]'],
         ['Total reports', summary.total, Clock3, 'bg-[#fff0c9] text-[#a96300]'],
     ] as const;
 
@@ -397,7 +399,7 @@ export default function CstReports({ rows, processorNames, filters, summary, can
                 </section>
 
                 {hasAppliedProcessor && (
-                    <section className="grid gap-4 sm:grid-cols-3">
+                    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                         {cards.map(([label, value, Icon, tone]) => (
                             <article key={label} className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5">
                                 <span className={`grid size-10 place-items-center rounded-xl ${tone}`}>
@@ -424,7 +426,8 @@ export default function CstReports({ rows, processorNames, filters, summary, can
                                 <p className="mt-1 text-sm font-bold text-[#fff0cb]">Selected CST period · {periodLabel}</p>
                                 <p className="mt-4 text-5xl font-black tracking-tight">{credits.toLocaleString()}</p>
                                 <p className="mt-2 text-sm font-semibold text-[#f2dfc7]">
-                                    {summary.generalExterior.toLocaleString()} × 1 + {summary.fourPoint.toLocaleString()} × 1.25
+                                    {summary.generalExterior.toLocaleString()} × 1 + ({summary.fourPoint.toLocaleString()} +{' '}
+                                    {summary.premiumFourPoint.toLocaleString()}) × 1.25
                                 </p>
                                 <div className="mt-7 rounded-xl bg-white/10 p-4 backdrop-blur-sm">
                                     <p className="text-xs text-[#ead8be]">Current incentive</p>
@@ -442,7 +445,9 @@ export default function CstReports({ rows, processorNames, filters, summary, can
                     <div className="flex flex-col justify-between gap-3 border-b border-[#eadbc6] bg-[#fff8e8] px-5 py-4 sm:flex-row sm:items-center">
                         <div>
                             <h2 className="font-extrabold text-[#342615]">Daily CST production</h2>
-                            <p className="mt-1 text-xs text-[#806f59]">General Exterior and 4-Point totals stored from CST uploads.</p>
+                            <p className="mt-1 text-xs text-[#806f59]">
+                                General Exterior, 4-Point, and Premium 4-Point totals stored from CST uploads.
+                            </p>
                         </div>
                         {hasAppliedProcessor && (
                             <div className="flex flex-wrap gap-2 text-[11px] font-extrabold">
@@ -486,6 +491,7 @@ export default function CstReports({ rows, processorNames, filters, summary, can
                                         <th className="px-4 py-3">Processor</th>
                                         <th className="px-4 py-3 text-center">Gen Ext</th>
                                         <th className="px-4 py-3 text-center">4-Point</th>
+                                        <th className="px-4 py-3 text-center">Premium 4-Point</th>
                                         <th className="px-4 py-3 text-center">Total</th>
                                         <th className="px-4 py-3 text-center">Delivery status</th>
                                     </tr>
@@ -500,6 +506,7 @@ export default function CstReports({ rows, processorNames, filters, summary, can
                                                 <td className="px-4 py-3 font-bold text-[#342615]">{row.processor}</td>
                                                 <td className="px-4 py-3 text-center text-[#594324]">{row.generalExterior}</td>
                                                 <td className="px-4 py-3 text-center text-[#594324]">{row.fourPoint}</td>
+                                                <td className="px-4 py-3 text-center text-[#594324]">{row.premiumFourPoint}</td>
                                                 <td className="px-4 py-3 text-center font-black text-[#9b5d00]">{row.total}</td>
                                                 <td className="px-4 py-3 text-center">
                                                     <span

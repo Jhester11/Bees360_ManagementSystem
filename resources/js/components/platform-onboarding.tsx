@@ -131,13 +131,13 @@ function guideFor(user: User): GuideStep[] {
     const steps: GuideStep[] = [
         {
             title: 'Operations dashboard',
-            description: 'This is your live Bees360 operations workspace and reporting overview.',
+            description: 'This is your live Bees360 operations workspace. Monthly totals follow Philippine time.',
             href: '/dashboard',
             target: 'operations-welcome',
         },
         {
             title: 'Team totals',
-            description: 'These cards show weekly polished reports, deduplicated total reports, and active processors.',
+            description: 'Total cases includes all imported report months. The category and QA cards show the current Philippine month.',
             href: '/dashboard',
             target: 'operations-summary',
         },
@@ -149,7 +149,7 @@ function guideFor(user: User): GuideStep[] {
         },
         {
             title: 'Report mix',
-            description: 'This section compares General Exterior and 4-Point volume with current report status.',
+            description: 'This section compares General Exterior, 4-Point, and Premium 4-Point volume with current report status.',
             href: '/dashboard',
             target: 'report-mix',
         },
@@ -298,7 +298,7 @@ export function PlatformOnboarding() {
     }, []);
 
     useEffect(() => {
-        if (!started || !current) return;
+        if (!started || !current || !pageReady) return;
         if (!pageMatches(page.url, current.href)) {
             setTargetRect(null);
             setTargetUnavailable(false);
@@ -320,6 +320,10 @@ export function PlatformOnboarding() {
             setTargetRect({ top, left, width: Math.max(40, right - left), height: Math.max(40, bottom - top) });
         };
         const begin = (attempt = 0) => {
+            if (document.documentElement.dataset.pageLoading === 'true') {
+                timer = window.setTimeout(() => begin(attempt), 150);
+                return;
+            }
             const target = document.querySelector<HTMLElement>(`[data-tour="${current.target}"]`);
             if (!target) {
                 measure();
@@ -353,7 +357,7 @@ export function PlatformOnboarding() {
             window.removeEventListener('resize', measure);
             window.removeEventListener('scroll', measure, true);
         };
-    }, [current, page.url, started]);
+    }, [current, page.url, pageReady, started]);
 
     useEffect(() => {
         if (!started || !current || !targetLocated || !pageReady) return;

@@ -12,6 +12,7 @@ class CstProcessorMetric extends Model
         'processor_name',
         'general_exterior',
         'four_point',
+        'premium_four_point',
         'qc_score',
         'qc_reviews',
         'source_file',

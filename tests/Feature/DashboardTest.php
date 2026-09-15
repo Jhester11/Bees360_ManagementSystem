@@ -296,6 +296,62 @@ test('dashboard displays deduplicated imported report data', function () {
         ->where('processorNames', ['Allan Layug', 'Chrismer Flores']));
 });
 
+test('the first dashboard response includes a skeleton before the web app loads', function () {
+    $operations = User::factory()->create(['role' => UserRole::Operations]);
+
+    $this->actingAs($operations)->get('/dashboard')
+        ->assertSee('id="bees360-boot-skeleton"', false)
+        ->assertSee('aria-label="Loading Bees360 page"', false);
+});
+
+test('operations dashboard totals and accuracy follow the current Philippine month', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-15 10:00:00', 'Asia/Manila'));
+    $operations = User::factory()->create(['role' => UserRole::Operations]);
+
+    foreach ([
+        ['date' => '2026-08-31', 'id' => 'AUG-GE', 'category' => 'general_exterior'],
+        ['date' => '2026-09-02', 'id' => 'SEP-GE', 'category' => 'general_exterior'],
+        ['date' => '2026-09-03', 'id' => 'SEP-FP', 'category' => 'four_point'],
+        ['date' => '2026-09-04', 'id' => 'SEP-PFP', 'category' => 'premium_four_point'],
+        ['date' => '2026-09-30', 'id' => 'FUTURE', 'category' => 'general_exterior'],
+    ] as $report) {
+        ReportEntry::query()->create([
+            'report_date' => $report['date'],
+            'source' => 'closed',
+            'batch' => 1,
+            'processor_name' => 'Allan Layug',
+            'project_id' => $report['id'],
+            'inspection_type' => $report['category'],
+            'report_category' => $report['category'],
+            'assembled_at' => $report['date'].' 10:00:00',
+        ]);
+    }
+
+    foreach ([['2026-08-31', 50], ['2026-09-02', 90], ['2026-09-03', 100], ['2026-09-30', 20]] as [$date, $score]) {
+        QaAssessment::query()->create([
+            'record_key' => hash('sha256', $date.'|'.$score),
+            'assessment_date' => $date,
+            'processor_name' => 'Allan Layug',
+            'project_id' => $date.'-'.$score,
+            'score' => $score,
+            'source_file' => 'QA.xlsx',
+            'uploaded_by' => $operations->id,
+        ]);
+    }
+
+    $this->actingAs($operations)->get('/dashboard')->assertInertia(fn (Assert $page) => $page
+        ->component('dashboard')
+        ->where('phToday', '2026-09-15')
+        ->where('overview.totalReports', 5)
+        ->where('monthlyMetrics.monthLabel', 'September 2026')
+        ->where('monthlyMetrics.totalCases', 3)
+        ->where('monthlyMetrics.generalExterior', 1)
+        ->where('monthlyMetrics.fourPoint', 1)
+        ->where('monthlyMetrics.premiumFourPoint', 1)
+        ->where('monthlyMetrics.accuracy', 95)
+        ->where('monthlyMetrics.assessments', 2));
+});
+
 test('operations dashboard exposes QA accuracy records for the MTD Excel export', function () {
     $operations = User::factory()->create(['role' => UserRole::Operations]);
     ReportEntry::query()->create([

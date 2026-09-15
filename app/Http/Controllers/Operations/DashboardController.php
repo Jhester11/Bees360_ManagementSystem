@@ -67,9 +67,25 @@ class DashboardController extends Controller
 
     private function renderDashboard(bool $showReportRange = false): Response
     {
+        $data = $this->reportData(applyMtdNoonCutoff: $showReportRange);
+        $phToday = CarbonImmutable::now('Asia/Manila')->toDateString();
+        $month = substr($phToday, 0, 7);
+        $monthlyReports = collect($data['reportRecords'])->filter(fn (array $record): bool => str_starts_with($record['date'], $month) && $record['date'] <= $phToday);
+        $monthlyAccuracy = collect($data['accuracyRecords'])->filter(fn (array $record): bool => str_starts_with($record['date'], $month) && $record['date'] <= $phToday);
+
         return Inertia::render('dashboard', [
             'showReportRange' => $showReportRange,
-            ...$this->reportData(applyMtdNoonCutoff: $showReportRange),
+            ...$data,
+            'phToday' => $phToday,
+            'monthlyMetrics' => [
+                'monthLabel' => CarbonImmutable::now('Asia/Manila')->format('F Y'),
+                'totalCases' => $monthlyReports->sum('reports'),
+                'generalExterior' => $monthlyReports->sum('generalExterior'),
+                'fourPoint' => $monthlyReports->sum('fourPoint'),
+                'premiumFourPoint' => $monthlyReports->sum('premiumFourPoint'),
+                'accuracy' => $monthlyAccuracy->isEmpty() ? null : round($monthlyAccuracy->avg('score'), 2),
+                'assessments' => $monthlyAccuracy->count(),
+            ],
         ]);
     }
 
@@ -136,8 +152,10 @@ class DashboardController extends Controller
         $qaReviews = $qaAssessments->count();
         $phGeneralExterior = $phEntries->where('report_category', 'general_exterior')->count();
         $phFourPoint = $phEntries->where('report_category', 'four_point')->count();
+        $phPremiumFourPoint = $phEntries->where('report_category', 'premium_four_point')->count();
         $cstGeneralExterior = $cstMetrics->sum('general_exterior');
         $cstFourPoint = $cstMetrics->sum('four_point');
+        $cstPremiumFourPoint = $cstMetrics->sum('premium_four_point');
 
         $leaderboards = $this->processorLeaderboards(
             $allPhEntries,
@@ -160,8 +178,8 @@ class DashboardController extends Controller
                 ->sortByDesc('value')
                 ->values(),
             'metrics' => [
-                'ph' => $this->processorPerformance($phGeneralExterior, $phFourPoint, $qaScore, $qaReviews),
-                'cst' => $this->processorPerformance($cstGeneralExterior, $cstFourPoint, $qaScore, $qaReviews),
+                'ph' => $this->processorPerformance($phGeneralExterior, $phFourPoint, $phPremiumFourPoint, $qaScore, $qaReviews),
+                'cst' => $this->processorPerformance($cstGeneralExterior, $cstFourPoint, $cstPremiumFourPoint, $qaScore, $qaReviews),
             ],
             'dailyOutput' => [
                 'ph' => $this->dailyPhOutput($selectedMonth, $phEntries),
@@ -256,13 +274,17 @@ class DashboardController extends Controller
                     $fourPoint = $isCst
                         ? $processorRecords->sum('four_point')
                         : $processorRecords->where('report_category', 'four_point')->count();
+                    $premiumFourPoint = $isCst
+                        ? $processorRecords->sum('premium_four_point')
+                        : $processorRecords->where('report_category', 'premium_four_point')->count();
                     $qa = $qaByProcessor->get($key);
 
                     return [
                         'processor' => $account?->name ?? $first->processor_name,
-                        'totalCases' => $generalExterior + $fourPoint,
+                        'totalCases' => $generalExterior + $fourPoint + $premiumFourPoint,
                         'generalExterior' => $generalExterior,
                         'fourPoint' => $fourPoint,
+                        'premiumFourPoint' => $premiumFourPoint,
                         'qaScore' => $qa['score'] ?? null,
                         'qaReviews' => $qa['reviews'] ?? 0,
                         'isCurrentUser' => $key === $currentKey,
@@ -309,9 +331,9 @@ class DashboardController extends Controller
         ];
     }
 
-    private function processorPerformance(int $generalExterior, int $fourPoint, ?float $qaScore, int $qaReviews): array
+    private function processorPerformance(int $generalExterior, int $fourPoint, int $premiumFourPoint, ?float $qaScore, int $qaReviews): array
     {
-        $credits = round($generalExterior + ($fourPoint * 1.25), 2);
+        $credits = round($generalExterior + (($fourPoint + $premiumFourPoint) * 1.25), 2);
         $tiers = collect([[550, 100], [650, 200], [750, 300]])
             ->map(fn (array $tier, int $index): array => [
                 'name' => 'Tier '.($index + 1),
@@ -324,9 +346,10 @@ class DashboardController extends Controller
             ->values();
 
         return [
-            'totalCases' => $generalExterior + $fourPoint,
+            'totalCases' => $generalExterior + $fourPoint + $premiumFourPoint,
             'generalExterior' => $generalExterior,
             'fourPoint' => $fourPoint,
+            'premiumFourPoint' => $premiumFourPoint,
             'credits' => $credits,
             'qaScore' => $qaScore,
             'qaReviews' => $qaReviews,
@@ -349,6 +372,7 @@ class DashboardController extends Controller
                 'day' => $date->format('M j'),
                 'generalExterior' => $daily->where('report_category', 'general_exterior')->count(),
                 'fourPoint' => $daily->where('report_category', 'four_point')->count(),
+                'premiumFourPoint' => $daily->where('report_category', 'premium_four_point')->count(),
                 'total' => $daily->count(),
             ];
         });
@@ -364,13 +388,15 @@ class DashboardController extends Controller
             $daily = $byDate->get($date->toDateString(), collect());
             $generalExterior = $daily->sum('general_exterior');
             $fourPoint = $daily->sum('four_point');
+            $premiumFourPoint = $daily->sum('premium_four_point');
 
             return [
                 'date' => $date->toDateString(),
                 'day' => $date->format('M j'),
                 'generalExterior' => $generalExterior,
                 'fourPoint' => $fourPoint,
-                'total' => $generalExterior + $fourPoint,
+                'premiumFourPoint' => $premiumFourPoint,
+                'total' => $generalExterior + $fourPoint + $premiumFourPoint,
             ];
         });
     }
@@ -479,6 +505,7 @@ class DashboardController extends Controller
                     'reports' => $group->count(),
                     'generalExterior' => $group->where('report_category', 'general_exterior')->count(),
                     'fourPoint' => $group->where('report_category', 'four_point')->count(),
+                    'premiumFourPoint' => $group->where('report_category', 'premium_four_point')->count(),
                 ];
             })
             ->sortBy('date')
@@ -515,6 +542,7 @@ class DashboardController extends Controller
                     'reports' => $dailyRecords->sum('reports'),
                     'generalExterior' => $dailyRecords->sum('generalExterior'),
                     'fourPoint' => $dailyRecords->sum('fourPoint'),
+                    'premiumFourPoint' => $dailyRecords->sum('premiumFourPoint'),
                 ];
             })
             ->sortBy([
@@ -542,6 +570,7 @@ class DashboardController extends Controller
                 'activeProcessors' => $entries->pluck('processor_name')->unique()->count(),
                 'generalExterior' => $entries->where('report_category', 'general_exterior')->count(),
                 'fourPoint' => $entries->where('report_category', 'four_point')->count(),
+                'premiumFourPoint' => $entries->where('report_category', 'premium_four_point')->count(),
                 'activeSource' => $entries->where('source', 'active')->count(),
                 'closedSource' => $entries->where('source', 'closed')->count(),
                 'weekStart' => $weekStart->format('Y-m-d'),

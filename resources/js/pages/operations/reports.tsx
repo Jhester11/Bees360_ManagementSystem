@@ -33,11 +33,11 @@ type ReportEntry = {
     processor_name: string;
     project_id: string;
     inspection_type: string;
-    report_category: 'general_exterior' | 'four_point';
+    report_category: 'general_exterior' | 'four_point' | 'premium_four_point';
     assembled_at: string | null;
 };
-type ReportRow = { name: string; nickname: string; batch: number; generalExtensions: number; fourPoint: number };
-type ProcessorDefinition = Omit<ReportRow, 'generalExtensions' | 'fourPoint'> & { aliases: string[] };
+type ReportRow = { name: string; nickname: string; batch: number; generalExtensions: number; fourPoint: number; premiumFourPoint: number };
+type ProcessorDefinition = Omit<ReportRow, 'generalExtensions' | 'fourPoint' | 'premiumFourPoint'> & { aliases: string[] };
 type ReportsProps = {
     reportEntries: ReportEntry[];
     processorRoster: ProcessorDefinition[];
@@ -140,18 +140,27 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
                 ...processor,
                 generalExtensions: entries.filter((entry) => entry.report_category === 'general_exterior').length,
                 fourPoint: entries.filter((entry) => entry.report_category === 'four_point').length,
+                premiumFourPoint: entries.filter((entry) => entry.report_category === 'premium_four_point').length,
             };
         });
     }, [hasReportData, processorRoster, selectedReportEntries]);
     const rows = useMemo(() => (batch === 'overall' ? allRows : allRows.filter((row) => row.batch === Number(batch.at(-1)))), [allRows, batch]);
     const totals = rows.reduce(
-        (total, row) => ({ generalExtensions: total.generalExtensions + row.generalExtensions, fourPoint: total.fourPoint + row.fourPoint }),
-        { generalExtensions: 0, fourPoint: 0 },
+        (total, row) => ({
+            generalExtensions: total.generalExtensions + row.generalExtensions,
+            fourPoint: total.fourPoint + row.fourPoint,
+            premiumFourPoint: total.premiumFourPoint + row.premiumFourPoint,
+        }),
+        { generalExtensions: 0, fourPoint: 0, premiumFourPoint: 0 },
     );
     const reportLabel = reportType === 'midday' ? 'Mid-Day Report' : 'End of Day Report';
     const combinedTotals = allRows.reduce(
-        (total, row) => ({ generalExtensions: total.generalExtensions + row.generalExtensions, fourPoint: total.fourPoint + row.fourPoint }),
-        { generalExtensions: 0, fourPoint: 0 },
+        (total, row) => ({
+            generalExtensions: total.generalExtensions + row.generalExtensions,
+            fourPoint: total.fourPoint + row.fourPoint,
+            premiumFourPoint: total.premiumFourPoint + row.premiumFourPoint,
+        }),
+        { generalExtensions: 0, fourPoint: 0, premiumFourPoint: 0 },
     );
 
     async function exportCombinedReport() {
@@ -166,9 +175,18 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
             ['BEES360 | DAILY OPERATIONS REPORT'],
             [`${reportLabel} · ${formatDate(reportDate)} · Batch 1, Batch 2 and Batch 3`],
             [],
-            ['NAMES', 'N-NAME', 'BATCH', 'DAY', 'GEN EXT', '4-POINT', 'TOTAL'],
-            ...allRows.map((row) => [row.name, row.nickname, `Batch ${row.batch}`, formatDate(reportDate), row.generalExtensions, row.fourPoint, 0]),
-            ['COMBINED TOTAL', '', '', '', 0, 0, 0],
+            ['NAMES', 'N-NAME', 'BATCH', 'DAY', 'GEN EXT', '4-POINT', 'PREMIUM 4-POINT', 'TOTAL'],
+            ...allRows.map((row) => [
+                row.name,
+                row.nickname,
+                `Batch ${row.batch}`,
+                formatDate(reportDate),
+                row.generalExtensions,
+                row.fourPoint,
+                row.premiumFourPoint,
+                0,
+            ]),
+            ['COMBINED TOTAL', '', '', '', 0, 0, 0, 0],
         ]) as WorkSheet;
         const titleStyle = {
             alignment: { horizontal: 'center', vertical: 'center' },
@@ -216,7 +234,7 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
         };
 
         for (let row = 1; row <= totalRow; row += 1) {
-            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G']) {
+            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) {
                 const address = `${column}${row}`;
                 worksheet[address] ??= { t: 's', v: '' };
                 worksheet[address].s = whiteCellStyle;
@@ -224,17 +242,17 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
         }
 
         worksheet['!merges'] = [
-            { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
-            { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },
+            { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
+            { s: { r: 1, c: 0 }, e: { r: 1, c: 7 } },
             { s: { r: totalRow - 1, c: 0 }, e: { r: totalRow - 1, c: 3 } },
         ];
-        worksheet['!cols'] = [{ wch: 31 }, { wch: 16 }, { wch: 13 }, { wch: 23 }, { wch: 17 }, { wch: 14 }, { wch: 13 }];
+        worksheet['!cols'] = [{ wch: 31 }, { wch: 16 }, { wch: 13 }, { wch: 23 }, { wch: 17 }, { wch: 14 }, { wch: 20 }, { wch: 13 }];
         worksheet['!rows'] = [{ hpt: 27 }, { hpt: 20 }, { hpt: 8 }, { hpt: 25 }];
         worksheet.A1.s = titleStyle;
         worksheet.A2.s = subtitleStyle;
 
-        for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G']) worksheet[`${column}${headerRow}`].s = headerStyle;
-        worksheet[`G${headerRow}`].s = { ...headerStyle, fill: { fgColor: { rgb: '2F2112' } } };
+        for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) worksheet[`${column}${headerRow}`].s = headerStyle;
+        worksheet[`H${headerRow}`].s = { ...headerStyle, fill: { fgColor: { rgb: '2F2112' } } };
         allRows.forEach((_, index) => {
             const rowNumber = firstDataRow + index;
             const rowStyle = index % 2 === 0 ? bodyStyle : alternateStyle;
@@ -242,16 +260,22 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
             worksheet[`B${rowNumber}`].s = { ...rowStyle, alignment: { horizontal: 'left', vertical: 'center' } };
             for (const column of ['C', 'D'])
                 worksheet[`${column}${rowNumber}`].s = { ...rowStyle, alignment: { horizontal: 'center', vertical: 'center' } };
-            for (const column of ['E', 'F'])
+            for (const column of ['E', 'F', 'G'])
                 worksheet[`${column}${rowNumber}`].s = { ...numberStyle, ...(index % 2 === 1 ? { fill: { fgColor: { rgb: 'FFF8E8' } } } : {}) };
-            worksheet[`G${rowNumber}`] = { f: `E${rowNumber}+F${rowNumber}`, t: 'n', s: totalColumnStyle };
+            worksheet[`H${rowNumber}`] = { f: `SUM(E${rowNumber}:G${rowNumber})`, t: 'n', s: totalColumnStyle };
         });
         for (const column of ['A', 'B', 'C', 'D']) worksheet[`${column}${totalRow}`].s = totalLabelStyle;
         worksheet[`E${totalRow}`] = { f: `SUM(E${firstDataRow}:E${totalRow - 1})`, v: combinedTotals.generalExtensions, t: 'n', s: totalNumberStyle };
         worksheet[`F${totalRow}`] = { f: `SUM(F${firstDataRow}:F${totalRow - 1})`, v: combinedTotals.fourPoint, t: 'n', s: totalNumberStyle };
         worksheet[`G${totalRow}`] = {
             f: `SUM(G${firstDataRow}:G${totalRow - 1})`,
-            v: combinedTotals.generalExtensions + combinedTotals.fourPoint,
+            v: combinedTotals.premiumFourPoint,
+            t: 'n',
+            s: totalNumberStyle,
+        };
+        worksheet[`H${totalRow}`] = {
+            f: `SUM(H${firstDataRow}:H${totalRow - 1})`,
+            v: combinedTotals.generalExtensions + combinedTotals.fourPoint + combinedTotals.premiumFourPoint,
             t: 'n',
             s: finalTotalStyle,
         };
@@ -470,7 +494,7 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
                             </strong>{' '}
                             saved.{' '}
                             {flash.importSummary.ignored > 0
-                                ? `${flash.importSummary.ignored} row${flash.importSummary.ignored === 1 ? '' : 's'} were ignored because they are outside the approved processor list or are not Exterior / 4-Point reports.`
+                                ? `${flash.importSummary.ignored} row${flash.importSummary.ignored === 1 ? '' : 's'} were ignored because they are outside the approved processor list or are not Exterior, 4-Point, or Premium 4-Point reports.`
                                 : 'Only the approved processors and report types were saved.'}
                         </p>
                     </div>
@@ -600,8 +624,8 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
                                     Batch 1, 2, or 3.
                                 </li>
                                 <li>
-                                    Only <strong className="text-white">Exterior</strong> and <strong className="text-white">4-Point</strong>{' '}
-                                    inspections are counted.
+                                    Only <strong className="text-white">Exterior</strong>, <strong className="text-white">4-Point</strong>, and{' '}
+                                    <strong className="text-white">Premium 4-Point</strong> inspections are counted.
                                 </li>
                                 <li>Re-importing a workbook updates its matching rows instead of creating duplicates.</li>
                             </ul>
@@ -722,6 +746,7 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
                                                 <th className="px-5 py-4">Day</th>
                                                 <th className="px-5 py-4 text-center">Gen Ext</th>
                                                 <th className="px-5 py-4 text-center">4-Point</th>
+                                                <th className="px-5 py-4 text-center">Premium 4-Point</th>
                                                 <th className="bg-[#2f2112] px-5 py-4 text-center">Total</th>
                                             </tr>
                                         </thead>
@@ -734,8 +759,9 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
                                                     <td className="px-5 py-4 text-[#806f59]">{formatDate(reportDate)}</td>
                                                     <td className="px-5 py-4 text-center font-semibold text-[#4a3821]">{row.generalExtensions}</td>
                                                     <td className="px-5 py-4 text-center font-semibold text-[#4a3821]">{row.fourPoint}</td>
+                                                    <td className="px-5 py-4 text-center font-semibold text-[#4a3821]">{row.premiumFourPoint}</td>
                                                     <td className="bg-[#fff1cc] px-5 py-4 text-center font-extrabold text-[#694400]">
-                                                        {row.generalExtensions + row.fourPoint}
+                                                        {row.generalExtensions + row.fourPoint + row.premiumFourPoint}
                                                     </td>
                                                 </tr>
                                             ))}
@@ -747,8 +773,9 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
                                                 </td>
                                                 <td className="px-5 py-4 text-center font-extrabold text-[#8b620f]">{totals.generalExtensions}</td>
                                                 <td className="px-5 py-4 text-center font-extrabold text-[#8b620f]">{totals.fourPoint}</td>
+                                                <td className="px-5 py-4 text-center font-extrabold text-[#8b620f]">{totals.premiumFourPoint}</td>
                                                 <td className="bg-[#f2cf72] px-5 py-4 text-center text-lg font-extrabold text-[#5a3900]">
-                                                    {totals.generalExtensions + totals.fourPoint}
+                                                    {totals.generalExtensions + totals.fourPoint + totals.premiumFourPoint}
                                                 </td>
                                             </tr>
                                         </tfoot>

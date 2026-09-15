@@ -4,7 +4,20 @@ import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, usePoll } from '@inertiajs/react';
-import { ArrowRight, BarChart3, CalendarDays, Clock3, Download, FileCheck2, Files, LoaderCircle, Trophy, UsersRound } from 'lucide-react';
+import {
+    ArrowRight,
+    BarChart3,
+    CalendarDays,
+    Clock3,
+    Download,
+    FileCheck2,
+    Gauge,
+    LoaderCircle,
+    ShieldCheck,
+    Sparkles,
+    Trophy,
+    UsersRound,
+} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
@@ -16,6 +29,7 @@ export type ReportRecord = {
     reports: number;
     generalExterior: number;
     fourPoint: number;
+    premiumFourPoint: number;
 };
 
 type AccuracyRecord = {
@@ -27,6 +41,16 @@ type AccuracyRecord = {
 
 type DashboardProps = {
     showReportRange?: boolean;
+    phToday: string;
+    monthlyMetrics: {
+        monthLabel: string;
+        totalCases: number;
+        generalExterior: number;
+        fourPoint: number;
+        premiumFourPoint: number;
+        accuracy: number | null;
+        assessments: number;
+    };
     reportRecords: ReportRecord[];
     accuracyRecords: AccuracyRecord[];
     processorNames: string[];
@@ -37,6 +61,7 @@ type DashboardProps = {
         activeProcessors: number;
         generalExterior: number;
         fourPoint: number;
+        premiumFourPoint: number;
         activeSource: number;
         closedSource: number;
         weekStart: string;
@@ -51,6 +76,7 @@ type DashboardProps = {
             reports: number;
             generalExterior: number;
             fourPoint: number;
+            premiumFourPoint: number;
         }[];
     };
 };
@@ -112,13 +138,15 @@ function philippineGreeting() {
 
 export default function Dashboard({
     showReportRange = false,
+    phToday,
+    monthlyMetrics,
     reportRecords,
     accuracyRecords,
     processorNames,
     reportRange,
     overview,
 }: DashboardProps) {
-    usePoll(30_000, { only: ['reportRecords', 'accuracyRecords', 'processorNames', 'reportRange', 'overview'] });
+    usePoll(30_000, { only: ['reportRecords', 'accuracyRecords', 'processorNames', 'reportRange', 'overview', 'phToday', 'monthlyMetrics'] });
 
     const [currentPhilippineDate, setCurrentPhilippineDate] = useState(philippinesDate);
     const referenceDate = showReportRange ? currentPhilippineDate : (reportRange.latest ?? currentPhilippineDate);
@@ -195,8 +223,11 @@ export default function Dashboard({
     }, [visibleAccuracyRecords]);
 
     const dashboardData = useMemo(() => {
-        const daily = new Map<string, { date: string; dateLabel: string; reports: number; generalExterior: number; fourPoint: number }>();
-        const processors = new Map<string, { completed: number; generalExterior: number; fourPoint: number }>();
+        const daily = new Map<
+            string,
+            { date: string; dateLabel: string; reports: number; generalExterior: number; fourPoint: number; premiumFourPoint: number }
+        >();
+        const processors = new Map<string, { completed: number; generalExterior: number; fourPoint: number; premiumFourPoint: number }>();
 
         visibleRecords.forEach((record) => {
             const currentDaily = daily.get(record.date) ?? {
@@ -205,15 +236,18 @@ export default function Dashboard({
                 reports: 0,
                 generalExterior: 0,
                 fourPoint: 0,
+                premiumFourPoint: 0,
             };
             currentDaily.reports += record.reports;
             currentDaily.generalExterior += record.generalExterior;
             currentDaily.fourPoint += record.fourPoint;
+            currentDaily.premiumFourPoint += record.premiumFourPoint;
             daily.set(record.date, currentDaily);
-            const processor = processors.get(record.processor) ?? { completed: 0, generalExterior: 0, fourPoint: 0 };
+            const processor = processors.get(record.processor) ?? { completed: 0, generalExterior: 0, fourPoint: 0, premiumFourPoint: 0 };
             processor.completed += record.reports;
             processor.generalExterior += record.generalExterior;
             processor.fourPoint += record.fourPoint;
+            processor.premiumFourPoint += record.premiumFourPoint;
             processors.set(record.processor, processor);
         });
 
@@ -223,6 +257,7 @@ export default function Dashboard({
             completed: processor.completed,
             generalExterior: processor.generalExterior,
             fourPoint: processor.fourPoint,
+            premiumFourPoint: processor.premiumFourPoint,
         })).sort((a, b) => b.completed - a.completed);
         const total = visibleRecords.reduce((sum, record) => sum + record.reports, 0);
 
@@ -233,6 +268,7 @@ export default function Dashboard({
             average: dailyReports.length ? Math.round(total / dailyReports.length) : 0,
             generalExterior: visibleRecords.reduce((sum, record) => sum + record.generalExterior, 0),
             fourPoint: visibleRecords.reduce((sum, record) => sum + record.fourPoint, 0),
+            premiumFourPoint: visibleRecords.reduce((sum, record) => sum + record.premiumFourPoint, 0),
             delivered: dailyReports.filter((report) => report.label === 'Delivered').length,
             underDelivered: dailyReports.filter((report) => report.label === 'Under delivered').length,
             overDelivered: dailyReports.filter((report) => report.label === 'Over delivered').length,
@@ -295,6 +331,8 @@ export default function Dashboard({
                     dashboardData.generalExterior,
                     '4-POINT',
                     dashboardData.fourPoint,
+                    'PREMIUM 4-POINT',
+                    dashboardData.premiumFourPoint,
                     'QA ACCURACY',
                     accuracyData.overall.average === null ? 'NO QA DATA' : accuracyData.overall.average / 100,
                 ],
@@ -303,12 +341,12 @@ export default function Dashboard({
                 [`Daily completed reports from ${formattedRange}`],
             ]);
             chartSheet['!merges'] = [
-                { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } },
-                { s: { r: 1, c: 0 }, e: { r: 1, c: 9 } },
-                { s: { r: 5, c: 0 }, e: { r: 5, c: 9 } },
-                { s: { r: 6, c: 0 }, e: { r: 6, c: 9 } },
+                { s: { r: 0, c: 0 }, e: { r: 0, c: 11 } },
+                { s: { r: 1, c: 0 }, e: { r: 1, c: 11 } },
+                { s: { r: 5, c: 0 }, e: { r: 5, c: 11 } },
+                { s: { r: 6, c: 0 }, e: { r: 6, c: 11 } },
             ];
-            chartSheet['!cols'] = Array.from({ length: 10 }, () => ({ wch: 14 }));
+            chartSheet['!cols'] = Array.from({ length: 12 }, () => ({ wch: 14 }));
             chartSheet['!rows'] = [{ hpt: 30 }, { hpt: 22 }, { hpt: 8 }, { hpt: 32 }, { hpt: 8 }, { hpt: 25 }, { hpt: 20 }, { hpt: 8 }];
             chartSheet.A1.s = titleStyle;
             chartSheet.A2.s = subtitleStyle;
@@ -319,11 +357,11 @@ export default function Dashboard({
                 font: { ...bodyStyle.font, color: { rgb: '806F59' } },
             };
 
-            for (const address of ['A4', 'B4', 'C4', 'D4', 'E4', 'F4', 'G4', 'H4', 'I4', 'J4']) {
+            for (const address of ['A4', 'B4', 'C4', 'D4', 'E4', 'F4', 'G4', 'H4', 'I4', 'J4', 'K4', 'L4']) {
                 chartSheet[address].s = metricStyle;
             }
-            if (accuracyData.overall.average !== null) chartSheet.J4.s = { ...metricStyle, numFmt: '0.00%' };
-            chartSheet['!ref'] = 'A1:J26';
+            if (accuracyData.overall.average !== null) chartSheet.L4.s = { ...metricStyle, numFmt: '0.00%' };
+            chartSheet['!ref'] = 'A1:L26';
 
             const dailyHeaderRow = 4;
             const dailyFirstRow = dailyHeaderRow + 1;
@@ -332,11 +370,22 @@ export default function Dashboard({
                 ['BEES360 | MTD DAILY DATA'],
                 [`${formattedRange} · ${selectionLabel}`],
                 [],
-                ['REPORT DATE', 'GENERAL EXTERIOR', '4-POINT', 'REPORTS ASSEMBLED', 'QA ACCURACY', 'QA REVIEWS', 'PENDING (MANUAL)', 'STATUS'],
+                [
+                    'REPORT DATE',
+                    'GENERAL EXTERIOR',
+                    '4-POINT',
+                    'PREMIUM 4-POINT',
+                    'REPORTS ASSEMBLED',
+                    'QA ACCURACY',
+                    'QA REVIEWS',
+                    'PENDING (MANUAL)',
+                    'STATUS',
+                ],
                 ...dashboardData.dailyReports.map((day) => [
                     new Date(`${day.date}T00:00:00Z`),
                     day.generalExterior,
                     day.fourPoint,
+                    day.premiumFourPoint,
                     day.reports,
                     accuracyData.byDate.get(day.date)?.average === undefined ? '' : accuracyData.byDate.get(day.date)!.average! / 100,
                     accuracyData.byDate.get(day.date)?.reviews ?? 0,
@@ -347,6 +396,7 @@ export default function Dashboard({
                     'MTD TOTAL',
                     dashboardData.generalExterior,
                     dashboardData.fourPoint,
+                    dashboardData.premiumFourPoint,
                     dashboardData.total,
                     accuracyData.overall.average === null ? '' : accuracyData.overall.average / 100,
                     accuracyData.overall.reviews,
@@ -355,25 +405,35 @@ export default function Dashboard({
                 ],
             ]);
             dailySheet['!merges'] = [
-                { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
-                { s: { r: 1, c: 0 }, e: { r: 1, c: 7 } },
+                { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
+                { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
             ];
-            dailySheet['!cols'] = [{ wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 20 }, { wch: 22 }];
+            dailySheet['!cols'] = [
+                { wch: 18 },
+                { wch: 20 },
+                { wch: 14 },
+                { wch: 20 },
+                { wch: 18 },
+                { wch: 18 },
+                { wch: 14 },
+                { wch: 20 },
+                { wch: 22 },
+            ];
             dailySheet.A1.s = titleStyle;
             dailySheet.A2.s = subtitleStyle;
-            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) dailySheet[`${column}${dailyHeaderRow}`].s = headerStyle;
-            dailySheet[`G${dailyHeaderRow}`].s = { ...headerStyle, fill: { fgColor: { rgb: 'B96C00' } } };
+            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']) dailySheet[`${column}${dailyHeaderRow}`].s = headerStyle;
+            dailySheet[`H${dailyHeaderRow}`].s = { ...headerStyle, fill: { fgColor: { rgb: 'B96C00' } } };
             dashboardData.dailyReports.forEach((day, index) => {
                 const row = dailyFirstRow + index;
                 const fill = index % 2 === 0 ? 'FFFFFF' : 'FFF8E8';
-                for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) {
+                for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']) {
                     dailySheet[`${column}${row}`].s = { ...bodyStyle, fill: { fgColor: { rgb: fill } } };
                 }
                 dailySheet[`A${row}`].s.numFmt = 'mmmm d, yyyy';
                 dailySheet[`A${row}`].s.font = { ...bodyStyle.font, bold: true };
-                dailySheet[`D${row}`] = { f: `B${row}+C${row}`, v: day.reports, t: 'n', s: dailySheet[`D${row}`].s };
-                if (accuracyData.byDate.has(day.date)) dailySheet[`E${row}`].s.numFmt = '0.00%';
-                dailySheet[`G${row}`].s = {
+                dailySheet[`E${row}`] = { f: `SUM(B${row}:D${row})`, v: day.reports, t: 'n', s: dailySheet[`E${row}`].s };
+                if (accuracyData.byDate.has(day.date)) dailySheet[`F${row}`].s.numFmt = '0.00%';
+                dailySheet[`H${row}`].s = {
                     ...bodyStyle,
                     alignment: { horizontal: 'center', vertical: 'center' },
                     font: { ...bodyStyle.font, bold: true, color: { rgb: '8A5100' } },
@@ -386,14 +446,14 @@ export default function Dashboard({
                         : day.label === 'Over delivered'
                           ? { font: '477239', fill: 'E2EFD9' }
                           : { font: '936000', fill: 'FFF0C5' };
-                dailySheet[`H${row}`].s = {
+                dailySheet[`I${row}`].s = {
                     ...bodyStyle,
                     alignment: { horizontal: 'center', vertical: 'center' },
                     font: { ...bodyStyle.font, bold: true, color: { rgb: statusColors.font } },
                     fill: { fgColor: { rgb: statusColors.fill } },
                 };
             });
-            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) dailySheet[`${column}${dailyTotalRow}`].s = metricStyle;
+            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']) dailySheet[`${column}${dailyTotalRow}`].s = metricStyle;
             dailySheet[`B${dailyTotalRow}`] = {
                 f: `SUM(B${dailyFirstRow}:B${dailyTotalRow - 1})`,
                 v: dashboardData.generalExterior,
@@ -408,14 +468,20 @@ export default function Dashboard({
             };
             dailySheet[`D${dailyTotalRow}`] = {
                 f: `SUM(D${dailyFirstRow}:D${dailyTotalRow - 1})`,
+                v: dashboardData.premiumFourPoint,
+                t: 'n',
+                s: metricStyle,
+            };
+            dailySheet[`E${dailyTotalRow}`] = {
+                f: `SUM(E${dailyFirstRow}:E${dailyTotalRow - 1})`,
                 v: dashboardData.total,
                 t: 'n',
                 s: metricStyle,
             };
-            dailySheet[`E${dailyTotalRow}`].s = { ...metricStyle, numFmt: '0.00%' };
-            dailySheet[`F${dailyTotalRow}`].s = metricStyle;
-            dailySheet[`G${dailyTotalRow}`] = {
-                f: `SUM(G${dailyFirstRow}:G${dailyTotalRow - 1})`,
+            dailySheet[`F${dailyTotalRow}`].s = { ...metricStyle, numFmt: '0.00%' };
+            dailySheet[`G${dailyTotalRow}`].s = metricStyle;
+            dailySheet[`H${dailyTotalRow}`] = {
+                f: `SUM(H${dailyFirstRow}:H${dailyTotalRow - 1})`,
                 v: 0,
                 t: 'n',
                 s: { ...metricStyle, fill: { fgColor: { rgb: 'FFE3A0' } } },
@@ -427,6 +493,7 @@ export default function Dashboard({
                     Batch: record.batch,
                     'General Exterior': record.generalExterior,
                     '4-Point': record.fourPoint,
+                    'Premium 4-Point': record.premiumFourPoint,
                     'Reports Assembled': record.reports,
                     'MTD QA Accuracy':
                         accuracyData.byProcessor.get(record.processor)?.average === undefined
@@ -435,16 +502,7 @@ export default function Dashboard({
                     'Pending (Manual)': '',
                 })),
             );
-            processorSheet['!cols'] = [
-                { wch: 16 },
-                { wch: 30 },
-                { wch: 10 },
-                { wch: 20 },
-                { wch: 14 },
-                { wch: 20 },
-                { wch: 18 },
-                { wch: 20 },
-            ];
+            processorSheet['!cols'] = [{ wch: 16 }, { wch: 30 }, { wch: 10 }, { wch: 20 }, { wch: 14 }, { wch: 20 }, { wch: 18 }, { wch: 20 }];
             for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) processorSheet[`${column}1`].s = headerStyle;
             processorSheet.H1.s = { ...headerStyle, fill: { fgColor: { rgb: 'B96C00' } } };
             visibleRecords.forEach((_, index) => {
@@ -476,11 +534,7 @@ export default function Dashboard({
                 [`${formattedRange} · ${selectionLabel}`],
                 [],
                 ['REPORT DATE', 'PROJECT ID', 'QA SCORE'],
-                ...visibleAccuracyRecords.map((record) => [
-                    new Date(`${record.date}T00:00:00Z`),
-                    record.projectId,
-                    record.score / 100,
-                ]),
+                ...visibleAccuracyRecords.map((record) => [new Date(`${record.date}T00:00:00Z`), record.projectId, record.score / 100]),
                 ['TOTAL ACCURACY', '', accuracyData.overall.average === null ? '' : accuracyData.overall.average / 100],
             ]);
             qaSheet['!merges'] = [
@@ -582,39 +636,46 @@ export default function Dashboard({
                         </div>
                         <span className="inline-flex w-fit items-center gap-2 rounded-full border border-[#eed8a9] bg-[#fff5dc] px-3 py-1.5 text-xs font-semibold text-[#936000]">
                             <span className="size-2 rounded-full bg-[#4a9a55]" />
-                            {reportRange.latest ? `Live data through ${formatDate(reportRange.latest)}` : 'No report data imported'}
+                            {reportRange.latest ? `Live PH month through ${formatDate(phToday)}` : 'No report data imported'}
                         </span>
                     </section>
 
-                    <section data-tour="operations-summary" className="grid gap-4 md:grid-cols-3">
+                    <section data-tour="operations-summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                         {[
                             {
-                                label: 'Reports polished this week',
-                                value: overview.weeklyReports.toLocaleString(),
-                                note: `${formatDate(overview.weekStart)} – ${formatDate(overview.weekEnd)}`,
+                                label: 'Total cases',
+                                value: overview.totalReports.toLocaleString(),
+                                note: `All imported months · ${monthlyMetrics.monthLabel}: ${monthlyMetrics.totalCases.toLocaleString()}`,
                                 icon: FileCheck2,
                                 tone: 'bg-[#fff0c9] text-[#a96300]',
                             },
                             {
-                                label: 'Total reports',
-                                value: overview.totalReports.toLocaleString(),
-                                note: 'Deduplicated imported reports',
-                                icon: Files,
-                                tone: 'bg-[#ffeadf] text-[#b34d10]',
+                                label: 'General Exterior',
+                                value: monthlyMetrics.generalExterior.toLocaleString(),
+                                note: monthlyMetrics.monthLabel,
+                                icon: ShieldCheck,
+                                tone: 'bg-[#e6f5e5] text-[#28703c]',
                             },
                             {
-                                label: 'Active processors',
-                                value: overview.activeProcessors.toLocaleString(),
-                                note: 'Processors found in imported data',
-                                icon: UsersRound,
-                                tone: 'bg-[#e6f5e5] text-[#28703c]',
+                                label: '4-Point',
+                                value: monthlyMetrics.fourPoint.toLocaleString(),
+                                note: monthlyMetrics.monthLabel,
+                                icon: Gauge,
+                                tone: 'bg-[#f1ebff] text-[#7440a2]',
+                            },
+                            {
+                                label: 'Premium 4-Point',
+                                value: monthlyMetrics.premiumFourPoint.toLocaleString(),
+                                note: monthlyMetrics.monthLabel,
+                                icon: Sparkles,
+                                tone: 'bg-[#e8f2ff] text-[#2f659a]',
                             },
                         ].map((metric) => {
                             const Icon = metric.icon;
                             return (
                                 <article
                                     key={metric.label}
-                                    className="rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5 shadow-[0_8px_30px_rgb(88,57,18,0.05)]"
+                                    className="min-w-0 rounded-2xl border border-[#eadbc6] bg-[#fffdf8] p-5 shadow-[0_8px_30px_rgb(88,57,18,0.05)]"
                                 >
                                     <div className={`grid size-11 place-items-center rounded-xl ${metric.tone}`}>
                                         <Icon className="size-5" />
@@ -625,6 +686,34 @@ export default function Dashboard({
                                 </article>
                             );
                         })}
+                        <article className="min-w-0 rounded-2xl border border-[#bcd9c8] bg-[#fffdf8] p-5 shadow-[0_8px_30px_rgb(20,122,81,0.06)]">
+                            <div className="flex items-start justify-between gap-2">
+                                <div>
+                                    <p className="text-sm font-bold text-[#342615]">Overall accuracy</p>
+                                    <p className="mt-1 text-xs text-[#806f59]">{monthlyMetrics.monthLabel}</p>
+                                </div>
+                                <span className="grid size-9 place-items-center rounded-xl bg-[#e4f4ec] text-[#16815b]">
+                                    <ShieldCheck className="size-5" />
+                                </span>
+                            </div>
+                            <div className="mt-4 flex items-center gap-3">
+                                <div className="size-14 shrink-0 rounded-full bg-[#e5f2e9] p-1" aria-hidden="true">
+                                    <div className="grid size-full place-items-center rounded-full border-4 border-[#16815b] bg-white text-[#16815b]">
+                                        <ShieldCheck className="size-5" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <p className="text-3xl font-bold tracking-tight text-[#342615]">
+                                        {monthlyMetrics.accuracy === null ? '—' : `${monthlyMetrics.accuracy.toFixed(2)}%`}
+                                    </p>
+                                    <p className="text-xs text-[#806f59]">
+                                        {monthlyMetrics.assessments
+                                            ? `Average from ${monthlyMetrics.assessments} QA assessments`
+                                            : 'No QA data this month'}
+                                    </p>
+                                </div>
+                            </div>
+                        </article>
                     </section>
 
                     <section className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.55fr)]">
@@ -687,6 +776,10 @@ export default function Dashboard({
                                 <div className="flex items-center justify-between rounded-xl bg-[#f1ebff] px-4 py-3">
                                     <span className="text-sm font-semibold text-[#6d5735]">4-Point</span>
                                     <span className="text-xl font-bold text-[#7440a2]">{overview.fourPoint.toLocaleString()}</span>
+                                </div>
+                                <div className="flex items-center justify-between rounded-xl bg-[#fff0c9] px-4 py-3">
+                                    <span className="text-sm font-semibold text-[#6d5735]">Premium 4-Point</span>
+                                    <span className="text-xl font-bold text-[#a96300]">{overview.premiumFourPoint.toLocaleString()}</span>
                                 </div>
                             </div>
                             <div className="mt-4 rounded-xl bg-[#eff7ea] px-4 py-3 text-sm font-semibold text-[#3d703a]">
@@ -899,6 +992,12 @@ export default function Dashboard({
                             tone: 'bg-[#f1ebff] text-[#7440a2]',
                         },
                         {
+                            label: 'Premium 4-Point',
+                            value: dashboardData.premiumFourPoint,
+                            icon: FileCheck2,
+                            tone: 'bg-[#fff0c9] text-[#a96300]',
+                        },
+                        {
                             label: 'QA accuracy',
                             value: accuracyData.overall.average === null ? '—' : `${accuracyData.overall.average.toFixed(2)}%`,
                             icon: BarChart3,
@@ -1086,7 +1185,8 @@ export default function Dashboard({
                                     ) : (
                                         <tr>
                                             <td colSpan={3} className="px-5 py-8 text-center text-sm text-[#806f59]">
-                                                The comparison was applied, but no production workbook rows are available for this processor and date range.
+                                                The comparison was applied, but no production workbook rows are available for this processor and date
+                                                range.
                                                 {accuracyData.overall.reviews > 0 ? ' The available QA results are shown above.' : ''}
                                             </td>
                                         </tr>
@@ -1110,7 +1210,7 @@ export default function Dashboard({
                                         <p className="text-xs text-[#91816a]">{processor.completed} reports finished</p>
                                     </div>
                                     <span className="text-xs font-semibold whitespace-nowrap text-[#806f59]">
-                                        {processor.generalExterior} GE · {processor.fourPoint} 4PT
+                                        {processor.generalExterior} GE · {processor.fourPoint} 4PT · {processor.premiumFourPoint} P4PT
                                     </span>
                                     {index === 0 && <Trophy className="size-5 text-[#d59111]" aria-label="First place" />}
                                 </li>

@@ -34,7 +34,7 @@ type QueueDetailMetric = 'waiting' | 'aging' | 'completion';
 type BatchQueue = { batch: number; team: string; waiting: number; processed: number; aging: number };
 type QueueSnapshot = { waiting: number; processed: number; aging: number; batches: BatchQueue[] };
 type ProcessorDefinition = { name: string; batch: number; aliases: string[] };
-type ProcessorQueue = ProcessorDefinition & { generalExterior: number; fourPoint: number; other: number; total: number };
+type ProcessorQueue = ProcessorDefinition & { generalExterior: number; fourPoint: number; premiumFourPoint: number; other: number; total: number };
 type WorkbookResult = {
     fileName: string;
     totalRows: number;
@@ -52,6 +52,7 @@ type QueueHistoryEntry = {
     batch: number;
     generalExterior: number;
     fourPoint: number;
+    premiumFourPoint: number;
     other: number;
     total: number;
 };
@@ -217,7 +218,7 @@ async function inspectWorkbook(file: File, checkpoint: CheckpointId, processorRo
     if (rows.length === 0) throw new Error(`${file.name} does not contain any queue rows.`);
     if (!Object.prototype.hasOwnProperty.call(rows[0], 'Processor Name')) throw new Error(`${file.name} is missing the Processor Name column.`);
 
-    const counts = new Map<string, { generalExterior: number; fourPoint: number; other: number; total: number }>();
+    const counts = new Map<string, { generalExterior: number; fourPoint: number; premiumFourPoint: number; other: number; total: number }>();
     const seenRows = new Set<string>();
     let matchedRows = 0;
 
@@ -231,9 +232,10 @@ async function inspectWorkbook(file: File, checkpoint: CheckpointId, processorRo
         seenRows.add(uniqueKey);
 
         const inspectionType = normalizeName(row['Inspection Type']);
-        const current = counts.get(processor.name) ?? { generalExterior: 0, fourPoint: 0, other: 0, total: 0 };
+        const current = counts.get(processor.name) ?? { generalExterior: 0, fourPoint: 0, premiumFourPoint: 0, other: 0, total: 0 };
         current.total += 1;
         if (inspectionType.includes('exterior')) current.generalExterior += 1;
+        else if (inspectionType.includes('premium 4 point')) current.premiumFourPoint += 1;
         else if (inspectionType.includes('4 point')) current.fourPoint += 1;
         else current.other += 1;
         counts.set(processor.name, current);
@@ -253,7 +255,7 @@ async function inspectWorkbook(file: File, checkpoint: CheckpointId, processorRo
             .filter((processor) => counts.has(processor.name))
             .map((processor) => ({
                 ...processor,
-                ...(counts.get(processor.name) ?? { generalExterior: 0, fourPoint: 0, other: 0, total: 0 }),
+                ...(counts.get(processor.name) ?? { generalExterior: 0, fourPoint: 0, premiumFourPoint: 0, other: 0, total: 0 }),
             })),
         checkedAt: new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date()),
         reportDate: philippinesDate(),
@@ -364,6 +366,7 @@ export default function QueueMonitor({
                         batch: processor.batch,
                         general_exterior: processor.generalExterior,
                         four_point: processor.fourPoint,
+                        premium_four_point: processor.premiumFourPoint,
                         other: processor.other,
                         total: processor.total,
                     })),
@@ -974,6 +977,7 @@ export default function QueueMonitor({
                                             <th className="px-5 py-4">Batch</th>
                                             <th className="px-5 py-4 text-center">Gen Ext</th>
                                             <th className="px-5 py-4 text-center">4-Point</th>
+                                            <th className="px-5 py-4 text-center">Premium 4-Point</th>
                                             <th className="px-5 py-4 text-center">To Do</th>
                                             <th className="px-5 py-4 text-center">Total</th>
                                         </tr>
@@ -992,6 +996,7 @@ export default function QueueMonitor({
                                                 <td className="px-5 py-4 text-[#806f59]">Batch {entry.batch}</td>
                                                 <td className="px-5 py-4 text-center font-semibold text-[#4a3821]">{entry.generalExterior}</td>
                                                 <td className="px-5 py-4 text-center font-semibold text-[#4a3821]">{entry.fourPoint}</td>
+                                                <td className="px-5 py-4 text-center font-semibold text-[#4a3821]">{entry.premiumFourPoint}</td>
                                                 <td className="px-5 py-4 text-center font-semibold text-[#4a3821]">{entry.other}</td>
                                                 <td className="bg-[#fff1cc] px-5 py-4 text-center font-black text-[#694400]">{entry.total}</td>
                                             </tr>
@@ -1384,6 +1389,7 @@ function ProcessorBreakdown({ processors, baseline }: { processors: ProcessorQue
                             <th className="px-5 py-3.5 text-center font-extrabold">Batch</th>
                             <th className="px-5 py-3.5 text-center font-extrabold">General Exterior</th>
                             <th className="px-5 py-3.5 text-center font-extrabold">4-Point</th>
+                            <th className="px-5 py-3.5 text-center font-extrabold">Premium 4-Point</th>
                             <th className="bg-[#2d1d0f] px-5 py-3.5 text-center font-extrabold">Available Cases in To Do</th>
                             {baseline && <th className="px-5 py-3.5 text-center font-extrabold">Vs Start</th>}
                         </tr>
@@ -1399,6 +1405,7 @@ function ProcessorBreakdown({ processors, baseline }: { processors: ProcessorQue
                                 </td>
                                 <td className="px-5 py-3.5 text-center font-bold text-[#72512b]">{processor.generalExterior}</td>
                                 <td className="px-5 py-3.5 text-center font-bold text-[#72512b]">{processor.fourPoint}</td>
+                                <td className="px-5 py-3.5 text-center font-bold text-[#72512b]">{processor.premiumFourPoint}</td>
                                 <td className="bg-[#fff8e4] px-5 py-3.5 text-center font-black text-[#9a5a00]">{processor.total}</td>
                                 {baseline && (
                                     <td className="px-5 py-3.5 text-center font-black">

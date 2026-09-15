@@ -32,6 +32,7 @@ type Performance = {
     totalCases: number;
     generalExterior: number;
     fourPoint: number;
+    premiumFourPoint: number;
     credits: number;
     qcScore: number | null;
     qcReviews: number;
@@ -328,6 +329,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
         () => ({
             generalExterior: incentiveRows.reduce((total, row) => total + row.generalExterior, 0),
             fourPoint: incentiveRows.reduce((total, row) => total + row.fourPoint, 0),
+            premiumFourPoint: incentiveRows.reduce((total, row) => total + row.premiumFourPoint, 0),
             totalCases: incentiveRows.reduce((total, row) => total + row.totalCases, 0),
             credits: incentiveRows.reduce((total, row) => total + row.credits, 0),
             payout: incentiveRows.reduce((total, row) => total + row.incentive, 0),
@@ -423,6 +425,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
               ['Total cases', selected.totalCases, FileSpreadsheet, 'bg-[#fff0c9] text-[#a96300]'],
               ['General Exterior', selected.generalExterior, ShieldCheck, 'bg-[#e6f3df] text-[#347846]'],
               ['4-Point', selected.fourPoint, Gauge, 'bg-[#efe7ff] text-[#7048bd]'],
+              ['Premium 4-Point', selected.premiumFourPoint, Award, 'bg-[#fff0c9] text-[#a96300]'],
           ] as const)
         : [];
 
@@ -439,19 +442,31 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
             ['BEES360 | MONTHLY INCENTIVE SUMMARY'],
             [`${periods[timezone]} · ${timeLabel} · ${viewLabel}`],
             [],
-            ['PROCESSOR', 'BATCH', 'GEN EXT', '4-POINT', 'TOTAL CASES', 'EARNED CREDITS', 'QA ACCURACY', 'FINAL TIER', 'INCENTIVE'],
+            [
+                'PROCESSOR',
+                'BATCH',
+                'GEN EXT',
+                '4-POINT',
+                'PREMIUM 4-POINT',
+                'TOTAL CASES',
+                'EARNED CREDITS',
+                'QA ACCURACY',
+                'FINAL TIER',
+                'INCENTIVE',
+            ],
             ...incentiveRows.map((row) => [
                 row.processor,
                 row.batch ?? '',
                 row.generalExterior,
                 row.fourPoint,
+                row.premiumFourPoint,
                 row.totalCases,
                 row.credits,
                 row.qcScore === null ? '' : row.qcScore / 100,
                 row.highestTier,
                 row.incentive,
             ]),
-            [incentiveView === 'overall' ? 'OVERALL TOTAL' : '$300 EARNERS TOTAL', '', 0, 0, 0, 0, '', '', 0],
+            [incentiveView === 'overall' ? 'OVERALL TOTAL' : '$300 EARNERS TOTAL', '', 0, 0, 0, 0, 0, '', '', 0],
         ]) as WorkSheet;
         const titleStyle = {
             alignment: { horizontal: 'center', vertical: 'center' },
@@ -484,7 +499,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
         };
 
         for (let row = 1; row <= totalRow; row += 1) {
-            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']) {
+            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) {
                 const address = `${column}${row}`;
                 worksheet[address] ??= { t: 's', v: '' };
                 worksheet[address].s = { ...bodyStyle, fill: { fgColor: { rgb: 'FFFFFF' } } };
@@ -492,17 +507,28 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
         }
 
         worksheet['!merges'] = [
-            { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
-            { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
+            { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } },
+            { s: { r: 1, c: 0 }, e: { r: 1, c: 9 } },
             { s: { r: totalRow - 1, c: 0 }, e: { r: totalRow - 1, c: 1 } },
         ];
-        worksheet['!cols'] = [{ wch: 31 }, { wch: 11 }, { wch: 13 }, { wch: 13 }, { wch: 15 }, { wch: 18 }, { wch: 17 }, { wch: 15 }, { wch: 15 }];
+        worksheet['!cols'] = [
+            { wch: 31 },
+            { wch: 11 },
+            { wch: 13 },
+            { wch: 13 },
+            { wch: 20 },
+            { wch: 15 },
+            { wch: 18 },
+            { wch: 17 },
+            { wch: 15 },
+            { wch: 15 },
+        ];
         worksheet['!rows'] = [{ hpt: 27 }, { hpt: 20 }, { hpt: 8 }, { hpt: 28 }];
         worksheet.A1.s = titleStyle;
         worksheet.A2.s = subtitleStyle;
 
-        for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']) worksheet[`${column}${headerRow}`].s = headerStyle;
-        worksheet[`I${headerRow}`].s = { ...headerStyle, fill: { fgColor: { rgb: '2F2112' } } };
+        for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) worksheet[`${column}${headerRow}`].s = headerStyle;
+        worksheet[`J${headerRow}`].s = { ...headerStyle, fill: { fgColor: { rgb: '2F2112' } } };
 
         incentiveRows.forEach((row, index) => {
             const rowNumber = firstDataRow + index;
@@ -510,18 +536,18 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
             const fill = index % 2 === 0 ? 'FFFFFF' : 'FFF8E8';
 
             worksheet[`A${rowNumber}`].s = rowStyle;
-            for (const column of ['B', 'C', 'D', 'E', 'F', 'G', 'H']) {
+            for (const column of ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']) {
                 worksheet[`${column}${rowNumber}`].s = { ...rowStyle, alignment: { horizontal: 'center', vertical: 'center' } };
             }
-            worksheet[`E${rowNumber}`] = { f: `C${rowNumber}+D${rowNumber}`, v: row.totalCases, t: 'n', s: worksheet[`E${rowNumber}`].s };
-            worksheet[`F${rowNumber}`] = {
-                f: `C${rowNumber}+(D${rowNumber}*1.25)`,
+            worksheet[`F${rowNumber}`] = { f: `SUM(C${rowNumber}:E${rowNumber})`, v: row.totalCases, t: 'n', s: worksheet[`F${rowNumber}`].s };
+            worksheet[`G${rowNumber}`] = {
+                f: `C${rowNumber}+(SUM(D${rowNumber}:E${rowNumber})*1.25)`,
                 v: row.credits,
                 t: 'n',
-                s: { ...worksheet[`F${rowNumber}`].s, numFmt: '#,##0.00' },
+                s: { ...worksheet[`G${rowNumber}`].s, numFmt: '#,##0.00' },
             };
-            worksheet[`G${rowNumber}`].s = { ...worksheet[`G${rowNumber}`].s, numFmt: '0.00%' };
-            worksheet[`I${rowNumber}`].s = {
+            worksheet[`H${rowNumber}`].s = { ...worksheet[`H${rowNumber}`].s, numFmt: '0.00%' };
+            worksheet[`J${rowNumber}`].s = {
                 ...rowStyle,
                 alignment: { horizontal: 'center', vertical: 'center' },
                 font: { name: 'Century Gothic', sz: 10, bold: true, color: { rgb: row.incentive === 300 ? 'FFFFFF' : '694400' } },
@@ -530,18 +556,19 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
             };
         });
 
-        for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']) worksheet[`${column}${totalRow}`].s = totalStyle;
+        for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) worksheet[`${column}${totalRow}`].s = totalStyle;
         worksheet[`C${totalRow}`] = { f: `SUM(C${firstDataRow}:C${totalRow - 1})`, v: incentiveTotals.generalExterior, t: 'n', s: totalStyle };
         worksheet[`D${totalRow}`] = { f: `SUM(D${firstDataRow}:D${totalRow - 1})`, v: incentiveTotals.fourPoint, t: 'n', s: totalStyle };
-        worksheet[`E${totalRow}`] = { f: `SUM(E${firstDataRow}:E${totalRow - 1})`, v: incentiveTotals.totalCases, t: 'n', s: totalStyle };
-        worksheet[`F${totalRow}`] = {
-            f: `SUM(F${firstDataRow}:F${totalRow - 1})`,
+        worksheet[`E${totalRow}`] = { f: `SUM(E${firstDataRow}:E${totalRow - 1})`, v: incentiveTotals.premiumFourPoint, t: 'n', s: totalStyle };
+        worksheet[`F${totalRow}`] = { f: `SUM(F${firstDataRow}:F${totalRow - 1})`, v: incentiveTotals.totalCases, t: 'n', s: totalStyle };
+        worksheet[`G${totalRow}`] = {
+            f: `SUM(G${firstDataRow}:G${totalRow - 1})`,
             v: incentiveTotals.credits,
             t: 'n',
             s: { ...totalStyle, numFmt: '#,##0.00' },
         };
-        worksheet[`I${totalRow}`] = {
-            f: `SUM(I${firstDataRow}:I${totalRow - 1})`,
+        worksheet[`J${totalRow}`] = {
+            f: `SUM(J${firstDataRow}:J${totalRow - 1})`,
             v: incentiveTotals.payout,
             t: 'n',
             s: { ...totalStyle, fill: { fgColor: { rgb: 'F2CF72' } }, numFmt: '$#,##0.00' },
@@ -904,7 +931,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                 <p className="mt-1 text-xs font-semibold text-[#ead8be]">Monthly tier progress · {periods[timezone]}</p>
                                 <p className="mt-3 text-5xl font-black">{selected.credits.toLocaleString()}</p>
                                 <p className="mt-2 text-sm text-[#ead8be]">
-                                    {selected.generalExterior} × 1 + {selected.fourPoint} × 1.25
+                                    {selected.generalExterior} × 1 + ({selected.fourPoint} + {selected.premiumFourPoint}) × 1.25
                                 </p>
                                 <div className="mt-7 flex items-center justify-between rounded-xl bg-white/10 p-4">
                                     <span>
@@ -972,6 +999,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                             <th className="px-4 py-4 text-center">Batch</th>
                                             <th className="px-4 py-4 text-center">Gen Ext</th>
                                             <th className="px-4 py-4 text-center">4-Point</th>
+                                            <th className="px-4 py-4 text-center">Premium 4-Point</th>
                                             <th className="px-4 py-4 text-center">Total cases</th>
                                             <th className="px-4 py-4 text-center">Earned credits</th>
                                             <th className="px-4 py-4 text-center">Accuracy</th>
@@ -990,6 +1018,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                                 </td>
                                                 <td className="px-4 py-3.5 text-center font-bold text-[#594a37]">{row.generalExterior}</td>
                                                 <td className="px-4 py-3.5 text-center font-bold text-[#594a37]">{row.fourPoint}</td>
+                                                <td className="px-4 py-3.5 text-center font-bold text-[#594a37]">{row.premiumFourPoint}</td>
                                                 <td className="px-4 py-3.5 text-center font-black text-[#342615]">{row.totalCases}</td>
                                                 <td className="px-4 py-3.5 text-center font-black text-[#9b5d00]">{row.credits.toLocaleString()}</td>
                                                 <td className="px-4 py-3.5 text-center font-bold text-[#147a51]">
@@ -1019,6 +1048,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                             </td>
                                             <td className="px-4 py-4 text-center">{incentiveTotals.generalExterior}</td>
                                             <td className="px-4 py-4 text-center">{incentiveTotals.fourPoint}</td>
+                                            <td className="px-4 py-4 text-center">{incentiveTotals.premiumFourPoint}</td>
                                             <td className="px-4 py-4 text-center">{incentiveTotals.totalCases}</td>
                                             <td className="px-4 py-4 text-center">{incentiveTotals.credits.toLocaleString()}</td>
                                             <td colSpan={2} />

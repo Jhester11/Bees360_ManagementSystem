@@ -57,7 +57,7 @@ class ReportImportController extends Controller
 
         if ($summary['saved'] === 0) {
             return back()->withErrors([
-                'entries' => 'No Exterior / 4-Point report rows could be matched to a known processor account.',
+                'entries' => 'No Exterior, 4-Point, or Premium 4-Point report rows could be matched to a known processor account.',
             ]);
         }
 

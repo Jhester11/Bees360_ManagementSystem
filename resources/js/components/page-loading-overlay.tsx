@@ -3,50 +3,35 @@ import { useEffect, useRef, useState } from 'react';
 
 const skeletonRows = Array.from({ length: 7 }, (_, index) => index);
 const skeletonColumns = Array.from({ length: 5 }, (_, index) => index);
-// Cached visits should feel instant; reserve the full skeleton for genuinely
-// slow responses so it does not flash during normal sidebar navigation.
-const SLOW_NAVIGATION_DELAY = 350;
-const LOADER_FAILSAFE_DELAY = 5_000;
-
 export function PageLoadingOverlay() {
     const [isLoading, setIsLoading] = useState(false);
     const activeDestinationRef = useRef<string | null>(null);
 
     useEffect(() => {
-        let showTimer: number | undefined;
-        let failsafeTimer: number | undefined;
         let readyFrame: number | undefined;
-
-        const stopNativeLoadingWhenRendered = () => {
-            window.cancelAnimationFrame(readyFrame);
-            readyFrame = window.requestAnimationFrame(() => {
-                if (document.readyState !== 'complete') window.stop();
-            });
-        };
+        let paintFrame: number | undefined;
+        let renderedDestination = false;
 
         const markPageReady = () => {
+            if (activeDestinationRef.current) return;
+            if (document.getElementById('bees360-boot-skeleton')) return;
             delete document.documentElement.dataset.pageLoading;
             window.dispatchEvent(new CustomEvent('bees360:page-ready'));
-            stopNativeLoadingWhenRendered();
         };
 
         const hideLoader = () => {
-            window.clearTimeout(showTimer);
-            window.clearTimeout(failsafeTimer);
             setIsLoading(false);
-            markPageReady();
+            if (readyFrame !== undefined) window.cancelAnimationFrame(readyFrame);
+            readyFrame = window.requestAnimationFrame(markPageReady);
         };
 
         const showLoader = (destination: string) => {
-            window.clearTimeout(showTimer);
-            window.clearTimeout(failsafeTimer);
+            if (readyFrame !== undefined) window.cancelAnimationFrame(readyFrame);
+            if (paintFrame !== undefined) window.cancelAnimationFrame(paintFrame);
             activeDestinationRef.current = destination;
+            renderedDestination = false;
             document.documentElement.dataset.pageLoading = 'true';
-            showTimer = window.setTimeout(() => setIsLoading(true), SLOW_NAVIGATION_DELAY);
-            failsafeTimer = window.setTimeout(() => {
-                activeDestinationRef.current = null;
-                hideLoader();
-            }, LOADER_FAILSAFE_DELAY);
+            setIsLoading(true);
         };
 
         const stopBeforeListener = router.on('before', (event) => {
@@ -69,21 +54,44 @@ export function PageLoadingOverlay() {
             const destination = new URL(String(event.detail.visit.url), window.location.href);
             if (activeDestinationRef.current !== destination.pathname) return;
 
+            // A completed visit waits for the destination component to paint.
+            // Interrupted or cancelled visits retain the old page and can clear now.
+            if (
+                event.detail.visit.completed &&
+                !event.detail.visit.cancelled &&
+                !event.detail.visit.interrupted &&
+                window.location.pathname === destination.pathname
+            )
+                return;
             activeDestinationRef.current = null;
             hideLoader();
         });
 
-        // React mounts only after the initial page component and its critical
-        // assets are available. Clear any browser-native loading state left by
-        // a stalled optional request after the first rendered frame.
+        const stopNavigateListener = router.on('navigate', (event) => {
+            if (!activeDestinationRef.current) return;
+            const destination = new URL(event.detail.page.url, window.location.href);
+            if (activeDestinationRef.current !== destination.pathname) return;
+            renderedDestination = true;
+            if (paintFrame !== undefined) window.cancelAnimationFrame(paintFrame);
+            paintFrame = window.requestAnimationFrame(() => {
+                paintFrame = window.requestAnimationFrame(() => {
+                    if (!renderedDestination || activeDestinationRef.current !== destination.pathname) return;
+                    activeDestinationRef.current = null;
+                    hideLoader();
+                });
+            });
+        });
+
+        // The server-rendered skeleton handles the first full browser load.
+        // Announce readiness here only when that skeleton has been removed.
         readyFrame = window.requestAnimationFrame(markPageReady);
 
         return () => {
             stopBeforeListener();
             stopFinishListener();
-            window.clearTimeout(showTimer);
-            window.clearTimeout(failsafeTimer);
-            window.cancelAnimationFrame(readyFrame);
+            stopNavigateListener();
+            if (readyFrame !== undefined) window.cancelAnimationFrame(readyFrame);
+            if (paintFrame !== undefined) window.cancelAnimationFrame(paintFrame);
             delete document.documentElement.dataset.pageLoading;
         };
     }, []);
@@ -91,12 +99,7 @@ export function PageLoadingOverlay() {
     if (!isLoading) return null;
 
     return (
-        <div
-            className="pointer-events-none fixed inset-0 z-[100] overflow-hidden bg-[#fffdf8] text-[#4a351d]"
-            role="status"
-            aria-live="polite"
-            aria-label="Loading page"
-        >
+        <div className="fixed inset-0 z-[100] overflow-hidden bg-[#fffdf8] text-[#4a351d]" role="status" aria-live="polite" aria-label="Loading page">
             <div className="flex h-full animate-pulse">
                 <aside className="hidden w-64 shrink-0 border-r border-[#eadfcf] bg-[#342515] p-5 md:block">
                     <div className="flex items-center gap-3 border-b border-white/10 pb-6">

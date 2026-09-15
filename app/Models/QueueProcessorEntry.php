@@ -12,6 +12,7 @@ class QueueProcessorEntry extends Model
         'processor_name',
         'general_exterior',
         'four_point',
+        'premium_four_point',
         'other',
         'total',
     ];

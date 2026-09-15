@@ -105,6 +105,10 @@ class ReportImportService
     {
         $value = Str::lower($inspectionType);
 
+        if (Str::contains($value, ['premium 4-point', 'premium 4 point', 'premium four point'])) {
+            return 'premium_four_point';
+        }
+
         if (Str::contains($value, 'exterior')) {
             return 'general_exterior';
         }

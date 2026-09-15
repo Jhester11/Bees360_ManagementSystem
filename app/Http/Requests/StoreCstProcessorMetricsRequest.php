@@ -22,7 +22,9 @@ class StoreCstProcessorMetricsRequest extends FormRequest
         $metrics = $this->decodeSpreadsheetArray($this->input('metrics'));
 
         if (is_array($metrics)) {
-            $this->merge(['metrics' => array_values($metrics)]);
+            $this->merge(['metrics' => collect($metrics)->map(fn (mixed $metric): mixed => is_array($metric)
+                ? [...$metric, 'premium_four_point' => $metric['premium_four_point'] ?? 0]
+                : $metric)->values()->all()]);
         }
     }
 
@@ -44,7 +46,7 @@ class StoreCstProcessorMetricsRequest extends FormRequest
         return [
             'source_file' => ['bail', 'required', 'string', 'max:255', $this->safeSpreadsheetFileName(['xlsx', 'xls', 'csv'])],
             'metrics' => ['required', 'array', 'min:1', 'max:5000'],
-            'metrics.*' => ['required', 'array:report_date,processor_name,general_exterior,four_point,qc_score,qc_reviews'],
+            'metrics.*' => ['required', 'array:report_date,processor_name,general_exterior,four_point,premium_four_point,qc_score,qc_reviews'],
             'metrics.*.report_date' => [
                 'required',
                 'date_format:Y-m-d',
@@ -53,6 +55,7 @@ class StoreCstProcessorMetricsRequest extends FormRequest
             'metrics.*.processor_name' => ['bail', 'required', 'string', 'max:255', $this->safeSpreadsheetText()],
             'metrics.*.general_exterior' => ['required', 'integer', 'min:0', 'max:100000'],
             'metrics.*.four_point' => ['required', 'integer', 'min:0', 'max:100000'],
+            'metrics.*.premium_four_point' => ['required', 'integer', 'min:0', 'max:100000'],
             'metrics.*.qc_score' => ['nullable', 'numeric', 'between:0,100'],
             'metrics.*.qc_reviews' => ['required', 'integer', 'min:0', 'max:100000'],
         ];

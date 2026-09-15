@@ -30,13 +30,14 @@ type Performance = {
     totalCases: number;
     generalExterior: number;
     fourPoint: number;
+    premiumFourPoint: number;
     credits: number;
     qaScore: number | null;
     qaReviews: number;
     incentive: number;
     tiers: Tier[];
 };
-type DailyOutput = { date: string; day: string; generalExterior: number; fourPoint: number; total: number };
+type DailyOutput = { date: string; day: string; generalExterior: number; fourPoint: number; premiumFourPoint: number; total: number };
 type QaRecord = {
     id: number;
     date: string;
@@ -52,6 +53,7 @@ type ProductionLeader = {
     totalCases: number;
     generalExterior: number;
     fourPoint: number;
+    premiumFourPoint: number;
     qaScore: number | null;
     qaReviews: number;
     isCurrentUser: boolean;
@@ -69,6 +71,7 @@ type WorkspaceOverview = {
     activeProcessors: number;
     generalExterior: number;
     fourPoint: number;
+    premiumFourPoint: number;
     activeSource: number;
     closedSource: number;
     weekStart: string;
@@ -304,15 +307,16 @@ export default function ProcessorDashboard({
                 ['BEES360 | DAILY PRODUCTIVITY REPORT'],
                 [`${auth.user.name} · ${periodLabel} · ${timeLabel}`],
                 [],
-                ['REPORT DATE', 'GENERAL EXTERIOR', '4-POINT', 'TOTAL FINISHED', 'STATUS'],
+                ['REPORT DATE', 'GENERAL EXTERIOR', '4-POINT', 'PREMIUM 4-POINT', 'TOTAL FINISHED', 'STATUS'],
                 ...chartData.map((day) => [
                     new Date(`${day.date}T00:00:00Z`),
                     day.generalExterior,
                     day.fourPoint,
+                    day.premiumFourPoint,
                     0,
                     deliveryStatus(day.total) === 'under' ? 'UNDER DELIVERED' : deliveryStatus(day.total) === 'over' ? 'OVER DELIVERED' : 'DELIVERED',
                 ]),
-                ['MONTHLY TOTAL', 0, 0, 0, ''],
+                ['MONTHLY TOTAL', 0, 0, 0, 0, ''],
             ]);
             const titleStyle = {
                 alignment: { horizontal: 'center', vertical: 'center' },
@@ -346,7 +350,7 @@ export default function ProcessorDashboard({
             };
 
             for (let row = 1; row <= totalRow; row += 1) {
-                for (const column of ['A', 'B', 'C', 'D', 'E']) {
+                for (const column of ['A', 'B', 'C', 'D', 'E', 'F']) {
                     const address = `${column}${row}`;
                     worksheet[address] ??= { t: 's', v: '' };
                     worksheet[address].s = { ...bodyStyle, fill: { fgColor: { rgb: 'FFFFFF' } } };
@@ -354,16 +358,16 @@ export default function ProcessorDashboard({
             }
 
             worksheet['!merges'] = [
-                { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
-                { s: { r: 1, c: 0 }, e: { r: 1, c: 4 } },
+                { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
+                { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } },
             ];
-            worksheet['!cols'] = [{ wch: 22 }, { wch: 22 }, { wch: 16 }, { wch: 19 }, { wch: 22 }];
+            worksheet['!cols'] = [{ wch: 22 }, { wch: 22 }, { wch: 16 }, { wch: 22 }, { wch: 19 }, { wch: 22 }];
             worksheet['!rows'] = [{ hpt: 27 }, { hpt: 20 }, { hpt: 8 }, { hpt: 27 }];
             worksheet.A1.s = titleStyle;
             worksheet.A2.s = subtitleStyle;
 
-            for (const column of ['A', 'B', 'C', 'D', 'E']) worksheet[`${column}${headerRow}`].s = headerStyle;
-            worksheet[`D${headerRow}`].s = { ...headerStyle, fill: { fgColor: { rgb: '2F2112' } } };
+            for (const column of ['A', 'B', 'C', 'D', 'E', 'F']) worksheet[`${column}${headerRow}`].s = headerStyle;
+            worksheet[`E${headerRow}`].s = { ...headerStyle, fill: { fgColor: { rgb: '2F2112' } } };
 
             chartData.forEach((day, index) => {
                 const rowNumber = firstDataRow + index;
@@ -373,8 +377,9 @@ export default function ProcessorDashboard({
                 worksheet[`A${rowNumber}`].s = { ...rowStyle, numFmt: 'mmm d, yyyy' };
                 worksheet[`B${rowNumber}`].s = rowStyle;
                 worksheet[`C${rowNumber}`].s = rowStyle;
-                worksheet[`D${rowNumber}`] = {
-                    f: `B${rowNumber}+C${rowNumber}`,
+                worksheet[`D${rowNumber}`].s = rowStyle;
+                worksheet[`E${rowNumber}`] = {
+                    f: `B${rowNumber}+C${rowNumber}+D${rowNumber}`,
                     v: day.total,
                     t: 'n',
                     s: {
@@ -384,7 +389,7 @@ export default function ProcessorDashboard({
                     },
                 };
                 const status = deliveryStatus(day.total);
-                worksheet[`E${rowNumber}`].s = {
+                worksheet[`F${rowNumber}`].s = {
                     ...rowStyle,
                     font: {
                         name: 'Century Gothic',
@@ -401,11 +406,17 @@ export default function ProcessorDashboard({
             worksheet[`C${totalRow}`] = { f: `SUM(C${firstDataRow}:C${totalRow - 1})`, v: performance.fourPoint, t: 'n', s: totalStyle };
             worksheet[`D${totalRow}`] = {
                 f: `SUM(D${firstDataRow}:D${totalRow - 1})`,
+                v: performance.premiumFourPoint,
+                t: 'n',
+                s: totalStyle,
+            };
+            worksheet[`E${totalRow}`] = {
+                f: `SUM(E${firstDataRow}:E${totalRow - 1})`,
                 v: performance.totalCases,
                 t: 'n',
                 s: { ...totalStyle, fill: { fgColor: { rgb: 'F2CF72' } } },
             };
-            worksheet[`E${totalRow}`].s = totalStyle;
+            worksheet[`F${totalRow}`].s = totalStyle;
 
             const statusWorksheet = XLSX.utils.aoa_to_sheet([
                 ['BEES360 | DELIVERY STATUS CHART'],
@@ -730,6 +741,12 @@ export default function ProcessorDashboard({
                                         <span className="text-sm font-semibold text-[#6d5735]">4-Point</span>
                                         <span className="text-xl font-black text-[#7440a2]">{workspaceOverview.fourPoint.toLocaleString()}</span>
                                     </div>
+                                    <div className="flex items-center justify-between rounded-xl bg-[#e9f2ff] px-4 py-3">
+                                        <span className="text-sm font-semibold text-[#6d5735]">Premium 4-Point</span>
+                                        <span className="text-xl font-black text-[#35689a]">
+                                            {workspaceOverview.premiumFourPoint.toLocaleString()}
+                                        </span>
+                                    </div>
                                     <div className="rounded-xl bg-[#eff7ea] px-4 py-3 text-sm font-semibold text-[#3d703a]">
                                         {workspaceOverview.closedSource.toLocaleString()} Closed · {workspaceOverview.activeSource.toLocaleString()}{' '}
                                         Active
@@ -770,10 +787,11 @@ export default function ProcessorDashboard({
                     </section>
                 )}
 
-                <section data-tour="processor-metrics" className={`grid gap-4 sm:grid-cols-2 ${isDailyView ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}`}>
+                <section data-tour="processor-metrics" className={`grid gap-4 sm:grid-cols-2 ${isDailyView ? 'xl:grid-cols-4' : 'xl:grid-cols-5'}`}>
                     <MetricCard label="Total cases" value={performance.totalCases} icon={FileCheck2} tone="bg-[#fff0c9] text-[#a96300]" />
                     <MetricCard label="General Exterior" value={performance.generalExterior} icon={ShieldCheck} tone="bg-[#e4f3df] text-[#347846]" />
                     <MetricCard label="4-Point" value={performance.fourPoint} icon={Gauge} tone="bg-[#efe6ff] text-[#7146c6]" />
+                    <MetricCard label="Premium 4-Point" value={performance.premiumFourPoint} icon={Sparkles} tone="bg-[#e5f0ff] text-[#35689a]" />
                     {!isDailyView && (
                         <article className="relative min-h-40 overflow-hidden rounded-2xl border border-[#bcd9c8] bg-[#fffdf8] p-5 shadow-[0_8px_28px_rgba(20,122,81,0.07)]">
                             <div className="flex items-start justify-between">
@@ -817,7 +835,7 @@ export default function ProcessorDashboard({
                                 <p className="mt-1 text-xs font-semibold text-[#ead8be]">Monthly tier progress · {periodLabel}</p>
                                 <p className="mt-3 text-5xl font-black">{performance.credits.toLocaleString()}</p>
                                 <p className="mt-2 text-sm text-[#ead8be]">
-                                    {performance.generalExterior} × 1 + {performance.fourPoint} × 1.25
+                                    {performance.generalExterior} × 1 + ({performance.fourPoint} + {performance.premiumFourPoint}) × 1.25
                                 </p>
                                 <div className="mt-7 flex items-center justify-between rounded-xl bg-white/10 p-4">
                                     <span>
@@ -874,7 +892,8 @@ export default function ProcessorDashboard({
                                                             )}
                                                         </p>
                                                         <p className="mt-1 text-xs text-[#806f59]">
-                                                            {leader.generalExterior} GE · {leader.fourPoint} 4PT
+                                                            {leader.generalExterior} GE · {leader.fourPoint} 4PT · {leader.premiumFourPoint} Premium
+                                                            4PT
                                                             {leader.qaScore !== null ? ` · ${leader.qaScore}% accuracy` : ''}
                                                         </p>
                                                     </div>
@@ -971,7 +990,9 @@ export default function ProcessorDashboard({
                             <div>
                                 <p className="text-xs font-bold tracking-[0.16em] text-[#b26a00] uppercase">My daily reports</p>
                                 <h2 className="mt-1 text-xl font-black">Daily productivity details</h2>
-                                <p className="mt-1 text-sm text-[#806f59]">General Exterior and 4-Point reports for {periodLabel}</p>
+                                <p className="mt-1 text-sm text-[#806f59]">
+                                    General Exterior, 4-Point, and Premium 4-Point reports for {periodLabel}
+                                </p>
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
                                 <div className="inline-flex w-fit gap-1 rounded-xl bg-[#f7eddd] p-1">
@@ -1006,6 +1027,7 @@ export default function ProcessorDashboard({
                                         <th className="px-6 py-3.5">Report date</th>
                                         <th className="px-6 py-3.5 text-center">General Exterior</th>
                                         <th className="px-6 py-3.5 text-center">4-Point</th>
+                                        <th className="px-6 py-3.5 text-center">Premium 4-Point</th>
                                         <th className="bg-[#2f1d0e] px-6 py-3.5 text-center">Total finished</th>
                                         <th className="px-6 py-3.5 text-center">Delivery status</th>
                                     </tr>
@@ -1020,6 +1042,7 @@ export default function ProcessorDashboard({
                                                 <td className="px-6 py-3 font-bold">{formatDate(day.date)}</td>
                                                 <td className="px-6 py-3 text-center font-semibold">{day.generalExterior}</td>
                                                 <td className="px-6 py-3 text-center font-semibold">{day.fourPoint}</td>
+                                                <td className="px-6 py-3 text-center font-semibold">{day.premiumFourPoint}</td>
                                                 <td
                                                     className={`px-6 py-3 text-center font-black ${day.total > 0 ? 'bg-[#fff1c7] text-[#9b5d00]' : 'bg-[#fffaf0]'}`}
                                                 >
@@ -1046,7 +1069,7 @@ export default function ProcessorDashboard({
                                         ))
                                     ) : (
                                         <tr>
-                                            <td colSpan={5} className="bg-white px-6 py-10 text-center text-sm font-semibold text-[#806f59]">
+                                            <td colSpan={6} className="bg-white px-6 py-10 text-center text-sm font-semibold text-[#806f59]">
                                                 No {timezone.toUpperCase()} daily reports are available for {periodLabel}.
                                             </td>
                                         </tr>
@@ -1058,6 +1081,7 @@ export default function ProcessorDashboard({
                                             <td className="px-6 py-3.5">Monthly total · {timezone.toUpperCase()}</td>
                                             <td className="px-6 py-3.5 text-center">{performance.generalExterior}</td>
                                             <td className="px-6 py-3.5 text-center">{performance.fourPoint}</td>
+                                            <td className="px-6 py-3.5 text-center">{performance.premiumFourPoint}</td>
                                             <td className="bg-[#f6d370] px-6 py-3.5 text-center">{performance.totalCases}</td>
                                             <td className="px-6 py-3.5 text-center">—</td>
                                         </tr>
@@ -1115,6 +1139,10 @@ export default function ProcessorDashboard({
                                         <i className="size-2.5 rounded-full bg-[#6d4bc3]" />
                                         4-Point
                                     </span>
+                                    <span className="flex items-center gap-1.5">
+                                        <i className="size-2.5 rounded-full bg-[#3e83b5]" />
+                                        Premium 4-Point
+                                    </span>
                                 </div>
                             </div>
                             {hasProduction ? (
@@ -1164,6 +1192,14 @@ export default function ProcessorDashboard({
                                                 maxBarSize={13}
                                                 isAnimationActive
                                                 animationDuration={1200}
+                                            />
+                                            <Bar
+                                                dataKey="premiumFourPoint"
+                                                fill="#3e83b5"
+                                                radius={[5, 5, 0, 0]}
+                                                maxBarSize={13}
+                                                isAnimationActive
+                                                animationDuration={1350}
                                             />
                                         </ComposedChart>
                                     </ResponsiveContainer>

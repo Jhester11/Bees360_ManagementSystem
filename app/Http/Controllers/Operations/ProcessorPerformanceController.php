@@ -58,6 +58,7 @@ class ProcessorPerformanceController extends Controller
                     $name,
                     $entries->where('report_category', 'general_exterior')->count(),
                     $entries->where('report_category', 'four_point')->count(),
+                    $entries->where('report_category', 'premium_four_point')->count(),
                     $scores->isNotEmpty() ? round($scores->avg(fn (QaAssessment $item) => (float) $item->score), 2) : null,
                     $scores->count(),
                 );
@@ -96,6 +97,7 @@ class ProcessorPerformanceController extends Controller
                     $name,
                     $metrics->sum('general_exterior'),
                     $metrics->sum('four_point'),
+                    $metrics->sum('premium_four_point'),
                     $reviewCount > 0 ? round($weightedScore / $reviewCount, 2) : null,
                     $reviewCount,
                 );
@@ -171,6 +173,7 @@ class ProcessorPerformanceController extends Controller
                     'processor_name' => $first['processor_name'],
                     'general_exterior' => $metrics->sum('general_exterior'),
                     'four_point' => $metrics->sum('four_point'),
+                    'premium_four_point' => $metrics->sum('premium_four_point'),
                     'qc_score' => $reviewCount > 0 ? round($weightedScore / $reviewCount, 2) : null,
                     'qc_reviews' => $reviewCount,
                     'source_file' => $validated['source_file'],
@@ -209,7 +212,7 @@ class ProcessorPerformanceController extends Controller
             CstProcessorMetric::upsert(
                 $rows->all(),
                 ['report_date', 'processor_name'],
-                ['general_exterior', 'four_point', 'qc_score', 'qc_reviews', 'source_file', 'uploaded_by', 'updated_at'],
+                ['general_exterior', 'four_point', 'premium_four_point', 'qc_score', 'qc_reviews', 'source_file', 'uploaded_by', 'updated_at'],
             );
         });
 
@@ -232,9 +235,15 @@ class ProcessorPerformanceController extends Controller
         ]);
     }
 
-    private function performance(string $processor, int $generalExterior, int $fourPoint, ?float $qcScore = null, int $qcReviews = 0): array
-    {
-        $credits = round($generalExterior + ($fourPoint * 1.25), 2);
+    private function performance(
+        string $processor,
+        int $generalExterior,
+        int $fourPoint,
+        int $premiumFourPoint,
+        ?float $qcScore = null,
+        int $qcReviews = 0,
+    ): array {
+        $credits = round($generalExterior + (($fourPoint + $premiumFourPoint) * 1.25), 2);
         $tiers = collect([[550, 100], [650, 200], [750, 300]])
             ->map(fn (array $tier, int $index): array => [
                 'name' => 'Tier '.($index + 1),
@@ -248,9 +257,10 @@ class ProcessorPerformanceController extends Controller
         return [
             'processor' => $processor,
             'batch' => $this->batchForProcessor($processor),
-            'totalCases' => $generalExterior + $fourPoint,
+            'totalCases' => $generalExterior + $fourPoint + $premiumFourPoint,
             'generalExterior' => $generalExterior,
             'fourPoint' => $fourPoint,
+            'premiumFourPoint' => $premiumFourPoint,
             'credits' => $credits,
             'qcScore' => $qcScore,
             'qcReviews' => $qcReviews,

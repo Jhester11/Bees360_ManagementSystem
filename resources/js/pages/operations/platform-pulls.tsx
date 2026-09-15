@@ -15,7 +15,7 @@ type ReportEntry = {
     batch: number;
     processorName: string;
     projectId: string;
-    reportCategory: 'general_exterior' | 'four_point';
+    reportCategory: 'general_exterior' | 'four_point' | 'premium_four_point';
     assembledTime: string | null;
 };
 type ProcessorRow = {
@@ -24,8 +24,10 @@ type ProcessorRow = {
     batch: number;
     activeGeneralExterior: number;
     activeFourPoint: number;
+    activePremiumFourPoint: number;
     closedGeneralExterior: number;
     closedFourPoint: number;
+    closedPremiumFourPoint: number;
 };
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -99,8 +101,10 @@ function rowsAtCheckpoint(reportEntries: ReportEntry[], start: string | null, cu
             ...processor,
             activeGeneralExterior: count('active', 'general_exterior'),
             activeFourPoint: count('active', 'four_point'),
+            activePremiumFourPoint: count('active', 'premium_four_point'),
             closedGeneralExterior: count('closed', 'general_exterior'),
             closedFourPoint: count('closed', 'four_point'),
+            closedPremiumFourPoint: count('closed', 'premium_four_point'),
         };
     });
 }
@@ -110,10 +114,19 @@ function totalsFor(rows: ProcessorRow[]) {
         (sum, row) => ({
             activeGeneralExterior: sum.activeGeneralExterior + row.activeGeneralExterior,
             activeFourPoint: sum.activeFourPoint + row.activeFourPoint,
+            activePremiumFourPoint: sum.activePremiumFourPoint + row.activePremiumFourPoint,
             closedGeneralExterior: sum.closedGeneralExterior + row.closedGeneralExterior,
             closedFourPoint: sum.closedFourPoint + row.closedFourPoint,
+            closedPremiumFourPoint: sum.closedPremiumFourPoint + row.closedPremiumFourPoint,
         }),
-        { activeGeneralExterior: 0, activeFourPoint: 0, closedGeneralExterior: 0, closedFourPoint: 0 },
+        {
+            activeGeneralExterior: 0,
+            activeFourPoint: 0,
+            activePremiumFourPoint: 0,
+            closedGeneralExterior: 0,
+            closedFourPoint: 0,
+            closedPremiumFourPoint: 0,
+        },
     );
 }
 
@@ -180,9 +193,9 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
                     : `${item.label} PH TIME · NO DATA FOR THIS INTERVAL (${item.rangeLabel})`,
             ]);
             const headerRow = sheetRows.length + 1;
-            sheetRows.push(['PROCESSOR', 'N-NAME', 'BATCH', 'ACTIVE', '', '', 'CLOSED', '', '', 'COMBINED']);
+            sheetRows.push(['PROCESSOR', 'N-NAME', 'BATCH', 'ACTIVE', '', '', '', 'CLOSED', '', '', '', 'COMBINED']);
             const subheaderRow = sheetRows.length + 1;
-            sheetRows.push(['', '', '', 'GEN EXT', '4-POINT', 'TOTAL', 'GEN EXT', '4-POINT', 'TOTAL', 'TOTAL']);
+            sheetRows.push(['', '', '', 'GEN EXT', '4-POINT', 'PREMIUM 4-POINT', 'TOTAL', 'GEN EXT', '4-POINT', 'PREMIUM 4-POINT', 'TOTAL', 'TOTAL']);
             const firstDataRow = sheetRows.length + 1;
             exportRows.forEach((row) => {
                 sheetRows.push([
@@ -191,9 +204,11 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
                     `Batch ${row.batch}`,
                     checkpointHasData ? row.activeGeneralExterior : '',
                     checkpointHasData ? row.activeFourPoint : '',
+                    checkpointHasData ? row.activePremiumFourPoint : '',
                     checkpointHasData ? 0 : '',
                     checkpointHasData ? row.closedGeneralExterior : '',
                     checkpointHasData ? row.closedFourPoint : '',
+                    checkpointHasData ? row.closedPremiumFourPoint : '',
                     checkpointHasData ? 0 : '',
                     checkpointHasData ? 0 : '',
                 ]);
@@ -204,6 +219,8 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
                 `${item.label} PLATFORM PULL TOTAL`,
                 '',
                 '',
+                checkpointHasData ? 0 : '',
+                checkpointHasData ? 0 : '',
                 checkpointHasData ? 0 : '',
                 checkpointHasData ? 0 : '',
                 checkpointHasData ? 0 : '',
@@ -278,23 +295,23 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
         const footer = { ...combinedTotal, border: { top: { style: 'medium', color: { rgb: '4A351D' } } } };
 
         for (let row = 1; row <= sheetRows.length; row += 1) {
-            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) {
+            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']) {
                 const address = `${column}${row}`;
                 worksheet[address] ??= { t: 's', v: '' };
                 worksheet[address].s = white;
             }
         }
         worksheet['!merges'] = [
-            XLSX.utils.decode_range('A1:J1'),
-            XLSX.utils.decode_range('A2:J2'),
+            XLSX.utils.decode_range('A1:L1'),
+            XLSX.utils.decode_range('A2:L2'),
             ...sections.flatMap((section) => [
-                XLSX.utils.decode_range(`A${section.checkpointRow}:J${section.checkpointRow}`),
+                XLSX.utils.decode_range(`A${section.checkpointRow}:L${section.checkpointRow}`),
                 XLSX.utils.decode_range(`A${section.headerRow}:A${section.subheaderRow}`),
                 XLSX.utils.decode_range(`B${section.headerRow}:B${section.subheaderRow}`),
                 XLSX.utils.decode_range(`C${section.headerRow}:C${section.subheaderRow}`),
-                XLSX.utils.decode_range(`D${section.headerRow}:F${section.headerRow}`),
-                XLSX.utils.decode_range(`G${section.headerRow}:I${section.headerRow}`),
-                XLSX.utils.decode_range(`J${section.headerRow}:J${section.subheaderRow}`),
+                XLSX.utils.decode_range(`D${section.headerRow}:G${section.headerRow}`),
+                XLSX.utils.decode_range(`H${section.headerRow}:K${section.headerRow}`),
+                XLSX.utils.decode_range(`L${section.headerRow}:L${section.subheaderRow}`),
                 XLSX.utils.decode_range(`A${section.totalRow}:C${section.totalRow}`),
             ]),
         ];
@@ -303,34 +320,34 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
 
         sections.forEach((section) => {
             worksheet[`A${section.checkpointRow}`].s = checkpointStyle;
-            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) {
+            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']) {
                 worksheet[`${column}${section.headerRow}`].s =
-                    column >= 'D' && column <= 'F' ? activeHeader : column >= 'G' && column <= 'I' ? closedHeader : header;
+                    column >= 'D' && column <= 'G' ? activeHeader : column >= 'H' && column <= 'K' ? closedHeader : header;
                 worksheet[`${column}${section.subheaderRow}`].s =
-                    column >= 'D' && column <= 'F' ? activeHeader : column >= 'G' && column <= 'I' ? closedHeader : header;
+                    column >= 'D' && column <= 'G' ? activeHeader : column >= 'H' && column <= 'K' ? closedHeader : header;
             }
             section.rows.forEach((rowValues, index) => {
                 const row = section.firstDataRow + index;
                 worksheet[`A${row}`].s = body;
                 worksheet[`B${row}`].s = body;
                 worksheet[`C${row}`].s = { ...body, alignment: { horizontal: 'center', vertical: 'center' } };
-                for (const column of ['D', 'E', 'G', 'H']) worksheet[`${column}${row}`].s = number;
+                for (const column of ['D', 'E', 'F', 'H', 'I', 'J']) worksheet[`${column}${row}`].s = number;
                 if (!section.hasData) {
-                    for (const column of ['D', 'E', 'F', 'G', 'H', 'I', 'J']) {
+                    for (const column of ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']) {
                         worksheet[`${column}${row}`] = { t: 's', v: '', s: number };
                     }
                     return;
                 }
-                const active = rowValues.activeGeneralExterior + rowValues.activeFourPoint;
-                const closed = rowValues.closedGeneralExterior + rowValues.closedFourPoint;
-                worksheet[`F${row}`] = { t: 'n', f: `D${row}+E${row}`, v: active, s: activeTotal };
-                worksheet[`I${row}`] = { t: 'n', f: `G${row}+H${row}`, v: closed, s: closedTotal };
-                worksheet[`J${row}`] = { t: 'n', f: `F${row}+I${row}`, v: active + closed, s: combinedTotal };
+                const active = rowValues.activeGeneralExterior + rowValues.activeFourPoint + rowValues.activePremiumFourPoint;
+                const closed = rowValues.closedGeneralExterior + rowValues.closedFourPoint + rowValues.closedPremiumFourPoint;
+                worksheet[`G${row}`] = { t: 'n', f: `SUM(D${row}:F${row})`, v: active, s: activeTotal };
+                worksheet[`K${row}`] = { t: 'n', f: `SUM(H${row}:J${row})`, v: closed, s: closedTotal };
+                worksheet[`L${row}`] = { t: 'n', f: `G${row}+K${row}`, v: active + closed, s: combinedTotal };
             });
 
-            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) worksheet[`${column}${section.totalRow}`].s = footer;
+            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']) worksheet[`${column}${section.totalRow}`].s = footer;
             if (!section.hasData) {
-                for (const column of ['D', 'E', 'F', 'G', 'H', 'I', 'J']) {
+                for (const column of ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']) {
                     worksheet[`${column}${section.totalRow}`] = { t: 's', v: '', s: footer };
                 }
                 return;
@@ -340,17 +357,21 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
             const footerValues: Record<string, number> = {
                 D: checkpointTotals.activeGeneralExterior,
                 E: checkpointTotals.activeFourPoint,
-                F: checkpointTotals.activeGeneralExterior + checkpointTotals.activeFourPoint,
-                G: checkpointTotals.closedGeneralExterior,
-                H: checkpointTotals.closedFourPoint,
-                I: checkpointTotals.closedGeneralExterior + checkpointTotals.closedFourPoint,
-                J:
+                F: checkpointTotals.activePremiumFourPoint,
+                G: checkpointTotals.activeGeneralExterior + checkpointTotals.activeFourPoint + checkpointTotals.activePremiumFourPoint,
+                H: checkpointTotals.closedGeneralExterior,
+                I: checkpointTotals.closedFourPoint,
+                J: checkpointTotals.closedPremiumFourPoint,
+                K: checkpointTotals.closedGeneralExterior + checkpointTotals.closedFourPoint + checkpointTotals.closedPremiumFourPoint,
+                L:
                     checkpointTotals.activeGeneralExterior +
                     checkpointTotals.activeFourPoint +
+                    checkpointTotals.activePremiumFourPoint +
                     checkpointTotals.closedGeneralExterior +
-                    checkpointTotals.closedFourPoint,
+                    checkpointTotals.closedFourPoint +
+                    checkpointTotals.closedPremiumFourPoint,
             };
-            for (const column of ['D', 'E', 'F', 'G', 'H', 'I', 'J']) {
+            for (const column of ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']) {
                 worksheet[`${column}${section.totalRow}`] = {
                     t: 'n',
                     f: `SUM(${column}${section.firstDataRow}:${column}${section.lastDataRow})`,
@@ -370,6 +391,8 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
             { wch: 13 },
             { wch: 12 },
             { wch: 12 },
+            { wch: 14 },
+            { wch: 20 },
             { wch: 14 },
         ];
         worksheet['!rows'] = [{ hpt: 27 }, { hpt: 20 }, { hpt: 8 }];
@@ -488,7 +511,7 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
                         </div>
                     </div>
                     <div className="overflow-x-auto">
-                        <table className="w-full min-w-[1100px] text-left text-sm">
+                        <table className="w-full min-w-[1380px] text-left text-sm">
                             <thead className="bg-[#3b2915] text-xs tracking-wide text-[#fff8e7] uppercase">
                                 <tr>
                                     <th rowSpan={2} className="px-5 py-4">
@@ -497,10 +520,10 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
                                     <th rowSpan={2} className="px-4 py-4 text-center">
                                         Batch
                                     </th>
-                                    <th colSpan={3} className="bg-[#8b5a12] px-4 py-3 text-center">
+                                    <th colSpan={4} className="bg-[#8b5a12] px-4 py-3 text-center">
                                         Active
                                     </th>
-                                    <th colSpan={3} className="bg-[#604321] px-4 py-3 text-center">
+                                    <th colSpan={4} className="bg-[#604321] px-4 py-3 text-center">
                                         Closed
                                     </th>
                                     <th rowSpan={2} className="bg-[#2f2112] px-4 py-4 text-center">
@@ -508,20 +531,22 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
                                     </th>
                                 </tr>
                                 <tr>
-                                    {['Gen Ext', '4-Point', 'Total', 'Gen Ext', '4-Point', 'Total'].map((label, index) => (
-                                        <th
-                                            key={`${label}-${index}`}
-                                            className={`px-4 py-3 text-center ${index < 3 ? 'bg-[#8b5a12]' : 'bg-[#604321]'}`}
-                                        >
-                                            {label}
-                                        </th>
-                                    ))}
+                                    {['Gen Ext', '4-Point', 'Premium 4-Point', 'Total', 'Gen Ext', '4-Point', 'Premium 4-Point', 'Total'].map(
+                                        (label, index) => (
+                                            <th
+                                                key={`${label}-${index}`}
+                                                className={`px-4 py-3 text-center ${index < 4 ? 'bg-[#8b5a12]' : 'bg-[#604321]'}`}
+                                            >
+                                                {label}
+                                            </th>
+                                        ),
+                                    )}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-[#f0e5d4]">
                                 {rows.map((row) => {
-                                    const activeTotal = row.activeGeneralExterior + row.activeFourPoint;
-                                    const closedTotal = row.closedGeneralExterior + row.closedFourPoint;
+                                    const activeTotal = row.activeGeneralExterior + row.activeFourPoint + row.activePremiumFourPoint;
+                                    const closedTotal = row.closedGeneralExterior + row.closedFourPoint + row.closedPremiumFourPoint;
                                     return (
                                         <tr key={row.name} className="bg-white hover:bg-[#fffbf3]">
                                             <td className="px-5 py-3.5 font-bold text-[#4a3821]">{row.name}</td>
@@ -532,6 +557,9 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
                                             <td className="px-4 py-3.5 text-center font-semibold text-[#4a3821]">
                                                 {selectedHasData ? row.activeFourPoint : '—'}
                                             </td>
+                                            <td className="px-4 py-3.5 text-center font-semibold text-[#4a3821]">
+                                                {selectedHasData ? row.activePremiumFourPoint : '—'}
+                                            </td>
                                             <td className="bg-[#fff7e2] px-4 py-3.5 text-center font-black text-[#8b5a12]">
                                                 {selectedHasData ? activeTotal : '—'}
                                             </td>
@@ -540,6 +568,9 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
                                             </td>
                                             <td className="px-4 py-3.5 text-center font-semibold text-[#4a3821]">
                                                 {selectedHasData ? row.closedFourPoint : '—'}
+                                            </td>
+                                            <td className="px-4 py-3.5 text-center font-semibold text-[#4a3821]">
+                                                {selectedHasData ? row.closedPremiumFourPoint : '—'}
                                             </td>
                                             <td className="bg-[#f8ead4] px-4 py-3.5 text-center font-black text-[#604321]">
                                                 {selectedHasData ? closedTotal : '—'}
@@ -558,20 +589,28 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
                                     </td>
                                     <td className="px-4 py-4 text-center">{selectedHasData ? totals.activeGeneralExterior : '—'}</td>
                                     <td className="px-4 py-4 text-center">{selectedHasData ? totals.activeFourPoint : '—'}</td>
+                                    <td className="px-4 py-4 text-center">{selectedHasData ? totals.activePremiumFourPoint : '—'}</td>
                                     <td className="px-4 py-4 text-center">
-                                        {selectedHasData ? totals.activeGeneralExterior + totals.activeFourPoint : '—'}
+                                        {selectedHasData
+                                            ? totals.activeGeneralExterior + totals.activeFourPoint + totals.activePremiumFourPoint
+                                            : '—'}
                                     </td>
                                     <td className="px-4 py-4 text-center">{selectedHasData ? totals.closedGeneralExterior : '—'}</td>
                                     <td className="px-4 py-4 text-center">{selectedHasData ? totals.closedFourPoint : '—'}</td>
+                                    <td className="px-4 py-4 text-center">{selectedHasData ? totals.closedPremiumFourPoint : '—'}</td>
                                     <td className="px-4 py-4 text-center">
-                                        {selectedHasData ? totals.closedGeneralExterior + totals.closedFourPoint : '—'}
+                                        {selectedHasData
+                                            ? totals.closedGeneralExterior + totals.closedFourPoint + totals.closedPremiumFourPoint
+                                            : '—'}
                                     </td>
                                     <td className="bg-[#f2cf72] px-4 py-4 text-center text-base">
                                         {selectedHasData
                                             ? totals.activeGeneralExterior +
                                               totals.activeFourPoint +
+                                              totals.activePremiumFourPoint +
                                               totals.closedGeneralExterior +
-                                              totals.closedFourPoint
+                                              totals.closedFourPoint +
+                                              totals.closedPremiumFourPoint
                                             : '—'}
                                     </td>
                                 </tr>

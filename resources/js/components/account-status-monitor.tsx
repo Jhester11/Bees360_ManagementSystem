@@ -1,18 +1,20 @@
 import { useEffect, useRef } from 'react';
 
-const STATUS_CHECK_INTERVAL = 3_000;
+const STATUS_CHECK_INTERVAL = 30_000;
 
 export function AccountStatusMonitor() {
     const redirecting = useRef(false);
 
     useEffect(() => {
         let controller: AbortController | null = null;
+        let checking = false;
 
         const checkAccount = async () => {
-            if (redirecting.current) return;
+            if (redirecting.current || checking) return;
 
-            controller?.abort();
+            checking = true;
             controller = new AbortController();
+            const timeout = window.setTimeout(() => controller?.abort(), 10_000);
 
             try {
                 const response = await fetch('/account/status', {
@@ -31,6 +33,9 @@ export function AccountStatusMonitor() {
             } catch {
                 // A cancelled request or temporary network failure must not sign out an active user.
                 return;
+            } finally {
+                window.clearTimeout(timeout);
+                checking = false;
             }
         };
 

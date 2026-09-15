@@ -13,6 +13,7 @@ class PlatformPullEntry extends Model
         'processor_name',
         'general_exterior',
         'four_point',
+        'premium_four_point',
     ];
 
     public function snapshot(): BelongsTo

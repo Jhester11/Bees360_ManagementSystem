@@ -10,7 +10,6 @@ export function PageLoadingOverlay() {
     useEffect(() => {
         let readyFrame: number | undefined;
         let paintFrame: number | undefined;
-        let renderedDestination = false;
 
         const markPageReady = () => {
             if (activeDestinationRef.current) return;
@@ -29,7 +28,6 @@ export function PageLoadingOverlay() {
             if (readyFrame !== undefined) window.cancelAnimationFrame(readyFrame);
             if (paintFrame !== undefined) window.cancelAnimationFrame(paintFrame);
             activeDestinationRef.current = destination;
-            renderedDestination = false;
             document.documentElement.dataset.pageLoading = 'true';
             setIsLoading(true);
         };
@@ -54,31 +52,21 @@ export function PageLoadingOverlay() {
             const destination = new URL(String(event.detail.visit.url), window.location.href);
             if (activeDestinationRef.current !== destination.pathname) return;
 
-            // A completed visit waits for the destination component to paint.
-            // Interrupted or cancelled visits retain the old page and can clear now.
-            if (
-                event.detail.visit.completed &&
-                !event.detail.visit.cancelled &&
-                !event.detail.visit.interrupted &&
-                window.location.pathname === destination.pathname
-            )
-                return;
+            // Finish is also emitted after a successful page visit. Clear here as a
+            // fallback if navigation events were missed (for example a redirect).
             activeDestinationRef.current = null;
-            hideLoader();
+            paintFrame = window.requestAnimationFrame(hideLoader);
         });
 
         const stopNavigateListener = router.on('navigate', (event) => {
             if (!activeDestinationRef.current) return;
             const destination = new URL(event.detail.page.url, window.location.href);
             if (activeDestinationRef.current !== destination.pathname) return;
-            renderedDestination = true;
             if (paintFrame !== undefined) window.cancelAnimationFrame(paintFrame);
             paintFrame = window.requestAnimationFrame(() => {
-                paintFrame = window.requestAnimationFrame(() => {
-                    if (!renderedDestination || activeDestinationRef.current !== destination.pathname) return;
-                    activeDestinationRef.current = null;
-                    hideLoader();
-                });
+                if (activeDestinationRef.current !== destination.pathname) return;
+                activeDestinationRef.current = null;
+                hideLoader();
             });
         });
 

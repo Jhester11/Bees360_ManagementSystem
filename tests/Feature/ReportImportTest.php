@@ -3,6 +3,7 @@
 use App\Enums\UserRole;
 use App\Models\ReportEntry;
 use App\Models\User;
+use Inertia\Inertia;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('operations users can import approved processor reports from either workbook', function () {
@@ -136,6 +137,17 @@ test('large report imports are saved without exceeding database placeholder limi
     $response->assertRedirect(route('operations.reports'));
     $response->assertSessionHas('importSummary', ['saved' => 6000, 'ignored' => 0]);
     expect(ReportEntry::query()->count())->toBe(6000);
+    $this->get(route('operations.reports'))->assertInertia(fn (Assert $page) => $page
+        ->where('reportDate', '2026-08-31')
+        ->missing('reportEntries'));
+    $this->withHeaders([
+        'X-Inertia' => 'true',
+        'X-Inertia-Version' => Inertia::getVersion(),
+        'X-Inertia-Partial-Component' => 'operations/reports',
+        'X-Inertia-Partial-Data' => 'reportEntries',
+    ])->get(route('operations.reports'))
+        ->assertOk()
+        ->assertJsonCount(6000, 'props.reportEntries');
 });
 
 test('reports use active processor accounts while retaining reviewer history', function () {
@@ -171,10 +183,46 @@ test('reports use active processor accounts while retaining reviewer history', f
     $this->assertDatabaseHas('report_entries', ['processor_name' => 'Emma Alegre', 'batch' => 2, 'project_id' => 'EMMA-NEW']);
     $this->assertDatabaseHas('report_entries', ['processor_name' => 'New Processor Name', 'batch' => 3, 'project_id' => 'NEW-1']);
 
-    $this->actingAs($user)->get(route('operations.reports'))->assertInertia(fn (Assert $page) => $page
-        ->where('processorRoster.0.name', 'New Processor Name')
-        ->where('reportEntries.0.processor_name', 'New Processor Name')
-        ->missing('reportEntries.1'));
+    $this->actingAs($user)->get(route('operations.reports'));
+    $this->withHeaders([
+        'X-Inertia' => 'true',
+        'X-Inertia-Version' => Inertia::getVersion(),
+        'X-Inertia-Partial-Component' => 'operations/reports',
+        'X-Inertia-Partial-Data' => 'reportEntries',
+    ])->get(route('operations.reports'))
+        ->assertOk()
+        ->assertJsonPath('props.reportEntries.0.processor_name', 'New Processor Name')
+        ->assertJsonCount(1, 'props.reportEntries');
+});
+
+test('daily reports load only the chosen date after the page shell', function () {
+    $user = User::factory()->create(['role' => UserRole::Operations]);
+    User::factory()->create(['name' => 'Allan Layug', 'role' => UserRole::Processor, 'batch' => 2]);
+    foreach (['2026-08-31', '2026-09-01'] as $date) {
+        ReportEntry::query()->create([
+            'report_date' => $date,
+            'source' => 'closed',
+            'batch' => 2,
+            'processor_name' => 'Allan Layug',
+            'project_id' => $date,
+            'inspection_type' => 'Exterior Underwriting',
+            'report_category' => 'general_exterior',
+            'assembled_at' => "$date 09:00:00",
+        ]);
+    }
+
+    $this->actingAs($user)->get(route('operations.reports', ['date' => '2026-08-31']))->assertInertia(fn (Assert $page) => $page
+        ->where('reportDate', '2026-08-31')
+        ->missing('reportEntries'));
+    $this->withHeaders([
+        'X-Inertia' => 'true',
+        'X-Inertia-Version' => Inertia::getVersion(),
+        'X-Inertia-Partial-Component' => 'operations/reports',
+        'X-Inertia-Partial-Data' => 'reportEntries',
+    ])->get(route('operations.reports', ['date' => '2026-08-31']))
+        ->assertOk()
+        ->assertJsonCount(1, 'props.reportEntries')
+        ->assertJsonPath('props.reportEntries.0.report_date', '2026-08-31');
 });
 
 test('report history is returned only when it is requested', function () {

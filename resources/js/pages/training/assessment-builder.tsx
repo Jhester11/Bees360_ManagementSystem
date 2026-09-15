@@ -1,20 +1,47 @@
 import { Assessment, TrainingPage, button, field, secondary } from '@/components/training/training-ui';
 import { useForm } from '@inertiajs/react';
 import { FormEvent, useEffect, useState } from 'react';
+type EditableChoice = { id?: number; choice: string; is_correct: boolean };
+type EditableQuestion = {
+    id?: number;
+    question: string;
+    image: File | null;
+    image_path?: string;
+    remove_image: boolean;
+    explanation?: string;
+    points: number;
+    choices: EditableChoice[];
+};
 const blank = () => ({
+    id: undefined as number | undefined,
     question: '',
     image: null as File | null,
     image_path: undefined as string | undefined,
-    remove_image: false,
+    remove_image: false as boolean,
     explanation: '',
     points: 1,
     choices: [
-        { choice: '', is_correct: true },
-        { choice: '', is_correct: false },
+        { id: undefined as number | undefined, choice: '', is_correct: true },
+        { id: undefined as number | undefined, choice: '', is_correct: false },
     ],
 });
 export default function Builder({ assessment, materials }: { assessment?: Assessment; materials: { id: number; title: string }[] }) {
-    const f = useForm({
+    const f = useForm<{
+        training_material_id: number;
+        name: string;
+        description: string;
+        passing_score: number;
+        time_limit_minutes: number;
+        maximum_attempts: number;
+        randomize_questions: boolean;
+        randomize_choices: boolean;
+        show_score: boolean;
+        show_correct_answers: boolean;
+        require_training_completion: boolean;
+        is_published: boolean;
+        due_at: string;
+        questions: EditableQuestion[];
+    }>({
         training_material_id: assessment?.training_material_id || materials[0]?.id || 0,
         name: assessment?.name || '',
         description: assessment?.description || '',
@@ -31,19 +58,20 @@ export default function Builder({ assessment, materials }: { assessment?: Assess
         questions: assessment?.questions?.map((q) => ({
             ...q,
             image: null as File | null,
-            remove_image: false,
+            remove_image: false as boolean,
             choices: q.choices.map((c) => ({ ...c, is_correct: !!c.is_correct })),
         })) || [blank()],
     });
     function submit(e: FormEvent) {
         e.preventDefault();
         if (assessment) {
-            f.transform((data) => ({ ...data, _method: 'put' })).post(`/training/assessments/${assessment.id}`, { forceFormData: true });
+            f.transform((data) => ({ ...data, _method: 'put' }));
+            f.post(`/training/assessments/${assessment.id}`, { forceFormData: true });
         } else {
             f.post('/training/assessments', { forceFormData: true });
         }
     }
-    function patchQ(i: number, v: any) {
+    function patchQ(i: number, v: Partial<EditableQuestion>) {
         const q = [...f.data.questions];
         q[i] = { ...q[i], ...v };
         f.setData('questions', q);
@@ -70,37 +98,31 @@ export default function Builder({ assessment, materials }: { assessment?: Assess
                         <b className="text-sm">Assessment name</b>
                         <input className={field} value={f.data.name} onChange={(e) => f.setData('name', e.target.value)} />
                     </label>
-                    {[
-                        ['Passing score %', 'passing_score'],
-                        ['Time limit (minutes)', 'time_limit_minutes'],
-                        ['Maximum attempts', 'maximum_attempts'],
-                    ].map(([l, k]) => (
+                    {(
+                        [
+                            ['Passing score %', 'passing_score'],
+                            ['Time limit (minutes)', 'time_limit_minutes'],
+                            ['Maximum attempts', 'maximum_attempts'],
+                        ] as const
+                    ).map(([l, k]) => (
                         <label key={k}>
                             <b className="text-sm">{l}</b>
-                            <input
-                                type="number"
-                                className={field}
-                                value={(f.data as any)[k]}
-                                onChange={(e) => f.setData(k as any, Number(e.target.value))}
-                            />
+                            <input type="number" className={field} value={f.data[k]} onChange={(e) => f.setData(k, Number(e.target.value))} />
                         </label>
                     ))}
                     <div className="flex flex-wrap gap-4 md:col-span-3">
-                        {[
-                            ['Randomize questions', 'randomize_questions'],
-                            ['Randomize choices', 'randomize_choices'],
-                            ['Show score', 'show_score'],
-                            ['Show correct answers', 'show_correct_answers'],
-                            ['Require reading completion', 'require_training_completion'],
-                            ['Published', 'is_published'],
-                        ].map(([l, k]) => (
+                        {(
+                            [
+                                ['Randomize questions', 'randomize_questions'],
+                                ['Randomize choices', 'randomize_choices'],
+                                ['Show score', 'show_score'],
+                                ['Show correct answers', 'show_correct_answers'],
+                                ['Require reading completion', 'require_training_completion'],
+                                ['Published', 'is_published'],
+                            ] as const
+                        ).map(([l, k]) => (
                             <label key={k}>
-                                <input
-                                    type="checkbox"
-                                    className="mr-2"
-                                    checked={(f.data as any)[k]}
-                                    onChange={(e) => f.setData(k as any, e.target.checked)}
-                                />
+                                <input type="checkbox" className="mr-2" checked={f.data[k]} onChange={(e) => f.setData(k, e.target.checked)} />
                                 {l}
                             </label>
                         ))}
@@ -210,7 +232,7 @@ export default function Builder({ assessment, materials }: { assessment?: Assess
                         <button
                             type="button"
                             className="mt-3 text-sm font-bold text-[#a35e00]"
-                            onClick={() => patchQ(i, { choices: [...q.choices, { choice: '', is_correct: false }] })}
+                            onClick={() => patchQ(i, { choices: [...q.choices, { id: undefined, choice: '', is_correct: false }] })}
                         >
                             + Add choice
                         </button>

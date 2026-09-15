@@ -16,8 +16,8 @@ export default function MaterialForm({ material }: { material?: Material }) {
         cover: null as File | null,
         pdf: null as File | null,
         status: material?.status || 'draft',
-        assessment_required: material?.assessment_required || false,
-        require_retraining: false,
+        assessment_required: Boolean(material?.assessment_required),
+        require_retraining: false as boolean,
     });
     function submit(e: FormEvent) {
         e.preventDefault();
@@ -27,19 +27,21 @@ export default function MaterialForm({ material }: { material?: Material }) {
         <TrainingPage title={material ? 'Edit Training Material' : 'Create Training Material'}>
             <form onSubmit={submit} className="mx-auto max-w-5xl rounded-2xl border border-[#e8d4b4] bg-white p-5 md:p-7">
                 <div className="grid gap-5 md:grid-cols-2">
-                    {[
-                        ['Title', 'title'],
-                        ['Client', 'subject'],
-                        ['Topic', 'topic'],
-                        ['Training category', 'category'],
-                        ['Version', 'version'],
-                    ].map(([label, key]) => (
+                    {(
+                        [
+                            ['Title', 'title'],
+                            ['Client', 'subject'],
+                            ['Topic', 'topic'],
+                            ['Training category', 'category'],
+                            ['Version', 'version'],
+                        ] as const
+                    ).map(([label, key]) => (
                         <label className={key === 'title' ? 'md:col-span-2' : ''} key={key}>
                             <span className="mb-1 block text-sm font-bold">{label}</span>
                             <input
                                 className={field}
-                                value={(form.data as any)[key]}
-                                onChange={(e) => form.setData(key as any, e.target.value)}
+                                value={form.data[key]}
+                                onChange={(e) => form.setData(key, e.target.value)}
                                 placeholder={key === 'subject' ? 'Example: SageSure' : key === 'category' ? 'Example: Client Guidelines' : undefined}
                                 list={key === 'category' ? 'training-categories' : undefined}
                             />
@@ -48,7 +50,7 @@ export default function MaterialForm({ material }: { material?: Material }) {
                                     The kind of training: Client Guidelines, Property Inspection, Quality, Process Update, Safety, or Onboarding.
                                 </span>
                             )}
-                            <Error text={(form.errors as any)[key]} />
+                            <Error text={form.errors[key]} />
                         </label>
                     ))}
                     <datalist id="training-categories">

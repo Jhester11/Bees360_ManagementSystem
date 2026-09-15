@@ -39,9 +39,10 @@ type ReportEntry = {
 type ReportRow = { name: string; nickname: string; batch: number; generalExtensions: number; fourPoint: number; premiumFourPoint: number };
 type ProcessorDefinition = Omit<ReportRow, 'generalExtensions' | 'fourPoint' | 'premiumFourPoint'> & { aliases: string[] };
 type ReportsProps = {
-    reportEntries: ReportEntry[];
+    reportEntries?: ReportEntry[];
     processorRoster: ProcessorDefinition[];
     latestReportDate?: string | null;
+    reportDate: string;
     historyVisible: boolean;
     historyEntries: ReportEntry[];
 };
@@ -76,14 +77,14 @@ async function rowsFromWorkbook(file: File, source: Source): Promise<ImportEntry
     }));
 }
 
-export default function Reports({ reportEntries, processorRoster, latestReportDate, historyVisible, historyEntries }: ReportsProps) {
+export default function Reports({ reportEntries, processorRoster, reportDate: loadedReportDate, historyVisible, historyEntries }: ReportsProps) {
     const page = usePage<{ flash?: { importSummary?: ImportSummary } }>();
     const { flash } = page.props;
     const initialParameters = new URLSearchParams(page.url.split('?')[1] ?? '');
     const [pageTab, setPageTab] = useState<PageTab>(() => (initialParameters.get('tab') === 'import' ? 'import' : 'reports'));
     const [reportType, setReportType] = useState<ReportType>(() => (initialParameters.get('type') === 'endOfDay' ? 'endOfDay' : 'midday'));
     const [batch, setBatch] = useState<Batch>('overall');
-    const [reportDate, setReportDate] = useState(latestReportDate ?? philippinesToday);
+    const [reportDate, setReportDate] = useState(loadedReportDate);
     const [activeFile, setActiveFile] = useState<File | null>(null);
     const [closedFile, setClosedFile] = useState<File | null>(null);
     const [uploadError, setUploadError] = useState<string | null>(null);
@@ -93,6 +94,10 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
     const [showImportConfirmation, setShowImportConfirmation] = useState(false);
     const [showSuccessModal, setShowSuccessModal] = useState(() => Boolean(flash?.importSummary));
     const [importResult, setImportResult] = useState<ImportSummary | null>(flash?.importSummary ?? null);
+
+    useEffect(() => {
+        setReportDate(loadedReportDate);
+    }, [loadedReportDate]);
 
     useEffect(() => {
         if (flash?.importSummary) {
@@ -111,7 +116,7 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
 
     const selectedReportEntries = useMemo(
         () =>
-            reportEntries.filter(
+            (reportEntries ?? []).filter(
                 (entry) =>
                     dateKey(entry.report_date) === reportDate &&
                     (reportType === 'endOfDay' || (entry.assembled_at !== null && entry.assembled_at.slice(11, 16) <= '12:15')),
@@ -119,6 +124,7 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
         [reportDate, reportEntries, reportType],
     );
     const hasReportData = selectedReportEntries.length > 0;
+    const isReportLoading = reportEntries === undefined;
     const allRows = useMemo(() => {
         if (!hasReportData) return [];
 
@@ -370,6 +376,19 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
         });
     }
 
+    function changeReportDate(date: string) {
+        setReportDate(date);
+        router.get(
+            '/operations/reports',
+            { date, ...(historyVisible ? { history: 1 } : {}) },
+            {
+                preserveScroll: true,
+                preserveState: true,
+                replace: true,
+            },
+        );
+    }
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Reports" />
@@ -474,7 +493,7 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
                             className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${hasReportData ? 'border-[#b9dfbd] bg-[#edfaeb] text-[#28703c]' : 'border-[#eed8a9] bg-[#fff5dc] text-[#936000]'}`}
                         >
                             <span className={`size-2 rounded-full ${hasReportData ? 'bg-[#36934b]' : 'bg-[#e29a17]'}`} />
-                            {hasReportData ? 'Database report data' : 'No saved report data'}
+                            {isReportLoading ? 'Loading report data' : hasReportData ? 'Database report data' : 'No saved report data'}
                         </span>
                         <Button
                             type="button"
@@ -686,7 +705,7 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
                                         value={reportDate}
                                         min="2026-01-01"
                                         max={philippinesToday}
-                                        onChange={setReportDate}
+                                        onChange={changeReportDate}
                                     />
                                 </div>
                             </div>
@@ -735,7 +754,14 @@ export default function Reports({ reportEntries, processorRoster, latestReportDa
                                     <Download className="size-4" /> Export to Excel
                                 </Button>
                             </div>
-                            {hasReportData ? (
+                            {isReportLoading ? (
+                                <div className="space-y-3 px-6 py-8" role="status" aria-label="Loading daily report data">
+                                    <p className="text-sm font-semibold text-[#806f59]">Loading {formatDate(reportDate)} reports…</p>
+                                    {[0, 1, 2, 3].map((row) => (
+                                        <div key={row} className="h-11 animate-pulse rounded-lg bg-[#f5ead8]" />
+                                    ))}
+                                </div>
+                            ) : hasReportData ? (
                                 <div className="overflow-x-auto">
                                     <table className="w-full min-w-[900px] text-left text-sm">
                                         <thead className="bg-[#3b2915] text-xs tracking-wide text-[#fff8e7] uppercase">

@@ -1417,7 +1417,7 @@ function ProcessorBreakdown({ processors, baseline }: { processors: ProcessorQue
                     </tbody>
                     <tfoot className="border-t-2 border-[#5a3c1d] bg-[#f2cf72] font-black text-[#3a2817]">
                         <tr>
-                            <td colSpan={4} className="px-5 py-4 text-center text-xs tracking-wider uppercase">
+                            <td colSpan={5} className="px-5 py-4 text-center text-xs tracking-wider uppercase">
                                 Total available cases in To Do
                             </td>
                             <td className="px-5 py-4 text-center text-base">{approvedTotal}</td>

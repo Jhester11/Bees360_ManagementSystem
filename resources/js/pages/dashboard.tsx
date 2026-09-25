@@ -284,7 +284,7 @@ export default function Dashboard({
         try {
             const XLSX = await import('xlsx-js-style');
             const selectionLabel = appliedProcessor === 'all' ? 'All processors' : appliedProcessor;
-            const formattedRange = `${formatLongDate(startDate)} to ${formatLongDate(endDate)}`;
+            const formattedRange = `${formatLongDate(startDate)} to ${formatLongDate(endDate)} (PHT)`;
             const titleStyle = {
                 alignment: { horizontal: 'center', vertical: 'center' },
                 font: { name: 'Century Gothic', sz: 12, bold: true, color: { rgb: 'FFF8E7' } },
@@ -338,7 +338,7 @@ export default function Dashboard({
                 ],
                 [],
                 ['REPORTS ASSEMBLED'],
-                [`Daily completed reports from ${formattedRange}`],
+                ['Full reporting days: 12:00 AM through 11:59:59 PM · Philippine Time (Asia/Manila, UTC+08:00)'],
             ]);
             chartSheet['!merges'] = [
                 { s: { r: 0, c: 0 }, e: { r: 0, c: 11 } },
@@ -502,13 +502,23 @@ export default function Dashboard({
                     'Pending (Manual)': '',
                 })),
             );
-            processorSheet['!cols'] = [{ wch: 16 }, { wch: 30 }, { wch: 10 }, { wch: 20 }, { wch: 14 }, { wch: 20 }, { wch: 18 }, { wch: 20 }];
-            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) processorSheet[`${column}1`].s = headerStyle;
-            processorSheet.H1.s = { ...headerStyle, fill: { fgColor: { rgb: 'B96C00' } } };
+            processorSheet['!cols'] = [
+                { wch: 16 },
+                { wch: 30 },
+                { wch: 10 },
+                { wch: 20 },
+                { wch: 14 },
+                { wch: 20 },
+                { wch: 18 },
+                { wch: 20 },
+                { wch: 20 },
+            ];
+            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']) processorSheet[`${column}1`].s = headerStyle;
+            processorSheet.I1.s = { ...headerStyle, fill: { fgColor: { rgb: 'B96C00' } } };
             visibleRecords.forEach((_, index) => {
                 const row = index + 2;
                 const fill = index % 2 === 0 ? 'FFFFFF' : 'FFF8E8';
-                for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) {
+                for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']) {
                     processorSheet[`${column}${row}`].s = { ...bodyStyle, fill: { fgColor: { rgb: fill } } };
                 }
                 processorSheet[`A${row}`].s = {
@@ -516,8 +526,9 @@ export default function Dashboard({
                     font: { ...bodyStyle.font, bold: true },
                     numFmt: 'mmmm d, yyyy',
                 };
-                if (processorSheet[`G${row}`].v !== '') processorSheet[`G${row}`].s.numFmt = '0.00%';
-                processorSheet[`H${row}`].s = {
+                processorSheet[`G${row}`].s.numFmt = '#,##0';
+                if (processorSheet[`H${row}`].v !== '') processorSheet[`H${row}`].s.numFmt = '0.00%';
+                processorSheet[`I${row}`].s = {
                     ...bodyStyle,
                     alignment: { horizontal: 'center', vertical: 'center' },
                     font: { ...bodyStyle.font, bold: true, color: { rgb: '8A5100' } },
@@ -525,6 +536,23 @@ export default function Dashboard({
                     numFmt: '#,##0',
                 };
             });
+
+            const processorTotalRow = visibleRecords.length + 2;
+            XLSX.utils.sheet_add_aoa(processorSheet, [['MTD TOTAL', '', '', '', '', '', '', '', '']], { origin: `A${processorTotalRow}` });
+            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']) processorSheet[`${column}${processorTotalRow}`].s = metricStyle;
+            for (const column of ['D', 'E', 'F', 'G', 'I']) {
+                processorSheet[`${column}${processorTotalRow}`] = {
+                    f: `SUM(${column}2:${column}${processorTotalRow - 1})`,
+                    v: visibleRecords.reduce(
+                        (sum, record) =>
+                            sum +
+                            ({ D: record.generalExterior, E: record.fourPoint, F: record.premiumFourPoint, G: record.reports, I: 0 }[column] ?? 0),
+                        0,
+                    ),
+                    t: 'n',
+                    s: { ...metricStyle, numFmt: '#,##0', ...(column === 'I' ? { fill: { fgColor: { rgb: 'FFE3A0' } } } : {}) },
+                };
+            }
 
             const qaHeaderRow = 4;
             const qaFirstRow = qaHeaderRow + 1;
@@ -587,7 +615,7 @@ export default function Dashboard({
                 dataSheetName: 'Daily Data',
                 firstDataRow: dailyFirstRow,
                 categoryColumn: 'A',
-                valueColumn: 'D',
+                valueColumn: 'E',
                 points: dashboardData.dailyReports.map((day) => ({ date: day.date, value: day.reports })),
             });
             const chartedWorkbook = addNativeGaugeChart(areaChartWorkbook, {
@@ -606,7 +634,10 @@ export default function Dashboard({
             );
             const download = document.createElement('a');
             download.href = downloadUrl;
-            download.download = `BEES360 MTD REPORT ${startDate} TO ${endDate}.xlsx`;
+            const exportName = (appliedProcessor === 'all' ? 'All Processors' : appliedProcessor)
+                .replace(/[<>:"/\\|?*]/g, '_')
+                .trim();
+            download.download = `${exportName}.xlsx`;
             download.click();
             URL.revokeObjectURL(downloadUrl);
         } catch {

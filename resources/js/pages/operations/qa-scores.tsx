@@ -1,5 +1,6 @@
 import { BeesDatePicker } from '@/components/bees-date-picker';
 import { ProcessorSelect } from '@/components/processor-select';
+import { QaCoaching } from '@/components/qa-coaching';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import AppLayout from '@/layouts/app-layout';
@@ -28,7 +29,6 @@ type QaRow = {
     processor: string;
     nickname: string | null;
     projectId: string | null;
-    qcName: string | null;
     score: number;
     reportUrl: string | null;
     feedback: string[];
@@ -48,6 +48,12 @@ type QaImportHistory = {
 };
 
 type Props = {
+    attributionAudit: {
+        total: number;
+        matched: number;
+        recovered: number;
+        unresolved: { id: number; date: string; projectId: string | null; score: number; reason: string }[];
+    };
     rows: QaRow[];
     processorNames: string[];
     filters: { startDate: string; endDate: string; processor: string };
@@ -74,7 +80,7 @@ const formatDateTime = (date: string) =>
         timeZoneName: 'short',
     }).format(new Date(date));
 
-export default function QaScores({ rows, processorNames, filters, summary, importHistory, canImport, phToday }: Props) {
+export default function QaScores({ rows, processorNames, filters, summary, importHistory, canImport, phToday, attributionAudit }: Props) {
     const page = usePage<{
         flash?: { qaImportSummary?: { saved: number; created: number; updated: number; matched: number; unmatched: number } };
         errors?: Record<string, string>;
@@ -88,8 +94,9 @@ export default function QaScores({ rows, processorNames, filters, summary, impor
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [selectedRow, setSelectedRow] = useState<QaRow | null>(null);
+    const [analysisProcessor, setAnalysisProcessor] = useState<string | null>(null);
     const [successOpen, setSuccessOpen] = useState(Boolean(page.props.flash?.qaImportSummary));
-    const averageTone = summary.averageScore === null ? 'text-[#806f59]' : summary.averageScore >= 90 ? 'text-[#147a51]' : 'text-[#a04435]';
+    const averageTone = summary.averageScore === null ? 'text-[#806f59]' : summary.averageScore > 89 ? 'text-[#147a51]' : 'text-[#a04435]';
     const latestImport = importHistory[0] ?? null;
     const uploadIndicator = uploading
         ? {
@@ -233,18 +240,14 @@ export default function QaScores({ rows, processorNames, filters, summary, impor
                                 {selectedRow?.processor} · {selectedRow && formatDate(selectedRow.date)} · Project {selectedRow?.projectId}
                             </DialogDescription>
                         </DialogHeader>
-                        <div className="grid gap-3 sm:grid-cols-3">
+                        <div className="grid gap-3 sm:grid-cols-2">
                             <div className="rounded-xl bg-[#edf7f1] p-4">
                                 <p className="text-xs text-[#567362]">Total score</p>
                                 <p
-                                    className={`mt-1 text-2xl font-black ${selectedRow && selectedRow.score >= 90 ? 'text-[#147a51]' : 'text-[#a04435]'}`}
+                                    className={`mt-1 text-2xl font-black ${selectedRow && selectedRow.score > 89 ? 'text-[#147a51]' : 'text-[#a04435]'}`}
                                 >
                                     {selectedRow?.score}%
                                 </p>
-                            </div>
-                            <div className="rounded-xl bg-[#fff4d9] p-4">
-                                <p className="text-xs text-[#806f59]">QC reviewer</p>
-                                <p className="mt-1 font-bold text-[#342615]">{selectedRow?.qcName || '—'}</p>
                             </div>
                             <div className="rounded-xl bg-[#f3edff] p-4">
                                 <p className="text-xs text-[#74608e]">Feedback entries</p>
@@ -474,6 +477,57 @@ export default function QaScores({ rows, processorNames, filters, summary, impor
                     ))}
                 </section>
 
+                <section className="rounded-2xl border border-[#e6c783] bg-[#fffdf8] p-5 text-[#342615]">
+                    <h2 className="font-extrabold">Processor matching check</h2>
+                    <p className="mt-2 text-sm text-[#776a57]">
+                        Across all processors in this date range: {attributionAudit.matched} of {attributionAudit.total} assessments matched;{' '}
+                        {attributionAudit.recovered} recovered using project production records.
+                    </p>
+                    {attributionAudit.unresolved.length > 0 ? (
+                        <details className="mt-3">
+                            <summary className="cursor-pointer font-bold text-[#a04435]">
+                                {attributionAudit.unresolved.length} assessments need a processor match
+                            </summary>
+                            <p className="mt-2 text-sm text-[#776a57]">
+                                These records are excluded from processor averages and coaching until their ownership can be verified. Check the
+                                project, date, and processor in the source records.
+                            </p>
+                            <div className="mt-3 max-h-80 overflow-auto">
+                                <table className="w-full text-left text-sm">
+                                    <thead>
+                                        <tr>
+                                            <th className="p-2">Date</th>
+                                            <th className="p-2">Project</th>
+                                            <th className="p-2">Score</th>
+                                            <th className="p-2">Needs verification</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {attributionAudit.unresolved.map((item) => (
+                                            <tr key={item.id} className="border-t border-[#eadbc6]">
+                                                <td className="p-2 whitespace-nowrap">{item.date}</td>
+                                                <td className="p-2">{item.projectId || '—'}</td>
+                                                <td className="p-2">{item.score}%</td>
+                                                <td className="p-2">{item.reason}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </details>
+                    ) : (
+                        <p className="mt-2 text-sm font-semibold text-[#147a51]">Every assessment in this range has a verified processor match.</p>
+                    )}
+                </section>
+
+                <QaCoaching
+                    rows={rows}
+                    startDate={filters.startDate}
+                    endDate={filters.endDate}
+                    selected={analysisProcessor}
+                    onSelect={setAnalysisProcessor}
+                />
+
                 <section className="overflow-hidden rounded-2xl border border-[#e6c783] bg-white shadow-[0_10px_30px_rgba(87,54,14,0.04)]">
                     <div className="border-b border-[#ead6aa] bg-[#fff8e8] px-5 py-4">
                         <h2 className="font-extrabold text-[#342615]">All QA assessment records</h2>
@@ -492,7 +546,6 @@ export default function QaScores({ rows, processorNames, filters, summary, impor
                                         <th className="px-4 py-3">Date</th>
                                         <th className="px-4 py-3">Processor</th>
                                         <th className="px-4 py-3">Project</th>
-                                        <th className="px-4 py-3">QC</th>
                                         <th className="px-4 py-3 text-center">Score</th>
                                         <th className="px-4 py-3 text-center">Feedback</th>
                                         <th className="px-4 py-3 text-center">View</th>
@@ -507,23 +560,33 @@ export default function QaScores({ rows, processorNames, filters, summary, impor
                                                 {row.nickname && <span className="block text-xs text-[#806f59]">N-name: {row.nickname}</span>}
                                             </td>
                                             <td className="px-4 py-3 font-semibold text-[#4b3820]">{row.projectId || '—'}</td>
-                                            <td className="px-4 py-3 text-[#6d5e49]">{row.qcName || '—'}</td>
                                             <td className="px-4 py-3 text-center">
                                                 <span
-                                                    className={`rounded-full px-3 py-1 text-xs font-black ${row.score >= 90 ? 'bg-[#e4f3df] text-[#347846]' : 'bg-[#fbe4df] text-[#a04435]'}`}
+                                                    className={`rounded-full px-3 py-1 text-xs font-black ${row.score > 89 ? 'bg-[#e4f3df] text-[#347846]' : 'bg-[#fbe4df] text-[#a04435]'}`}
                                                 >
                                                     {row.score}%
                                                 </span>
                                             </td>
                                             <td className="px-4 py-3 text-center font-bold text-[#7047c4]">{row.feedback.length}</td>
                                             <td className="px-4 py-3 text-center">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setSelectedRow(row)}
-                                                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#9bc8ad] bg-[#eef8f1] px-3 text-xs font-extrabold text-[#147a51] hover:bg-[#dff1e5]"
-                                                >
-                                                    <Eye className="size-3.5" /> View
-                                                </button>
+                                                <div className="mx-auto grid w-[160px] grid-cols-2 items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSelectedRow(row)}
+                                                        className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-[#9bc8ad] bg-[#eef8f1] px-3 text-xs font-extrabold text-[#147a51] hover:bg-[#dff1e5]"
+                                                    >
+                                                        <Eye className="size-3.5" /> View
+                                                    </button>
+                                                    {row.score < 100 && (
+                                                        <Button
+                                                            onClick={() => setAnalysisProcessor(row.processor)}
+                                                            aria-label={`Analyze ${row.processor} for project ${row.projectId || row.id}`}
+                                                            className="h-9 w-full rounded-lg bg-[#c97900] px-3 text-xs text-white hover:bg-[#a96000]"
+                                                        >
+                                                            Analyze
+                                                        </Button>
+                                                    )}
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}

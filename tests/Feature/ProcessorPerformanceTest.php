@@ -138,6 +138,8 @@ test('CST processor filters always serialize rows as a list for React', function
 test('QA and Scores shows all assessments and filters them by processor', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-08 09:00:00', 'Asia/Manila'));
     $user = User::factory()->create(['role' => UserRole::Qa]);
+    createPerformanceProcessor('Allan Layug', 2);
+    createPerformanceProcessor('Emma Alegre', 2);
 
     foreach ([['Allan Layug', 'QA-1', 98], ['Emma Alegre', 'QA-2', 88]] as [$processor, $project, $score]) {
         QaAssessment::query()->create([

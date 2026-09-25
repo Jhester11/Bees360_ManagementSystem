@@ -5,11 +5,13 @@ const skeletonRows = Array.from({ length: 7 }, (_, index) => index);
 const skeletonColumns = Array.from({ length: 5 }, (_, index) => index);
 export function PageLoadingOverlay() {
     const [isLoading, setIsLoading] = useState(false);
+    const [isSlow, setIsSlow] = useState(false);
     const activeDestinationRef = useRef<string | null>(null);
 
     useEffect(() => {
         let readyFrame: number | undefined;
         let paintFrame: number | undefined;
+        let slowTimer: number | undefined;
 
         const markPageReady = () => {
             if (activeDestinationRef.current) return;
@@ -19,6 +21,8 @@ export function PageLoadingOverlay() {
         };
 
         const hideLoader = () => {
+            window.clearTimeout(slowTimer);
+            setIsSlow(false);
             setIsLoading(false);
             if (readyFrame !== undefined) window.cancelAnimationFrame(readyFrame);
             readyFrame = window.requestAnimationFrame(markPageReady);
@@ -30,9 +34,12 @@ export function PageLoadingOverlay() {
             activeDestinationRef.current = destination;
             document.documentElement.dataset.pageLoading = 'true';
             setIsLoading(true);
+            setIsSlow(false);
+            window.clearTimeout(slowTimer);
+            slowTimer = window.setTimeout(() => setIsSlow(true), 15_000);
         };
 
-        const stopBeforeListener = router.on('before', (event) => {
+        const stopStartListener = router.on('start', (event) => {
             if (event.detail.visit.prefetch) return;
 
             const destination = new URL(String(event.detail.visit.url), window.location.href);
@@ -58,26 +65,35 @@ export function PageLoadingOverlay() {
             paintFrame = window.requestAnimationFrame(hideLoader);
         });
 
-        const stopNavigateListener = router.on('navigate', (event) => {
+        const stopNavigateListener = router.on('navigate', () => {
             if (!activeDestinationRef.current) return;
-            const destination = new URL(event.detail.page.url, window.location.href);
-            if (activeDestinationRef.current !== destination.pathname) return;
+            const activeDestination = activeDestinationRef.current;
             if (paintFrame !== undefined) window.cancelAnimationFrame(paintFrame);
             paintFrame = window.requestAnimationFrame(() => {
-                if (activeDestinationRef.current !== destination.pathname) return;
+                if (activeDestinationRef.current !== activeDestination) return;
                 activeDestinationRef.current = null;
                 hideLoader();
             });
         });
 
-        // The server-rendered skeleton handles the first full browser load.
-        // Announce readiness here only when that skeleton has been removed.
+        const resetLoader = () => {
+            activeDestinationRef.current = null;
+            hideLoader();
+        };
+        const stopExceptionListener = router.on('exception', resetLoader);
+        const stopInvalidListener = router.on('invalid', resetLoader);
+
+        // React has committed: do not wait for external fonts or images to load.
+        document.getElementById('bees360-boot-skeleton')?.remove();
         readyFrame = window.requestAnimationFrame(markPageReady);
 
         return () => {
-            stopBeforeListener();
+            stopStartListener();
             stopFinishListener();
             stopNavigateListener();
+            stopExceptionListener();
+            stopInvalidListener();
+            window.clearTimeout(slowTimer);
             if (readyFrame !== undefined) window.cancelAnimationFrame(readyFrame);
             if (paintFrame !== undefined) window.cancelAnimationFrame(paintFrame);
             delete document.documentElement.dataset.pageLoading;
@@ -88,6 +104,25 @@ export function PageLoadingOverlay() {
 
     return (
         <div className="fixed inset-0 z-[100] overflow-hidden bg-[#fffdf8] text-[#4a351d]" role="status" aria-live="polite" aria-label="Loading page">
+            {isSlow && (
+                <div className="absolute top-4 right-4 z-10 rounded-xl border border-[#eadfcf] bg-white p-4 shadow-lg">
+                    <p className="text-sm">This page is taking longer to load.</p>
+                    <button
+                        type="button"
+                        className="mt-2 rounded-lg bg-[#c97900] px-4 py-2 text-sm font-bold text-white"
+                        onClick={() => {
+                            router.cancelAll();
+                            activeDestinationRef.current = null;
+                            setIsLoading(false);
+                            setIsSlow(false);
+                            delete document.documentElement.dataset.pageLoading;
+                            window.dispatchEvent(new CustomEvent('bees360:page-ready'));
+                        }}
+                    >
+                        Cancel loading
+                    </button>
+                </div>
+            )}
             <div className="flex h-full animate-pulse">
                 <aside className="hidden w-64 shrink-0 border-r border-[#eadfcf] bg-[#342515] p-5 md:block">
                     <div className="flex items-center gap-3 border-b border-white/10 pb-6">

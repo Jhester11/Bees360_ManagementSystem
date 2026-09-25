@@ -6,15 +6,17 @@ use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\QaAssessment;
 use App\Models\QaImport;
-use App\Models\User;
+use App\Services\ActiveProcessorRoster;
+use App\Services\QaProcessorAttribution;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class QaScoreController extends Controller
 {
+    public function __construct(private readonly ActiveProcessorRoster $roster, private readonly QaProcessorAttribution $attribution) {}
+
     public function __invoke(Request $request): Response
     {
         $phToday = CarbonImmutable::now('Asia/Manila')->startOfDay();
@@ -27,41 +29,48 @@ class QaScoreController extends Controller
 
         $processor = trim($request->string('processor')->toString());
         $query = QaAssessment::query()
-            ->with('processor:id,name,n_name')
             ->whereBetween('assessment_date', [$startDate->toDateString(), $endDate->toDateString()]);
 
-        if ($processor !== '' && $processor !== 'all') {
-            $query->where(function ($builder) use ($processor): void {
-                $builder->where('processor_name', $processor)
-                    ->orWhereHas('processor', fn ($userQuery) => $userQuery->where('name', $processor));
-            });
-        }
+        $processors = $this->roster->all();
+        $selectedProcessor = $this->roster->canonicalName($processor, $processors) ?? $processor;
 
-        $rows = $query
+        $assessments = $query
             ->orderByDesc('assessment_date')
             ->orderByDesc('id')
-            ->limit(10000)
-            ->get()
-            ->map(fn (QaAssessment $assessment): array => [
-                'id' => $assessment->id,
-                'date' => $assessment->assessment_date->format('Y-m-d'),
-                'processor' => $assessment->processor?->name ?? $assessment->processor_name,
-                'nickname' => $assessment->processor?->n_name,
-                'projectId' => $assessment->project_id,
-                'qcName' => $assessment->qc_name,
-                'score' => (float) $assessment->score,
-                'reportUrl' => $assessment->report_url,
-                'feedback' => $assessment->feedback ?? [],
-                'sourceFile' => $assessment->source_file,
-            ]);
+            ->get();
+        $audit = $this->attribution->resolve($assessments);
+        $rows = $audit['assessments']
+            ->map(function (QaAssessment $assessment): array {
+                $account = $assessment->processor;
+
+                return [
+                    'id' => $assessment->id,
+                    'date' => $assessment->assessment_date->format('Y-m-d'),
+                    'processor' => $account->name,
+                    'nickname' => $account->n_name,
+                    'projectId' => $assessment->project_id,
+                    'score' => (float) $assessment->score,
+                    'reportUrl' => $assessment->report_url,
+                    'feedback' => $assessment->feedback ?? [],
+                    'sourceFile' => $assessment->source_file,
+                ];
+            })
+            ->filter(fn (array $row): bool => $selectedProcessor === '' || $selectedProcessor === 'all' || $row['processor'] === $selectedProcessor)
+            ->values();
 
         return Inertia::render('operations/qa-scores', [
             'rows' => $rows,
-            'processorNames' => $this->processorNames(),
+            'attributionAudit' => [
+                'total' => $assessments->count(),
+                'matched' => $audit['assessments']->count(),
+                'recovered' => $audit['recovered'],
+                'unresolved' => $audit['unresolved'],
+            ],
+            'processorNames' => $processors->pluck('name')->sort()->values(),
             'filters' => [
                 'startDate' => $startDate->toDateString(),
                 'endDate' => $endDate->toDateString(),
-                'processor' => $processor === '' ? 'all' : $processor,
+                'processor' => $selectedProcessor === '' ? 'all' : $selectedProcessor,
             ],
             'summary' => [
                 'assessments' => $rows->count(),
@@ -89,30 +98,6 @@ class QaScoreController extends Controller
             'canImport' => in_array($request->user()?->role, [UserRole::Operations, UserRole::Qa], true),
             'phToday' => $phToday->toDateString(),
         ]);
-    }
-
-    /** @return Collection<int, string> */
-    private function processorNames(): Collection
-    {
-        return QaAssessment::query()
-            ->distinct()
-            ->orderBy('processor_name')
-            ->pluck('processor_name')
-            ->merge(User::query()
-                ->where(function ($query): void {
-                    $query->where('role', UserRole::Processor->value)
-                        ->orWhere(function ($query): void {
-                            $query->where('tracks_production', true)
-                                ->whereBetween('batch', [1, 3]);
-                        });
-                })
-                ->where('is_active', true)
-                ->orderBy('name')
-                ->pluck('name'))
-            ->filter()
-            ->unique()
-            ->sort()
-            ->values();
     }
 
     private function dateOrDefault(string $date, CarbonImmutable $default): CarbonImmutable

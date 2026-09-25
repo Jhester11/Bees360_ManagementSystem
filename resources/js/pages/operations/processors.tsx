@@ -45,7 +45,6 @@ type QaHistoryRow = {
     processor: string;
     nickname: string | null;
     projectId: string | null;
-    qcName: string | null;
     reportUrl: string | null;
     score: number;
     feedback: string[];
@@ -759,12 +758,11 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                             <div>
                                                 <p className="font-black text-[#342615]">Project {row.projectId || 'Not provided'}</p>
                                                 <p className="mt-1 text-xs font-semibold text-[#806f59]">
-                                                    {feedbackScope === 'all' ? `${formatQaDay(row.date)} · ` : ''}Reviewed by{' '}
-                                                    {row.qcName || 'QA reviewer'}
+                                                    {formatQaDay(row.date)}
                                                 </p>
                                             </div>
                                             <span
-                                                className={`rounded-full px-3 py-1 text-xs font-black ${row.score >= 90 ? 'bg-[#e4f3df] text-[#347846]' : 'bg-[#fbe4df] text-[#a04435]'}`}
+                                                className={`rounded-full px-3 py-1 text-xs font-black ${row.score > 89 ? 'bg-[#e4f3df] text-[#347846]' : 'bg-[#fbe4df] text-[#a04435]'}`}
                                             >
                                                 {row.score}% score
                                             </span>
@@ -1156,7 +1154,6 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                                 <th className="px-4 py-3">Date</th>
                                                 <th className="px-4 py-3">Project</th>
                                                 <th className="px-4 py-3">Processor</th>
-                                                <th className="px-4 py-3">QC</th>
                                                 <th className="px-4 py-3 text-center">Score</th>
                                                 <th className="px-4 py-3 text-center">Errors</th>
                                                 <th className="px-4 py-3 text-center">Feedback</th>
@@ -1171,10 +1168,9 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                                         <span className="font-bold text-[#342615]">{row.processor}</span>
                                                         {row.nickname && <span className="block text-xs text-[#8a7962]">N-name: {row.nickname}</span>}
                                                     </td>
-                                                    <td className="px-4 py-3 text-[#6d5e49]">{row.qcName || '—'}</td>
                                                     <td className="px-4 py-3 text-center">
                                                         <span
-                                                            className={`rounded-full px-3 py-1 text-xs font-black ${row.score >= 90 ? 'bg-[#e4f3df] text-[#347846]' : 'bg-[#fbe4df] text-[#a04435]'}`}
+                                                            className={`rounded-full px-3 py-1 text-xs font-black ${row.score > 89 ? 'bg-[#e4f3df] text-[#347846]' : 'bg-[#fbe4df] text-[#a04435]'}`}
                                                         >
                                                             {row.score}%
                                                         </span>
@@ -1196,7 +1192,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                             ))}
                                             {visibleQaHistory.length === 0 && (
                                                 <tr>
-                                                    <td colSpan={7} className="px-5 py-12 text-center text-[#806f59]">
+                                                    <td colSpan={6} className="px-5 py-12 text-center text-[#806f59]">
                                                         {qaRange === 'all'
                                                             ? 'There is no QA data for this processor.'
                                                             : `There is no QA data for this processor in ${formatQaMonth(selectedQaMonth)}.`}

@@ -32,16 +32,6 @@ createInertiaApp({
                 <PageLoadingOverlay />
             </>,
         );
-
-        const bootSkeleton = document.getElementById('bees360-boot-skeleton');
-        const hideBootSkeleton = () => {
-            window.requestAnimationFrame(() => {
-                bootSkeleton?.remove();
-                window.dispatchEvent(new CustomEvent('bees360:page-ready'));
-            });
-        };
-        if (document.readyState === 'complete') hideBootSkeleton();
-        else window.addEventListener('load', hideBootSkeleton, { once: true });
     },
     progress: {
         color: '#f4b400',

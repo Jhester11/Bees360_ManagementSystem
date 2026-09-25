@@ -93,7 +93,7 @@ export function addNativeAreaChart(workbookBytes: Uint8Array, options: AreaChart
 <xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
   <xdr:twoCellAnchor>
     <xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>8</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
-    <xdr:to><xdr:col>8</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>25</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
+    <xdr:to><xdr:col>12</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>25</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
     <xdr:graphicFrame macro="">
       <xdr:nvGraphicFramePr><xdr:cNvPr id="2" name="${xml(options.title)}"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>
       <xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>
@@ -117,7 +117,7 @@ export function addNativeAreaChart(workbookBytes: Uint8Array, options: AreaChart
       <c:areaChart>
         <c:grouping val="standard"/><c:varyColors val="0"/>
         <c:ser>
-          <c:idx val="0"/><c:order val="0"/><c:tx><c:v>Reports polished</c:v></c:tx>
+          <c:idx val="0"/><c:order val="0"/><c:tx><c:v>Reports assembled</c:v></c:tx>
           <c:spPr><a:solidFill><a:srgbClr val="F6CF71"><a:alpha val="45000"/></a:srgbClr></a:solidFill><a:ln w="28575"><a:solidFill><a:srgbClr val="C87C00"/></a:solidFill></a:ln></c:spPr>
           <c:cat><c:numRef><c:f>${xml(categoryFormula)}</c:f><c:numCache><c:formatCode>mmm d</c:formatCode><c:ptCount val="${options.points.length}"/>${categoryCache}</c:numCache></c:numRef></c:cat>
           <c:val><c:numRef><c:f>${xml(valueFormula)}</c:f><c:numCache><c:formatCode>0</c:formatCode><c:ptCount val="${options.points.length}"/>${valueCache}</c:numCache></c:numRef></c:val>

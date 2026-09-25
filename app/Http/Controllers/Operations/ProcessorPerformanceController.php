@@ -8,6 +8,7 @@ use App\Models\CstProcessorMetric;
 use App\Models\QaAssessment;
 use App\Models\ReportEntry;
 use App\Services\ActiveProcessorRoster;
+use App\Services\QaProcessorAttribution;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,7 +19,7 @@ use Inertia\Response;
 
 class ProcessorPerformanceController extends Controller
 {
-    public function __construct(private readonly ActiveProcessorRoster $roster) {}
+    public function __construct(private readonly ActiveProcessorRoster $roster, private readonly QaProcessorAttribution $attribution) {}
 
     public function index(Request $request): Response
     {
@@ -42,6 +43,8 @@ class ProcessorPerformanceController extends Controller
             ->orderByDesc('assessment_date')
             ->orderByDesc('id')
             ->get();
+
+        $qaAssessments = $this->attribution->resolve($qaAssessments)['assessments'];
 
         $ph = ReportEntry::query()
             ->whereBetween('report_date', [$startDate->toDateString(), $endDate->toDateString()])

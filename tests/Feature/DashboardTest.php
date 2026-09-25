@@ -307,6 +307,7 @@ test('the first dashboard response includes a skeleton before the web app loads'
 test('operations dashboard totals and accuracy follow the current Philippine month', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-15 10:00:00', 'Asia/Manila'));
     $operations = User::factory()->create(['role' => UserRole::Operations]);
+    User::factory()->create(['name' => 'Allan Layug', 'role' => UserRole::Processor, 'batch' => 1, 'is_active' => true]);
 
     foreach ([
         ['date' => '2026-08-31', 'id' => 'AUG-GE', 'category' => 'general_exterior'],
@@ -354,6 +355,7 @@ test('operations dashboard totals and accuracy follow the current Philippine mon
 
 test('operations dashboard exposes QA accuracy records for the MTD Excel export', function () {
     $operations = User::factory()->create(['role' => UserRole::Operations]);
+    User::factory()->create(['name' => 'Mac Evens T. Payongayong', 'role' => UserRole::Processor, 'batch' => 1, 'is_active' => true]);
     ReportEntry::query()->create([
         'report_date' => '2026-09-02',
         'source' => 'closed',
@@ -385,12 +387,16 @@ test('operations dashboard exposes QA accuracy records for the MTD Excel export'
         ->where('accuracyRecords.0.score', 92.5));
 });
 
-test('MTD reports start counting at noon Philippine Time on the first day of each month', function () {
+test('MTD reports include full Philippine days from midnight on the first day of the month', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-02 00:30:00', 'Asia/Manila'));
     $operations = User::factory()->create(['role' => UserRole::Operations]);
 
     foreach ([
+        ['PREVIOUS-MONTH', '2026-08-31 23:59:59'],
+        ['AT-MIDNIGHT', '2026-09-01 00:00:00'],
         ['BEFORE-NOON', '2026-09-01 11:59:59'],
         ['AT-NOON', '2026-09-01 12:00:00'],
+        ['END-OF-DAY', '2026-09-01 23:59:59'],
         ['NEXT-DAY', '2026-09-02 08:00:00'],
     ] as [$projectId, $assembledAt]) {
         ReportEntry::query()->create([
@@ -407,14 +413,19 @@ test('MTD reports start counting at noon Philippine Time on the first day of eac
     }
 
     $this->actingAs($operations)->get('/operations/mtd')->assertInertia(fn (Assert $page) => $page
-        ->has('reportRecords', 2)
-        ->where('reportRecords.0.date', '2026-09-01')
+        ->where('phToday', '2026-09-02')
+        ->where('monthlyMetrics.totalCases', 5)
+        ->has('reportRecords', 3)
+        ->where('reportRecords.0.date', '2026-08-31')
         ->where('reportRecords.0.reports', 1)
-        ->where('reportRecords.1.date', '2026-09-02')
-        ->where('reportRecords.1.reports', 1));
+        ->where('reportRecords.1.date', '2026-09-01')
+        ->where('reportRecords.1.reports', 4)
+        ->where('reportRecords.2.date', '2026-09-02')
+        ->where('reportRecords.2.reports', 1));
 
     $this->get('/dashboard')->assertInertia(fn (Assert $page) => $page
-        ->where('reportRecords.0.reports', 2));
+        ->where('monthlyMetrics.totalCases', 5)
+        ->where('reportRecords.1.reports', 4));
 });
 
 test('leaderboard combines a processors over-delivered days into one overall result', function () {

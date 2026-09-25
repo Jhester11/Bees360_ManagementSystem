@@ -9,6 +9,7 @@ use App\Models\QaAssessment;
 use App\Models\ReportEntry;
 use App\Models\User;
 use App\Services\ActiveProcessorRoster;
+use App\Services\QaProcessorAttribution;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -40,7 +41,7 @@ class DashboardController extends Controller
         'wengmir africa' => 'wengmir a africa',
     ];
 
-    public function __construct(private readonly ActiveProcessorRoster $processorRoster) {}
+    public function __construct(private readonly ActiveProcessorRoster $processorRoster, private readonly QaProcessorAttribution $attribution) {}
 
     public function index(Request $request): Response|RedirectResponse
     {
@@ -67,7 +68,7 @@ class DashboardController extends Controller
 
     private function renderDashboard(bool $showReportRange = false): Response
     {
-        $data = $this->reportData(applyMtdNoonCutoff: $showReportRange);
+        $data = $this->reportData();
         $phToday = CarbonImmutable::now('Asia/Manila')->toDateString();
         $month = substr($phToday, 0, 7);
         $monthlyReports = collect($data['reportRecords'])->filter(fn (array $record): bool => str_starts_with($record['date'], $month) && $record['date'] <= $phToday);
@@ -130,6 +131,7 @@ class DashboardController extends Controller
             ->orderByDesc('id')
             ->get()
             ->values();
+        $allQaAssessments = $this->attribution->resolve($allQaAssessments)['assessments'];
         $qaAssessments = $allQaAssessments
             ->filter(fn (QaAssessment $assessment): bool => $assessment->processor_id !== null
                 ? $assessment->processor_id === $processor->id
@@ -434,7 +436,7 @@ class DashboardController extends Controller
         }
     }
 
-    private function reportData(bool $applyMtdNoonCutoff = false): array
+    private function reportData(): array
     {
         $processorAccounts = $this->processorRoster->all();
         $entries = ReportEntry::query()
@@ -449,12 +451,6 @@ class DashboardController extends Controller
                 'report_category',
                 'assembled_at',
             ])
-            ->when(
-                $applyMtdNoonCutoff,
-                fn (Collection $entries): Collection => $entries->filter(
-                    fn (ReportEntry $entry): bool => $this->isWithinMtdCountingWindow($entry),
-                ),
-            )
             ->unique(fn (ReportEntry $entry) => implode('|', [
                 $entry->report_date->format('Y-m-d'),
                 $this->processorKey($entry->processor_name),
@@ -468,9 +464,10 @@ class DashboardController extends Controller
             ->merge($processorAccounts->mapWithKeys(
                 fn (User $processor): array => [$this->processorKey($processor->name) => $processor->name],
             ));
-        $accuracyRecords = QaAssessment::query()
+        $qaAssessments = QaAssessment::query()
             ->orderBy('assessment_date')
-            ->get(['assessment_date', 'processor_name', 'project_id', 'score'])
+            ->get(['id', 'processor_id', 'assessment_date', 'processor_name', 'project_id', 'score']);
+        $accuracyRecords = $this->attribution->resolve($qaAssessments)['assessments']
             ->map(fn (QaAssessment $assessment): array => [
                 'date' => $assessment->assessment_date->format('Y-m-d'),
                 'processor' => $processorNamesByKey->get(
@@ -580,14 +577,5 @@ class DashboardController extends Controller
                 'topProcessors' => $topProcessors,
             ],
         ];
-    }
-
-    private function isWithinMtdCountingWindow(ReportEntry $entry): bool
-    {
-        if ($entry->report_date->day !== 1 || $entry->assembled_at === null) {
-            return true;
-        }
-
-        return $entry->assembled_at->format('H:i:s') >= '12:00:00';
     }
 }

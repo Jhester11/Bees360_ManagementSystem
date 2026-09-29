@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import AppLayout from '@/layouts/app-layout';
+import { appendSavedQueue, loadSavedQueue, pendingQueueCounts } from '@/lib/saved-queue-export';
 import { assertWorksheetRowLimit, readSpreadsheet } from '@/lib/spreadsheet-upload';
 import { BeesDatePicker, formatDate, philippinesToday } from '@/pages/dashboard';
 import { type BreadcrumbItem } from '@/types';
@@ -172,6 +173,14 @@ export default function Reports({ reportEntries, processorRoster, reportDate: lo
     async function exportCombinedReport() {
         if (!hasReportData) return;
 
+        let savedQueue;
+        try {
+            savedQueue = await loadSavedQueue(reportDate, reportDate);
+        } catch (error) {
+            setUploadError(error instanceof Error ? error.message : 'Queue data could not be loaded.');
+            return;
+        }
+        const pending = pendingQueueCounts(savedQueue, reportType === 'midday');
         const XLSX = await import('xlsx-js-style');
 
         const headerRow = 4;
@@ -181,7 +190,7 @@ export default function Reports({ reportEntries, processorRoster, reportDate: lo
             ['BEES360 | DAILY OPERATIONS REPORT'],
             [`${reportLabel} · ${formatDate(reportDate)} · Batch 1, Batch 2 and Batch 3`],
             [],
-            ['NAMES', 'N-NAME', 'BATCH', 'DAY', 'GEN EXT', '4-POINT', 'PREMIUM 4-POINT', 'TOTAL'],
+            ['NAMES', 'N-NAME', 'BATCH', 'DAY', 'GEN EXT', '4-POINT', 'PREMIUM 4-POINT', 'TOTAL', 'PENDING'],
             ...allRows.map((row) => [
                 row.name,
                 row.nickname,
@@ -191,8 +200,9 @@ export default function Reports({ reportEntries, processorRoster, reportDate: lo
                 row.fourPoint,
                 row.premiumFourPoint,
                 0,
+                pending.get(row.name) ?? '',
             ]),
-            ['COMBINED TOTAL', '', '', '', 0, 0, 0, 0],
+            ['COMBINED TOTAL', '', '', '', 0, 0, 0, 0, ''],
         ]) as WorkSheet;
         const titleStyle = {
             alignment: { horizontal: 'center', vertical: 'center' },
@@ -240,7 +250,7 @@ export default function Reports({ reportEntries, processorRoster, reportDate: lo
         };
 
         for (let row = 1; row <= totalRow; row += 1) {
-            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) {
+            for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']) {
                 const address = `${column}${row}`;
                 worksheet[address] ??= { t: 's', v: '' };
                 worksheet[address].s = whiteCellStyle;
@@ -248,16 +258,16 @@ export default function Reports({ reportEntries, processorRoster, reportDate: lo
         }
 
         worksheet['!merges'] = [
-            { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
-            { s: { r: 1, c: 0 }, e: { r: 1, c: 7 } },
+            { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
+            { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
             { s: { r: totalRow - 1, c: 0 }, e: { r: totalRow - 1, c: 3 } },
         ];
-        worksheet['!cols'] = [{ wch: 31 }, { wch: 16 }, { wch: 13 }, { wch: 23 }, { wch: 17 }, { wch: 14 }, { wch: 20 }, { wch: 13 }];
+        worksheet['!cols'] = [{ wch: 31 }, { wch: 16 }, { wch: 13 }, { wch: 23 }, { wch: 17 }, { wch: 14 }, { wch: 20 }, { wch: 13 }, { wch: 14 }];
         worksheet['!rows'] = [{ hpt: 27 }, { hpt: 20 }, { hpt: 8 }, { hpt: 25 }];
         worksheet.A1.s = titleStyle;
         worksheet.A2.s = subtitleStyle;
 
-        for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) worksheet[`${column}${headerRow}`].s = headerStyle;
+        for (const column of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']) worksheet[`${column}${headerRow}`].s = headerStyle;
         worksheet[`H${headerRow}`].s = { ...headerStyle, fill: { fgColor: { rgb: '2F2112' } } };
         allRows.forEach((_, index) => {
             const rowNumber = firstDataRow + index;
@@ -266,7 +276,7 @@ export default function Reports({ reportEntries, processorRoster, reportDate: lo
             worksheet[`B${rowNumber}`].s = { ...rowStyle, alignment: { horizontal: 'left', vertical: 'center' } };
             for (const column of ['C', 'D'])
                 worksheet[`${column}${rowNumber}`].s = { ...rowStyle, alignment: { horizontal: 'center', vertical: 'center' } };
-            for (const column of ['E', 'F', 'G'])
+            for (const column of ['E', 'F', 'G', 'I'])
                 worksheet[`${column}${rowNumber}`].s = { ...numberStyle, ...(index % 2 === 1 ? { fill: { fgColor: { rgb: 'FFF8E8' } } } : {}) };
             worksheet[`H${rowNumber}`] = { f: `SUM(E${rowNumber}:G${rowNumber})`, t: 'n', s: totalColumnStyle };
         });
@@ -286,8 +296,17 @@ export default function Reports({ reportEntries, processorRoster, reportDate: lo
             s: finalTotalStyle,
         };
 
+        worksheet[`I${totalRow}`] = pending.size
+            ? {
+                  f: `SUM(I${firstDataRow}:I${totalRow - 1})`,
+                  v: allRows.reduce((sum, row) => sum + (pending.get(row.name) ?? 0), 0),
+                  t: 'n',
+                  s: totalNumberStyle,
+              }
+            : { t: 's', v: '', s: totalNumberStyle };
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, 'Combined Report');
+        if (!(await appendSavedQueue(workbook, reportDate, reportDate, undefined, savedQueue))) return;
         XLSX.writeFile(workbook, `Bees360_Combined_Report_${reportDate}.xlsx`, { compression: true });
     }
 

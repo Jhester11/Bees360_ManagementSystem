@@ -2,6 +2,7 @@ import { openProcessorNotification, type ProcessorQaNotification } from '@/compo
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import AppLayout from '@/layouts/app-layout';
+import { appendSavedQueue } from '@/lib/saved-queue-export';
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, router, usePage, usePoll } from '@inertiajs/react';
 import {
@@ -508,6 +509,14 @@ export default function ProcessorDashboard({
             workbook.Props = { Title: 'Daily Productivity Report', Subject: `${periodLabel} ${timeLabel}`, Author: 'Bees360' };
             XLSX.utils.book_append_sheet(workbook, statusWorksheet, 'Delivery Status');
             XLSX.utils.book_append_sheet(workbook, worksheet, 'Daily Data');
+            if (
+                !(await appendSavedQueue(
+                    workbook,
+                    `${selectedMonth}-01`,
+                    `${selectedMonth}-${new Date(Number(selectedMonth.slice(0, 4)), Number(selectedMonth.slice(5, 7)), 0).getDate()}`,
+                ))
+            )
+                return;
             XLSX.writeFile(workbook, 'DAILY PRODUCTIVITY REPORT.xlsx', { compression: true });
         } finally {
             setExporting(false);

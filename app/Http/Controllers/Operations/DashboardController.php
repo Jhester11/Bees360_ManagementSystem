@@ -10,6 +10,7 @@ use App\Models\ReportEntry;
 use App\Models\User;
 use App\Services\ActiveProcessorRoster;
 use App\Services\QaProcessorAttribution;
+use App\Support\UniqueRecords;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -103,12 +104,12 @@ class DashboardController extends Controller
             ->whereBetween('report_date', [$startDate->toDateString(), $endDate->toDateString()])
             ->orderByDesc('source')
             ->get(['report_date', 'source', 'processor_name', 'project_id', 'inspection_type', 'report_category'])
-            ->unique(fn (ReportEntry $entry): string => implode('|', [
+            ->filter(UniqueRecords::byKey(fn (ReportEntry $entry): string => implode('|', [
                 $entry->report_date->format('Y-m-d'),
                 $this->processorKey($entry->processor_name),
                 $entry->project_id,
                 $entry->inspection_type,
-            ]))
+            ])))
             ->values();
         $phEntries = $allPhEntries
             ->filter(fn (ReportEntry $entry): bool => $this->belongsToProcessor($processor, $entry->processor_name))
@@ -451,12 +452,12 @@ class DashboardController extends Controller
                 'report_category',
                 'assembled_at',
             ])
-            ->unique(fn (ReportEntry $entry) => implode('|', [
+            ->filter(UniqueRecords::byKey(fn (ReportEntry $entry) => implode('|', [
                 $entry->report_date->format('Y-m-d'),
                 $this->processorKey($entry->processor_name),
                 $entry->project_id,
                 $entry->inspection_type,
-            ]))
+            ])))
             ->values();
         $processorNamesByKey = $entries
             ->pluck('processor_name')

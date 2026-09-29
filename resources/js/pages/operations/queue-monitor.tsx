@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import AppLayout from '@/layouts/app-layout';
+import { appendSavedQueue } from '@/lib/saved-queue-export';
 import { assertWorksheetRowLimit, readSpreadsheet } from '@/lib/spreadsheet-upload';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, usePage } from '@inertiajs/react';
@@ -265,11 +266,13 @@ async function inspectWorkbook(file: File, checkpoint: CheckpointId, processorRo
 
 export default function QueueMonitor({
     savedSnapshots = [],
+    reportDate,
     processorRoster,
     historyVisible,
     historyEntries,
 }: {
     savedSnapshots?: WorkbookResult[];
+    reportDate: string;
     processorRoster: ProcessorDefinition[];
     historyVisible: boolean;
     historyEntries: QueueHistoryEntry[];
@@ -279,16 +282,18 @@ export default function QueueMonitor({
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [philippinesNow, setPhilippinesNow] = useState(() => new Date());
     const latestId = latestCheckpointId();
-    const currentReportDate = philippinesDate(philippinesNow);
+    const currentReportDate = reportDate;
     const [selectedId, setSelectedId] = useState<CheckpointId>(() =>
         checkpoints.some((checkpoint) => checkpoint.id === requestedCheckpoint) ? (requestedCheckpoint as CheckpointId) : latestCheckpointId(),
     );
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
-    const [checkedQueues, setCheckedQueues] = useState<Record<string, Partial<Record<CheckpointId, WorkbookResult>>>>(() =>
-        savedSnapshots.reduce<Record<string, Partial<Record<CheckpointId, WorkbookResult>>>>((days, snapshot) => {
-            days[snapshot.reportDate] = { ...days[snapshot.reportDate], [snapshot.checkpoint]: snapshot };
-            return days;
-        }, {}),
+    const checkedQueues = useMemo(
+        () =>
+            savedSnapshots.reduce<Record<string, Partial<Record<CheckpointId, WorkbookResult>>>>((days, snapshot) => {
+                days[snapshot.reportDate] = { ...days[snapshot.reportDate], [snapshot.checkpoint]: snapshot };
+                return days;
+            }, {}),
+        [savedSnapshots],
     );
     const [showConfirmation, setShowConfirmation] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
@@ -374,13 +379,6 @@ export default function QueueMonitor({
                 {
                     preserveScroll: true,
                     onSuccess: () => {
-                        setCheckedQueues((current) => ({
-                            ...current,
-                            [result.reportDate]: {
-                                ...current[result.reportDate],
-                                [selectedId]: result,
-                            },
-                        }));
                         setShowSuccess(true);
                     },
                     onError: (errors) =>
@@ -414,7 +412,11 @@ export default function QueueMonitor({
             return result.processorRows.find((processor) => processor.name === processorName)?.total ?? 0;
         };
 
-        const rows = processorRoster.map((processor) => {
+        const exportProcessors = new Map(processorRoster.map((processor) => [processor.name, processor]));
+        Object.values(currentDayQueues).forEach((snapshot) =>
+            snapshot?.processorRows.forEach((processor) => exportProcessors.set(processor.name, processor)),
+        );
+        const rows = [...exportProcessors.values()].map((processor) => {
             const start = processorTotal('start', processor.name);
             const eleven = processorTotal('11am', processor.name);
             const two = processorTotal('2pm', processor.name);
@@ -610,11 +612,12 @@ export default function QueueMonitor({
 
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, 'Daily Queue Monitor');
+        if (!(await appendSavedQueue(workbook, currentReportDate, currentReportDate))) return;
         XLSX.writeFile(workbook, `Bees360_Daily_Queue_Monitor_${currentReportDate}.xlsx`, { compression: true });
     }
 
     function toggleHistory() {
-        router.get('/operations/queue-monitor', historyVisible ? {} : { history: 1 }, {
+        router.get('/operations/queue-monitor', historyVisible ? { date: reportDate } : { history: 1, date: reportDate }, {
             only: ['historyEntries', 'historyVisible'],
             preserveScroll: true,
             preserveState: true,
@@ -658,6 +661,19 @@ export default function QueueMonitor({
                                     <Activity className="size-4" /> Operations Queue
                                 </div>
                                 <h1 className="text-2xl font-black tracking-tight sm:text-3xl">Queue Monitor</h1>
+                                <label className="mt-3 flex items-center gap-3 text-sm">
+                                    Saved report date
+                                    <input
+                                        type="date"
+                                        value={reportDate}
+                                        max={philippinesDate(philippinesNow)}
+                                        className="rounded border border-white/30 bg-[#3a2817] p-2 text-white"
+                                        onChange={(event) => {
+                                            if (event.target.value)
+                                                router.get('/operations/queue-monitor', { date: event.target.value }, { preserveScroll: true });
+                                        }}
+                                    />
+                                </label>
                                 <p className="mt-2 max-w-2xl text-sm leading-6 text-[#f3e5ce]">
                                     Upload and save each daily Operations queue checkpoint using Philippine reporting time.
                                 </p>

@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\ActiveProcessorRoster;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -19,12 +20,13 @@ class QueueSnapshotController extends Controller
 {
     public function __construct(private readonly ActiveProcessorRoster $processorRoster) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $processors = $this->processorRoster->all();
         $activeProcessorNames = $processors->pluck('name');
         $historyVisible = request()->boolean('history');
-        $reportDate = CarbonImmutable::now('Asia/Manila')->toDateString();
+        $filters = $request->validate(['date' => ['nullable', 'date_format:Y-m-d']]);
+        $reportDate = $filters['date'] ?? CarbonImmutable::now('Asia/Manila')->toDateString();
         $snapshots = QueueSnapshot::query()
             ->with(['processorEntries' => fn ($query) => $query->orderBy('batch')->orderBy('processor_name')])
             ->whereDate('report_date', $reportDate)
@@ -32,6 +34,7 @@ class QueueSnapshotController extends Controller
             ->get();
 
         return Inertia::render('operations/queue-monitor', [
+            'reportDate' => $reportDate,
             'savedSnapshots' => $snapshots->map(fn (QueueSnapshot $snapshot) => $this->serialize($snapshot, $processors)),
             'processorRoster' => $this->processorRoster->forFrontend($processors),
             'historyVisible' => $historyVisible,
@@ -128,15 +131,10 @@ class QueueSnapshotController extends Controller
             'checkpoint' => $snapshot->checkpoint,
             'processorRows' => $snapshot->processorEntries
                 ->map(function ($entry) use ($processors): ?array {
-                    $processor = $this->processorRoster->match($entry->processor_name, $processors);
-                    if ($processor === null) {
-                        return null;
-                    }
-
                     return [
-                        'name' => $processor->name,
-                        'batch' => (int) $processor->batch,
-                        'aliases' => array_values(array_filter([$processor->n_name])),
+                        'name' => $entry->processor_name,
+                        'batch' => (int) $entry->batch,
+                        'aliases' => [],
                         'generalExterior' => $entry->general_exterior,
                         'fourPoint' => $entry->four_point,
                         'premiumFourPoint' => $entry->premium_four_point,

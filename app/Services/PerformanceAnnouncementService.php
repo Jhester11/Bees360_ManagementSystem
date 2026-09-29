@@ -8,6 +8,7 @@ use App\Models\QaAssessment;
 use App\Models\ReportEntry;
 use App\Models\User;
 use App\Notifications\Bees360Announcement;
+use App\Support\UniqueRecords;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -58,12 +59,12 @@ class PerformanceAnnouncementService
             ->whereBetween('report_date', [$month->toDateString(), $end->toDateString()])
             ->orderByDesc('source')
             ->get(['report_date', 'source', 'processor_name', 'project_id', 'inspection_type', 'report_category'])
-            ->unique(fn (ReportEntry $entry): string => implode('|', [
+            ->filter(UniqueRecords::byKey(fn (ReportEntry $entry): string => implode('|', [
                 $entry->report_date->format('Y-m-d'),
                 $this->normalize($entry->processor_name),
                 $entry->project_id,
                 $entry->inspection_type,
-            ]));
+            ])));
 
         $production = $accounts->map(function (User $account) use ($entries): array {
             $mine = $entries->filter(fn (ReportEntry $entry): bool => $this->matches($account, $entry->processor_name));

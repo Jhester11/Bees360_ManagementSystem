@@ -1,6 +1,7 @@
 import { ProcessorSelect } from '@/components/processor-select';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
+import { appendSavedQueue } from '@/lib/saved-queue-export';
 import { BeesDatePicker, formatDate, philippinesToday, type ReportRecord } from '@/pages/dashboard';
 import { type BreadcrumbItem } from '@/types';
 import { Head } from '@inertiajs/react';
@@ -279,6 +280,15 @@ export default function ReportComparison({
         XLSX.utils.book_append_sheet(workbook, worksheet, 'Report Comparison');
         XLSX.utils.book_append_sheet(workbook, dailyWorksheet('Period A', firstRange, firstData.days, firstData), 'Period A Daily');
         XLSX.utils.book_append_sheet(workbook, dailyWorksheet('Period B', secondRange, secondData.days, secondData), 'Period B Daily');
+        if (
+            !(await appendSavedQueue(
+                workbook,
+                [firstRange.start, secondRange.start].sort()[0],
+                [firstRange.end, secondRange.end].sort()[1],
+                appliedProcessor,
+            ))
+        )
+            return;
         XLSX.writeFile(workbook, `Bees360_Report_Comparison_${firstRange.start}_vs_${secondRange.start}.xlsx`, { compression: true });
     }
 

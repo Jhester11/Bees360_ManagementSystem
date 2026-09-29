@@ -18,6 +18,7 @@ import {
     BookOpenCheck,
     CalendarDays,
     Clock3,
+    Database,
     FileText,
     GitCompareArrows,
     LayoutGrid,
@@ -28,6 +29,11 @@ import {
 import AppLogo from './app-logo';
 
 const mainNavItems: NavItem[] = [
+    {
+        title: 'Database Maintenance',
+        url: '/operations/database-maintenance',
+        icon: Database,
+    },
     {
         title: 'Dashboard',
         url: '/dashboard',
@@ -139,7 +145,9 @@ export function AppSidebar() {
         ? processorNavItems
         : isTrainee
           ? traineeNavItems
-          : mainNavItems.filter((item) => item.url !== '/operations/users' || auth.user.role === 'operations');
+          : mainNavItems.filter(
+                (item) => !['/operations/users', '/operations/database-maintenance'].includes(item.url) || auth.user.role === 'operations',
+            );
     const trainingItems: NavItem[] = ['trainer', 'operations'].includes(auth.user.role)
         ? [
               { title: 'Training Dashboard', url: '/training', icon: BookOpenCheck },

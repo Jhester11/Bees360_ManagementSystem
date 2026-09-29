@@ -22,9 +22,11 @@ class QaProcessorAttribution
                 fn (User $processor): bool => $this->roster->match($name, collect([$processor])) !== null,
             )->values();
         };
-        $production = ReportEntry::query()
-            ->whereIn('project_id', $assessments->pluck('project_id')->filter()->unique())
-            ->get(['project_id', 'processor_name', 'report_date'])
+        $production = $assessments->pluck('project_id')->filter()->unique()->values()
+            ->chunk(500)
+            ->flatMap(fn (Collection $ids): Collection => ReportEntry::query()
+                ->whereIn('project_id', $ids)
+                ->get(['project_id', 'processor_name', 'report_date']))
             ->groupBy('project_id');
         $resolved = collect();
         $unresolved = collect();

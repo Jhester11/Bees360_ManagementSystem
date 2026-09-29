@@ -9,6 +9,7 @@ use App\Models\QaAssessment;
 use App\Models\ReportEntry;
 use App\Services\ActiveProcessorRoster;
 use App\Services\QaProcessorAttribution;
+use App\Support\UniqueRecords;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -50,9 +51,9 @@ class ProcessorPerformanceController extends Controller
             ->whereBetween('report_date', [$startDate->toDateString(), $endDate->toDateString()])
             ->get(['report_date', 'processor_name', 'project_id', 'inspection_type', 'report_category', 'source'])
             ->filter(fn (ReportEntry $entry): bool => $this->roster->match($entry->processor_name, $processors) !== null)
-            ->unique(fn (ReportEntry $entry) => implode('|', [
+            ->filter(UniqueRecords::byKey(fn (ReportEntry $entry) => implode('|', [
                 $entry->report_date->format('Y-m-d'), $this->canonicalProcessorName($entry->processor_name), $entry->project_id, $entry->inspection_type,
-            ]))
+            ])))
             ->groupBy(fn (ReportEntry $entry): string => $this->canonicalProcessorName($entry->processor_name))
             ->map(function (Collection $entries, string $name) use ($qaAssessments): array {
                 $scores = $this->qaScoresFor($name, $qaAssessments);

@@ -2,6 +2,7 @@ import { BeesDatePicker } from '@/components/bees-date-picker';
 import { ProcessorSelect } from '@/components/processor-select';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
+import { appendSavedQueue } from '@/lib/saved-queue-export';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, usePoll } from '@inertiajs/react';
 import {
@@ -608,6 +609,7 @@ export default function Dashboard({
             XLSX.utils.book_append_sheet(workbook, dailySheet, 'Daily Data');
             XLSX.utils.book_append_sheet(workbook, processorSheet, 'Processor Data');
             XLSX.utils.book_append_sheet(workbook, qaSheet, 'QA Scores');
+            if (!(await appendSavedQueue(workbook, startDate, endDate, appliedProcessor))) return;
             const workbookBytes = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', compression: true }) as ArrayBuffer;
             const { addNativeAreaChart, addNativeGaugeChart } = await import('@/lib/xlsx-native-chart');
             const areaChartWorkbook = addNativeAreaChart(new Uint8Array(workbookBytes), {
@@ -634,9 +636,7 @@ export default function Dashboard({
             );
             const download = document.createElement('a');
             download.href = downloadUrl;
-            const exportName = (appliedProcessor === 'all' ? 'All Processors' : appliedProcessor)
-                .replace(/[<>:"/\\|?*]/g, '_')
-                .trim();
+            const exportName = (appliedProcessor === 'all' ? 'All Processors' : appliedProcessor).replace(/[<>:"/\\|?*]/g, '_').trim();
             download.download = `${exportName}.xlsx`;
             download.click();
             URL.revokeObjectURL(downloadUrl);

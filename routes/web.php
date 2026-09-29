@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\AccountStatusController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\Operations\CstReportController;
 use App\Http\Controllers\Operations\DashboardController;
+use App\Http\Controllers\Operations\DatabaseMaintenanceController;
 use App\Http\Controllers\Operations\PlatformPullController;
 use App\Http\Controllers\Operations\ProcessorPerformanceController;
 use App\Http\Controllers\Operations\QaAssessmentImportController;
@@ -32,6 +33,7 @@ Route::get('account/status', AccountStatusController::class)
     ->name('account.status');
 
 Route::middleware(['auth', 'active'])->group(function () {
+    Route::get('reports/saved-queue', \App\Http\Controllers\Operations\QueueExportController::class)->name('reports.saved-queue');
     Route::get('training', [TrainingLibraryController::class, 'dashboard'])->name('training.dashboard');
     Route::get('training/library', [TrainingLibraryController::class, 'library'])->name('training.library');
     Route::get('training/my-training', [TrainingLibraryController::class, 'my'])->name('training.my');
@@ -92,6 +94,9 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::get('operations/queue-monitor', [QueueSnapshotController::class, 'index'])->name('operations.queue-monitor');
 
         Route::middleware('operations')->group(function () {
+            Route::get('operations/database-maintenance', [DatabaseMaintenanceController::class, 'index'])->name('operations.database-maintenance');
+            Route::post('operations/database-maintenance', [DatabaseMaintenanceController::class, 'store'])
+                ->middleware('throttle:6,1')->name('operations.database-maintenance.run');
             Route::post('operations/reports/import', [ReportImportController::class, 'store'])
                 ->middleware('throttle:10,1')
                 ->name('operations.reports.import');

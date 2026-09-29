@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
+import { appendSavedQueue } from '@/lib/saved-queue-export';
 import { BeesDatePicker, formatDate, philippinesToday } from '@/pages/dashboard';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
@@ -399,6 +400,7 @@ export default function PlatformPulls({ reportEntries = [], initialReportDate }:
 
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, 'All Platform Pulls');
+        if (!(await appendSavedQueue(workbook, reportDate, reportDate))) return;
         XLSX.writeFile(workbook, `Bees360_All_Platform_Pulls_${reportDate}.xlsx`, { compression: true });
     }
 

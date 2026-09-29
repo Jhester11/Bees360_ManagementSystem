@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import AppLayout from '@/layouts/app-layout';
 import { qaAssessmentsFromWorkbook } from '@/lib/processor-workbook';
+import { appendSavedQueue } from '@/lib/saved-queue-export';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, usePage, usePoll } from '@inertiajs/react';
 import {
@@ -575,6 +576,14 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
 
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, 'Monthly Incentives');
+        if (
+            !(await appendSavedQueue(
+                workbook,
+                `${selectedQaMonth}-01`,
+                `${selectedQaMonth}-${new Date(Number(selectedQaMonth.slice(0, 4)), Number(selectedQaMonth.slice(5, 7)), 0).getDate()}`,
+            ))
+        )
+            return;
         XLSX.writeFile(workbook, `Bees360_Monthly_Incentives_${selectedQaMonth}_${timezone.toUpperCase()}_${incentiveView}.xlsx`, {
             compression: true,
         });
@@ -757,9 +766,7 @@ export default function Processors({ phPerformance, cstPerformance, approvedProc
                                         <div className="flex flex-wrap items-start justify-between gap-3">
                                             <div>
                                                 <p className="font-black text-[#342615]">Project {row.projectId || 'Not provided'}</p>
-                                                <p className="mt-1 text-xs font-semibold text-[#806f59]">
-                                                    {formatQaDay(row.date)}
-                                                </p>
+                                                <p className="mt-1 text-xs font-semibold text-[#806f59]">{formatQaDay(row.date)}</p>
                                             </div>
                                             <span
                                                 className={`rounded-full px-3 py-1 text-xs font-black ${row.score > 89 ? 'bg-[#e4f3df] text-[#347846]' : 'bg-[#fbe4df] text-[#a04435]'}`}

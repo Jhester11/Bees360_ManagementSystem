@@ -9,6 +9,7 @@ use App\Models\QaImport;
 use App\Notifications\NewQaAssessment;
 use App\Services\ActiveProcessorRoster;
 use App\Services\PerformanceAnnouncementService;
+use App\Support\UniqueRecords;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -29,8 +30,13 @@ class QaAssessmentImportController extends Controller
         $now = now();
         $matched = 0;
 
-        $rows = collect($validated['assessments'])->map(function (array $assessment) use ($users, $request, $validated, $now): array {
-            $processor = $this->processorRoster->match($assessment['processor_name'], $users);
+        $processorMatches = [];
+        $rows = collect($validated['assessments'])->map(function (array $assessment) use ($users, $request, $validated, $now, &$processorMatches): array {
+            $name = $assessment['processor_name'];
+            if (! array_key_exists($name, $processorMatches)) {
+                $processorMatches[$name] = $this->processorRoster->match($name, $users);
+            }
+            $processor = $processorMatches[$name];
 
             $processorName = $processor?->name ?? trim($assessment['processor_name']);
 
@@ -52,11 +58,12 @@ class QaAssessmentImportController extends Controller
                 'created_at' => $now,
                 'updated_at' => $now,
             ];
-        })->reverse()->unique('record_key')->reverse()->values();
+        })->reverse()->filter(UniqueRecords::byKey(fn (array $row): string => $row['record_key']))->reverse()->values();
 
         $matched = $rows->whereNotNull('processor_id')->count();
 
-        $existingKeys = QaAssessment::query()->whereIn('record_key', $rows->pluck('record_key'))->pluck('record_key');
+        $existingKeys = $rows->pluck('record_key')->chunk(self::UPSERT_CHUNK_SIZE)
+            ->flatMap(fn (Collection $keys): Collection => QaAssessment::query()->whereIn('record_key', $keys)->pluck('record_key'));
         $existingCount = $existingKeys->count();
         $newKeys = $rows->pluck('record_key')->diff($existingKeys)->values();
 
@@ -86,13 +93,15 @@ class QaAssessmentImportController extends Controller
             ]);
         });
 
-        QaAssessment::query()
-            ->with('processor')
-            ->whereIn('record_key', $newKeys)
-            ->get()
-            ->each(function (QaAssessment $assessment): void {
-                $assessment->processor?->notify(new NewQaAssessment($assessment));
-            });
+        $newKeys->chunk(self::UPSERT_CHUNK_SIZE)->each(function (Collection $keys): void {
+            QaAssessment::query()
+                ->with('processor')
+                ->whereIn('record_key', $keys)
+                ->get()
+                ->each(function (QaAssessment $assessment): void {
+                    $assessment->processor?->notify(new NewQaAssessment($assessment));
+                });
+        });
 
         $this->announcements->refreshCurrentMonth();
 

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\ReportEntry;
+use App\Support\UniqueRecords;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -45,11 +46,17 @@ class ReportImportService
                 });
         });
 
-        $mappedRecords = $inputEntries->map(function (array $entry) use ($processorNamesByProjectId, $processors): ?array {
+        $processorMatches = [];
+        $endOfToday = CarbonImmutable::now('Asia/Manila')->endOfDay();
+        $now = now();
+        $mappedRecords = $inputEntries->map(function (array $entry) use ($processorNamesByProjectId, $processors, &$processorMatches, $endOfToday, $now): ?array {
             $projectId = trim((string) ($entry['project_id'] ?? ''));
             $assembledBy = trim((string) ($entry['assembled_by'] ?? ''));
             $processorName = $assembledBy !== '' ? $assembledBy : (string) $processorNamesByProjectId->get($projectId, '');
-            $processor = $this->processorRoster->match($processorName, $processors);
+            if (! array_key_exists($processorName, $processorMatches)) {
+                $processorMatches[$processorName] = $this->processorRoster->match($processorName, $processors);
+            }
+            $processor = $processorMatches[$processorName];
             $category = $this->category((string) ($entry['inspection_type'] ?? ''));
 
             if ($processor === null || $category === null) {
@@ -62,7 +69,7 @@ class ReportImportService
                 return null;
             }
 
-            if ($assembledAt->isAfter(CarbonImmutable::now('Asia/Manila')->endOfDay())) {
+            if ($assembledAt->isAfter($endOfToday)) {
                 return null;
             }
 
@@ -76,13 +83,13 @@ class ReportImportService
                 'inspection_type' => trim((string) $entry['inspection_type']),
                 'report_category' => $category,
                 'assembled_at' => $assembledAt,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'created_at' => $now,
+                'updated_at' => $now,
             ];
         });
         $records = $mappedRecords
             ->filter()
-            ->unique(fn (array $entry): string => implode('|', [$entry['source'], $entry['project_id'], $entry['report_date'], $entry['processor_name'], $entry['inspection_type']]))
+            ->filter(UniqueRecords::byKey(fn (array $entry): string => implode('|', [$entry['source'], $entry['project_id'], $entry['report_date'], $entry['processor_name'], $entry['inspection_type']])))
             ->values();
 
         DB::transaction(function () use ($records): void {
